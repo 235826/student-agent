@@ -1,0 +1,78 @@
+# Student Agent
+
+面向大学生的个人任务与学习安排助手。当前实现为**基础工程与最小持久化闭环**，还不是完整 P0 MVP。
+
+已实现：单用户账号与会话、任务创建/编辑/软删除/恢复、固定事件创建/编辑、周视图、时区及每周可用/休息时间设置。支持桌面与手机布局，无需模型服务。
+
+## 本地开发
+
+需要 Python 3.13、uv、Node.js 24 LTS 与 npm。前端 Node 版本见 `.nvmrc`。
+
+在第一个终端启动后端：
+
+```bash
+cd backend
+uv sync --frozen
+cp .env.example .env
+uv run alembic upgrade head
+uv run uvicorn app.main:create_app --factory --host 127.0.0.1 --port 8000
+```
+
+`uv sync` 自动创建 `backend/.venv`，无需激活环境。默认数据库为项目根目录的 `data/student_agent.db`，必须从 `backend/` 启动命令。服务启动不会自动修改数据库 schema，迁移需单独执行。
+
+在第二个终端启动前端：
+
+```bash
+cd frontend
+npm ci
+npm run dev
+```
+
+访问 http://127.0.0.1:5173，首次进入创建账号（密码至少 10 个字符），之后登录使用。可以直接创建任务和事件，非必要设置均可跳过。Vite 代理 `/api` 到后端，浏览器保持同源。
+
+测试会使用独立临时数据库；端到端测试专用 `data/e2e.db` 会在每次启动时重建，不触碰正常数据库。
+
+## Docker Compose（本机演示）
+
+```bash
+docker compose up --build -d
+```
+
+访问 http://127.0.0.1:8080。`migrate` 是一次性迁移服务，成功后才启动 API；API 就绪后启动 Caddy。数据库存储于命名卷 `student_data`。`docker compose down` 保留数据；不要使用 `down -v`，除非明确要删除个人数据。
+
+当前阶段包含 gateway、api 和一次性 migrate；worker 随解析 Job 阶段加入，不运行空占位进程。网关只绑定本机回环。公网/手机局域网部署需另行配置可信 HTTPS、`SA_ALLOWED_ORIGINS`、`SA_COOKIE_SECURE=true`，并先完成账号初始化。
+
+## 验证
+
+```bash
+cd backend
+uv run ruff check .
+uv run ruff format --check .
+uv run mypy app
+uv run pytest -q
+uv run alembic check
+uv run python -m scripts.export_openapi
+```
+
+```bash
+cd frontend
+npm run generate:api
+npm run check
+npm test
+npm run build
+npx playwright install --no-shell chromium
+npm run test:e2e
+```
+
+端到端测试启动自己的服务，需要 8000 和 5173 端口空闲。它验证桌面和手机视口的账号、任务、事件、设置与退出/重新登录流程。
+
+接口契约：[docs/openapi.json](docs/openapi.json)。后端变更后重新导出 OpenAPI 并运行 `npm run generate:api`；生成的类型提交到 Git。任务、事件使用 `PUT` 整体更新，省略的可选字段恢复默认值；详情见 [阶段说明](docs/foundation.md)。
+
+## 需求与架构
+
+- [产品意图](intent.md)
+- [功能规格 v0.3](spec-v0.3.md)
+- [技术基线 v1.0](architecture-tech-stack-v1.0.md)
+- [本阶段边界与实现说明](docs/foundation.md)
+
+下一步补齐草稿、依赖、课程单次跳过与兼容规则，再开发确定性排程和 AI 导入。当前不自动排程、不解析截图、不运行后台提醒。

@@ -1,0 +1,39 @@
+services:
+  migrate:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.api
+    command: [".venv/bin/alembic", "upgrade", "head"]
+    volumes:
+      - student_data:/app/data
+    restart: "no"
+  api:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.api
+    environment:
+      SA_ALLOWED_ORIGINS: '["http://localhost:8080","http://127.0.0.1:8080"]'
+      SA_COOKIE_SECURE: 'false'
+    volumes:
+      - student_data:/app/data
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", ".venv/bin/python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+  gateway:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.gateway
+    ports:
+      - "127.0.0.1:8080:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+volumes:
+  student_data:

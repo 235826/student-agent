@@ -1,0 +1,33 @@
+name: Checks
+on: [push, pull_request]
+jobs:
+  foundation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.11.28'
+          python-version: '3.13'
+      - run: uv sync --frozen
+        working-directory: backend
+      - run: uv run ruff check . && uv run ruff format --check . && uv run mypy app && uv run pytest -q
+        working-directory: backend
+      - run: uv run alembic upgrade head && uv run alembic check && uv run python -m scripts.export_openapi
+        working-directory: backend
+      - run: npm ci && npm run generate:api && npm run check && npm test && npm run build
+        working-directory: frontend
+      - run: git diff --exit-code -- docs/openapi.json frontend/src/generated/api.d.ts
+      - run: npx playwright install --with-deps --no-shell chromium && npm run test:e2e
+        working-directory: frontend
+      - run: docker compose config --quiet && docker compose build
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: browser-test-results
+          path: frontend/test-results/

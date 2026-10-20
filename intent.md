@@ -1,7 +1,7 @@
 # Student Agent — Intent
 
 > 版本：v0.1（2026-10-14）  
-> 状态：产品意图与范围基线；具体可验收要求见 [spec.md](./spec.md)  
+> 状态：产品意图与范围基线；具体可验收要求见 [spec-v0.3.md](./spec-v0.3.md)  
 > 参考：[GSE 2026 Lab 1：会成长的个人助手](https://jyywiki.cn/GSE/2026/lab1.md)
 
 ## 1. 一句话定义
