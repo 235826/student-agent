@@ -337,7 +337,7 @@ def test_chat_protocol_and_evidence(image: bool) -> None:
         ParseInput("test", b"image" if image else None, "image/png", "", "Asia/Shanghai", 0)
     )
     assert not result.candidates[0].reviewed
-    assert result.candidates[0].deadline_local is None
+    assert result.candidates[0].deadline_local.isoformat() == "2030-01-01T09:00:00"
 
 
 @pytest.mark.parametrize("status,transient", [(401, False), (429, True), (503, True)])
@@ -381,3 +381,84 @@ def test_bigmodel_429_business_codes_are_safe(code: str, transient: bool, messag
     assert message in str(caught.value)
     assert "secret" not in str(caught.value)
     assert caught.value.retry_after_seconds == 120
+
+
+@pytest.mark.parametrize("evidence", [{}, {"recurrence": "周一；10:10—12:00；8月24日至12月27日"}])
+def test_weekly_timetable_preserves_model_times_and_publishes(
+    authenticated: TestClient, evidence: dict[str, str]
+) -> None:
+    rows = [
+        (0, "3—4", "10:10", "12:00", "数据库概论", "仙I-103"),
+        (0, "7—8", "16:10", "18:00", "计算机网络", "仙I-207"),
+        (1, "5—7", "14:00", "17:00", "人工智能导论", "逸B-104"),
+        (1, "9—10", "18:30", "20:20", "软件测试", "仙I-111"),
+        (2, "3—4", "10:10", "12:00", "计算机数学建模", "仙I-207"),
+        (2, "5—6", "14:00", "15:50", "数据库概论", "仙I-103"),
+        (2, "7—8", "16:10", "18:00", "形势与政策", "逸B-312"),
+        (3, "2—4", "09:00", "12:00", "密码学原理", "仙I-106"),
+        (3, "5—6", "14:00", "15:50", "计算机网络", "仙I-207"),
+        (3, "7—8", "16:10", "18:00", "机器学习导论", "仙I-320"),
+        (3, "9—10", "18:30", "20:20", "软件分析", "仙I-107"),
+        (4, "5—7", "14:00", "17:00", "软件工程", "仙I-109"),
+    ]
+    lines = ["每周课程安排"]
+    candidates = []
+    weekday = None
+    for i, (day, periods, start, end, title, location) in enumerate(rows):
+        if day != weekday:
+            lines.append("周" + "一二三四五"[day])
+            weekday = day
+        lines.append(f"- 第{periods}节（{start}—{end}）：{title}，教室：{location}")
+        candidates.append(
+            {
+                "key": f"course{i}",
+                "kind": "course",
+                "title": title,
+                "location": location,
+                "recurrence": {
+                    "start_date": "2026-08-24",
+                    "end_date": "2026-12-27",
+                    "weekdays": [day],
+                    "start_time": start,
+                    "end_time": end,
+                },
+                "evidence": evidence,
+                "uncertainties": ["年份推定为2026年，请核对"],
+            }
+        )
+    lines.append(
+        "上面的课程从8月24日持续到12月27日，每周课程相同，共18周，"
+        "所有课程名称、时间、教室详细清晰。自动推算每周每节课的时间。"
+    )
+    source = "\n".join(lines)
+    settings = Settings(llm_base_url="https://example.test/v1", llm_model="model")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        content = json.loads(request.content)["messages"][1]["content"][0]["text"]
+        assert json.loads(content)["source_text"] == source
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": json.dumps({"candidates": candidates})}}]},
+        )
+
+    client = authenticated
+    job = create(client, source)
+    provider = ChatCompletions(settings, httpx.MockTransport(handler))
+    run_once(client.app.state.engine, client.app.state.settings, provider)
+    job = client.get(f"/api/v1/imports/{job['id']}").json()
+    assert job["status"] == "succeeded"
+    assert len(job["candidates"]) == 12
+    for actual, expected in zip(job["candidates"], candidates, strict=True):
+        assert actual["location"] == expected["location"]
+        assert actual["uncertainties"] == expected["uncertainties"]
+        assert actual["recurrence"]["weekdays"] == expected["recurrence"]["weekdays"]
+        assert actual["recurrence"]["start_time"] == expected["recurrence"]["start_time"] + ":00"
+        assert not actual["reviewed"]
+    response = publish(client, save(client, job))
+    assert response.status_code == 200, response.text
+    events = client.get("/api/v1/events").json()
+    assert len(events) == 216
+    for record, row in zip(response.json()["published_records"], rows, strict=True):
+        occurrences = [event for event in events if event["series_id"] == record["id"]]
+        assert len(occurrences) == 18
+        assert all(event["location"] == row[5] for event in occurrences)
