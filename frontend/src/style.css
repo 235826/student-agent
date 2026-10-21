@@ -299,3 +299,22 @@ header {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+.imports-page > .ant-card {
+  margin-bottom: 20px;
+}
+.imports-page label:not(.ant-checkbox-wrapper) {
+  display: block;
+  margin: 12px 0 6px;
+}
+.imports-page input[type="file"] {
+  display: block;
+  max-width: 100%;
+  margin-top: 6px;
+}
+.imports-page details {
+  margin: 12px 0;
+}
+.imports-page pre {
+  overflow-wrap: anywhere;
+}

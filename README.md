@@ -2,7 +2,7 @@
 
 面向大学生的个人任务与学习安排助手。当前实现为**基础工程、任务与规则管理、确定性排程闭环**，还不是完整 P0 MVP。
 
-已实现：单用户账号与会话、任务创建/编辑/软删除/恢复、固定事件创建/编辑、周视图、时区及每周可用/休息时间设置。新增任务草稿与幂等发布、父子任务与前置依赖、每周重复课程及单次修改/跳过、并行偏好与组合规则检查。支持计划草稿预览、未排工时说明、明确确认采用与历史版本。支持桌面与手机布局，无需模型服务。
+已实现：单用户账号与会话、任务创建/编辑/软删除/恢复、固定事件创建/编辑、周视图、时区及每周可用/休息时间设置。新增任务草稿与幂等发布、父子任务与前置依赖、每周重复课程及单次修改/跳过、并行偏好与组合规则检查。支持计划草稿预览、未排工时说明、明确确认采用与历史版本。支持桌面与手机布局。新增文本与课表图片导入、后台解析、草稿校对与批量确认；AI 解析需配置兼容 Chat Completions 的模型，其他功能不依赖模型。
 
 ## 本地开发
 
@@ -40,7 +40,7 @@ docker compose up --build -d
 
 访问 http://127.0.0.1:8080。`migrate` 是一次性迁移服务，成功后才启动 API；API 就绪后启动 Caddy。数据库存储于命名卷 `student_data`。`docker compose down` 保留数据；不要使用 `down -v`，除非明确要删除个人数据。
 
-当前阶段包含 gateway、api 和一次性 migrate；worker 随解析 Job 阶段加入，不运行空占位进程。网关只绑定本机回环。公网/手机局域网部署需另行配置可信 HTTPS、`SA_ALLOWED_ORIGINS`、`SA_COOKIE_SECURE=true`，并先完成账号初始化。
+当前包含 gateway、api、独立解析 worker 和一次性 migrate；配置见 [导入整理](docs/imports.md)。网关只绑定本机回环。公网/手机局域网部署需另行配置可信 HTTPS、`SA_ALLOWED_ORIGINS`、`SA_COOKIE_SECURE=true`，并先完成账号初始化。
 
 ## 验证
 
@@ -75,4 +75,4 @@ npm run test:e2e
 - [技术基线 v1.0](architecture-tech-stack-v1.0.md)
 - [本阶段边界与实现说明](docs/foundation.md)
 
-第二阶段说明见 [任务与规则基础](docs/planning-foundation.md)，验证结果见 [验证记录](docs/verification.md)。第三阶段说明见 [确定性排程](docs/scheduling.md)。下一步可接入 AI 草稿导入，再补充实际耗时反馈与重排；当前不解析截图、不运行后台提醒。
+第二阶段说明见 [任务与规则基础](docs/planning-foundation.md)，验证结果见 [验证记录](docs/verification.md)。第三阶段说明见 [确定性排程](docs/scheduling.md)。第四阶段说明见 [文本与课表图片导入](docs/imports.md)。后续可补充实际耗时反馈与重排；当前不运行后台提醒。

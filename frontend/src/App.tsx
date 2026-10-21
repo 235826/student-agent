@@ -1,3 +1,4 @@
+import ImportsPage from "./pages/ImportsPage";
 import PlansPage from "./pages/PlansPage";
 import type { Plan } from "./api";
 import { NavLink, Navigate, Route, Routes } from "react-router-dom";
@@ -175,6 +176,7 @@ export default function App() {
           {[
             ["/", "今日 / 本周"],
             ["/tasks", "任务"],
+            ["/imports", "导入整理"],
             ["/plans", "学习计划"],
             ["/events", "课表 / 事件"],
             ["/compatibility", "并行规则"],
@@ -202,6 +204,7 @@ export default function App() {
         )}
         <Routes>
           <Route path="/" element={<CalendarPage profile={profile} />} />
+          <Route path="/imports" element={<ImportsPage profile={profile} />} />
           <Route path="/plans" element={<PlansPage profile={profile} />} />
           <Route path="/tasks" element={<TasksPage profile={profile} />} />
           <Route path="/events" element={<EventsPage profile={profile} />} />

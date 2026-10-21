@@ -1,3 +1,4 @@
+import SourceButton from "../components/SourceButton";
 import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -205,6 +206,7 @@ export default function EventsPage({ profile }: { profile: Profile }) {
                 }
               />
               <Space wrap>
+                <SourceButton objectId={event.id} />
                 <Button onClick={() => edit(event)}>编辑事件</Button>
                 {event.kind === "course" && (
                   <Button

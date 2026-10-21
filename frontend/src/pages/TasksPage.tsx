@@ -1,3 +1,4 @@
+import SourceButton from "../components/SourceButton";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -335,6 +336,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
                       </Button>
                     ) : (
                       <>
+                        <SourceButton objectId={task.id} />
                         <Button onClick={() => open({ kind: "task", task })}>
                           编辑
                         </Button>

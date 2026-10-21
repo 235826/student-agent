@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures";
 
 test("排程预览、确认、版本保留及失效提示", async ({ page }, info) => {
   const errors: string[] = [];
@@ -26,7 +26,9 @@ test("排程预览、确认、版本保留及失效提示", async ({ page }, inf
   await page.getByRole("button", { name: "生成草稿" }).click();
   await expect(page.getByText("待确认草稿", { exact: true })).toBeVisible();
   await page.getByText("查看工作块变更明细", { exact: true }).click();
-  await expect(page.locator(".ant-collapse-content-active")).toContainText(title);
+  await expect(page.locator(".ant-collapse-content-active")).toContainText(
+    title,
+  );
   const report = page
     .locator(".ant-card")
     .filter({ has: page.getByRole("heading", { name: title, exact: true }) });

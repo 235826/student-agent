@@ -26,8 +26,16 @@ export async function api<T>(
   const response = await fetch(`/api/v1${path}`, {
     method,
     credentials: "same-origin",
-    headers: { "Content-Type": "application/json", "X-CSRF-Token": csrf },
-    body: body === undefined ? undefined : JSON.stringify(body),
+    headers:
+      body instanceof FormData
+        ? { "X-CSRF-Token": csrf }
+        : { "Content-Type": "application/json", "X-CSRF-Token": csrf },
+    body:
+      body instanceof FormData
+        ? body
+        : body === undefined
+          ? undefined
+          : JSON.stringify(body),
   });
   if (!response.ok) {
     const error = await response
@@ -47,3 +55,6 @@ export type TypePolicy = components["schemas"]["TypePolicyOut"];
 export type Compatibility = components["schemas"]["CompatibilityOut"];
 
 export type Plan = components["schemas"]["PlanOut"];
+
+export type ImportJob = components["schemas"]["ImportOut"];
+export type ImportCandidate = components["schemas"]["ImportCandidate"];
