@@ -8,8 +8,10 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     ForeignKey,
+    Index,
     String,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -72,6 +74,9 @@ class Task(Owned, Base):
     estimate_minutes: Mapped[int | None]
     task_type: Mapped[str | None]
     trashed_at: Mapped[int | None] = mapped_column(BigInteger, index=True)
+    parent_id: Mapped[str | None] = mapped_column(ForeignKey("tasks.id"), index=True)
+    parallel_policy: Mapped[str | None]
+    policy_revision: Mapped[int] = mapped_column(default=0, server_default="0")
 
 
 class Course(Owned, Base):
@@ -79,6 +84,7 @@ class Course(Owned, Base):
     name: Mapped[str] = mapped_column(String(200))
     semester: Mapped[str] = mapped_column(default="")
     parallel_policy: Mapped[str] = mapped_column(default="none")
+    policy_revision: Mapped[int] = mapped_column(default=0, server_default="0")
 
 
 class EventSeries(Owned, Base):
@@ -105,6 +111,10 @@ class Event(Owned, Base):
     course_id: Mapped[str | None] = mapped_column(ForeignKey("courses.id"))
     series_id: Mapped[str | None] = mapped_column(ForeignKey("event_series.id"))
     occurrence_local_date: Mapped[str | None]
+    kind: Mapped[str] = mapped_column(default="other", server_default="other")
+    is_skipped: Mapped[bool] = mapped_column(default=False, server_default="0")
+    parallel_policy_override: Mapped[str | None]
+    policy_revision: Mapped[int] = mapped_column(default=0, server_default="0")
 
 
 class EventOverride(Owned, Base):
@@ -114,9 +124,86 @@ class EventOverride(Owned, Base):
     occurrence_local_date: Mapped[str]
     is_skipped: Mapped[bool] = mapped_column(default=False)
     parallel_policy_override: Mapped[str | None]
+    policy_revision: Mapped[int] = mapped_column(default=0, server_default="0")
+    title: Mapped[str | None]
+    location: Mapped[str | None]
+    start_at: Mapped[int | None] = mapped_column(BigInteger)
+    end_at: Mapped[int | None] = mapped_column(BigInteger)
+    timezone: Mapped[str | None]
+
+
+class TaskDependency(Owned, Base):
+    __tablename__ = "task_dependencies"
+    __table_args__ = (
+        UniqueConstraint("predecessor_task_id", "successor_task_id"),
+        CheckConstraint("predecessor_task_id != successor_task_id"),
+    )
+    predecessor_task_id: Mapped[str] = mapped_column(ForeignKey("tasks.id"), index=True)
+    successor_task_id: Mapped[str] = mapped_column(ForeignKey("tasks.id"), index=True)
+
+
+class Draft(Owned, Base):
+    __tablename__ = "drafts"
+    object_type: Mapped[str] = mapped_column(default="task")
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON)
+    status: Mapped[str] = mapped_column(default="draft")
+    revision: Mapped[int] = mapped_column(default=1)
+    published_task_id: Mapped[str | None] = mapped_column(ForeignKey("tasks.id"), unique=True)
+
+
+class IdempotentOperation(Owned, Base):
+    __tablename__ = "idempotent_operations"
+    __table_args__ = (UniqueConstraint("workspace_id", "key"),)
+    key: Mapped[str]
+    request_hash: Mapped[str]
+    result_id: Mapped[str]
+
+
+class TaskTypePolicy(Owned, Base):
+    __tablename__ = "task_type_policies"
+    __table_args__ = (UniqueConstraint("workspace_id", "task_type"),)
+    task_type: Mapped[str]
+    parallel_policy: Mapped[str]
+    policy_revision: Mapped[int] = mapped_column(default=1)
+
+
+class CompatibilityRule(Owned, Base):
+    __tablename__ = "compatibility_rules"
+    left_scope: Mapped[str]
+    left_key: Mapped[str]
+    right_scope: Mapped[str]
+    right_key: Mapped[str]
+    decision: Mapped[str]
+    origin: Mapped[str] = mapped_column(default="user_explicit")
+    status: Mapped[str] = mapped_column(default="confirmed")
+    revision: Mapped[int] = mapped_column(default=1)
+    override_signature: Mapped[str | None]
 
 
 class Audit(Owned, Base):
     __tablename__ = "audit_records"
     action: Mapped[str]
     object_id: Mapped[str]
+
+
+class Plan(Owned, Base):
+    __tablename__ = "plans"
+    __table_args__ = (
+        CheckConstraint("status IN ('draft','adopted','superseded')"),
+        CheckConstraint("end_at > start_at"),
+        Index(
+            "uq_plans_current_workspace",
+            "workspace_id",
+            unique=True,
+            sqlite_where=text("status = 'adopted'"),
+        ),
+    )
+    status: Mapped[str] = mapped_column(default="draft")
+    source_revision: Mapped[int]
+    base_plan_id: Mapped[str | None] = mapped_column(ForeignKey("plans.id"))
+    start_at: Mapped[int] = mapped_column(BigInteger)
+    end_at: Mapped[int] = mapped_column(BigInteger)
+    timezone: Mapped[str]
+    blocks: Mapped[list[dict[str, Any]]] = mapped_column(JSON)
+    reports: Mapped[list[dict[str, Any]]] = mapped_column(JSON)
+    differences: Mapped[dict[str, Any]] = mapped_column(JSON)

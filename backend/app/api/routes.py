@@ -18,10 +18,10 @@ from app.api.schemas import (
     SetupInput,
     SetupStatus,
     TaskInput,
-    TaskOut,
 )
-from app.db.models import Course, Event, Task, User, Workspace, now_ms
+from app.db.models import Course, Event, User, Workspace, now_ms
 from app.db.models import Session as LoginSession
+from app.modules.calendar_management import event_view, update_event_record
 from app.modules.records import owned, record_change
 from app.modules.security import COOKIE, DB, SessionDep, UserDep, digest, hasher
 
@@ -66,7 +66,6 @@ def setup_status(db: DB) -> SetupStatus:
 def setup(body: SetupInput, request: Request, response: Response, db: DB) -> AuthOut:
     request.app.state.limiter.check(request.client.host if request.client else "unknown")
     # Serialize first-account creation; the unique singleton also enforces this in the schema.
-    db.connection().exec_driver_sql("BEGIN IMMEDIATE")
     if db.scalar(select(User.id)):
         raise HTTPException(409, "账号已初始化，请登录")
     workspace = Workspace()
@@ -129,50 +128,6 @@ def values(body: TaskInput | EventInput) -> dict[str, Any]:
     return data
 
 
-@router.get("/tasks", response_model=list[TaskOut])
-def list_tasks(db: DB, user: UserDep, trashed: bool = False) -> list[Task]:
-    query = select(Task).where(Task.workspace_id == user.workspace_id)
-    query = query.where(Task.trashed_at.is_not(None) if trashed else Task.trashed_at.is_(None))
-    return list(db.scalars(query.order_by(Task.created_at.desc(), Task.id)))
-
-
-@router.post("/tasks", response_model=TaskOut, status_code=201)
-def create_task(body: TaskInput, db: DB, user: UserDep) -> Task:
-    task = Task(workspace_id=user.workspace_id, **values(body))
-    db.add(task)
-    record_change(db, user, "task.create", task)
-    return task
-
-
-@router.put("/tasks/{task_id}", response_model=TaskOut)
-def update_task(task_id: str, body: TaskInput, db: DB, user: UserDep) -> Task:
-    task = owned(db, Task, task_id, user)
-    if task.trashed_at is not None:
-        raise HTTPException(409, "请先恢复垃圾箱中的任务")
-    for key, value in values(body).items():
-        setattr(task, key, value)
-    record_change(db, user, "task.update", task)
-    return task
-
-
-@router.post("/tasks/{task_id}/trash", response_model=TaskOut)
-def trash_task(task_id: str, db: DB, user: UserDep) -> Task:
-    task = owned(db, Task, task_id, user)
-    if task.trashed_at is None:
-        task.trashed_at = now_ms()
-        record_change(db, user, "task.trash", task)
-    return task
-
-
-@router.post("/tasks/{task_id}/restore", response_model=TaskOut)
-def restore_task(task_id: str, db: DB, user: UserDep) -> Task:
-    task = owned(db, Task, task_id, user)
-    if task.trashed_at is not None:
-        task.trashed_at = None
-        record_change(db, user, "task.restore", task)
-    return task
-
-
 @router.get("/courses", response_model=list[CourseOut])
 def list_courses(db: DB, user: UserDep) -> list[Course]:
     return list(db.scalars(select(Course).where(Course.workspace_id == user.workspace_id)))
@@ -187,33 +142,29 @@ def create_course(body: CourseInput, db: DB, user: UserDep) -> Course:
 
 
 @router.get("/events", response_model=list[EventOut])
-def list_events(db: DB, user: UserDep) -> list[Event]:
-    return list(
-        db.scalars(
+def list_events(db: DB, user: UserDep) -> list[EventOut]:
+    return [
+        event_view(db, e)
+        for e in db.scalars(
             select(Event)
             .where(Event.workspace_id == user.workspace_id)
             .order_by(Event.start_at, Event.id)
         )
-    )
+    ]
 
 
 @router.post("/events", response_model=EventOut, status_code=201)
-def create_event(body: EventInput, db: DB, user: UserDep) -> Event:
+def create_event(body: EventInput, db: DB, user: UserDep) -> EventOut:
     if body.course_id:
         owned(db, Course, body.course_id, user)
     event = Event(workspace_id=user.workspace_id, **values(body))
     db.add(event)
     record_change(db, user, "event.create", event)
-    return event
+    return event_view(db, event)
 
 
 @router.put("/events/{event_id}", response_model=EventOut)
-def update_event(event_id: str, body: EventInput, db: DB, user: UserDep) -> Event:
+def update_event(event_id: str, body: EventInput, db: DB, user: UserDep) -> EventOut:
     event = owned(db, Event, event_id, user)
-    if body.course_id:
-        owned(db, Course, body.course_id, user)
-    for key, value in values(body).items():
-        setattr(event, key, value)
-    # A direct user edit is allowed; locked prevents future scheduler movement.
-    record_change(db, user, "event.update", event)
-    return event
+    update_event_record(db, user, event, body)
+    return event_view(db, event)

@@ -1,4 +1,5 @@
-import { useState } from "react";
+import PlansPage from "./pages/PlansPage";
+import type { Plan } from "./api";
 import { NavLink, Navigate, Route, Routes } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -6,15 +7,10 @@ import {
   App as AntApp,
   Button,
   Card,
-  Empty,
   Form,
   Input,
-  InputNumber,
-  Modal,
   Select,
-  Space,
   Spin,
-  Tag,
 } from "antd";
 import FullCalendar from "@fullcalendar/react";
 import timeGridPlugin from "@fullcalendar/timegrid";
@@ -22,27 +18,11 @@ import listPlugin from "@fullcalendar/list";
 import luxonPlugin from "@fullcalendar/luxon3";
 import zhLocale from "@fullcalendar/core/locales/zh-cn";
 import { api, ApiError, setCsrf } from "./api";
-import type {
-  Auth,
-  Event,
-  EventInput,
-  Profile,
-  ProfileInput,
-  Task,
-  TaskInput,
-} from "./api";
-import { displayTime, toInstant, toLocal } from "./time";
+import type { Auth, Event, Profile, ProfileInput } from "./api";
+import TasksPage from "./pages/TasksPage";
+import EventsPage from "./pages/EventsPage";
+import CompatibilityPage from "./pages/CompatibilityPage";
 
-const states = [
-  { value: "todo", label: "待开始" },
-  { value: "in_progress", label: "进行中" },
-  { value: "done", label: "已完成" },
-  { value: "cancelled", label: "已取消" },
-];
-const priorities = [1, 2, 3, 4].map((value) => ({
-  value,
-  label: ["低", "普通", "高", "紧急"][value - 1],
-}));
 const errorText = (e: unknown) =>
   e instanceof Error ? e.message : "操作失败，请重试";
 
@@ -195,7 +175,9 @@ export default function App() {
           {[
             ["/", "今日 / 本周"],
             ["/tasks", "任务"],
+            ["/plans", "学习计划"],
             ["/events", "课表 / 事件"],
+            ["/compatibility", "并行规则"],
             ["/settings", "设置"],
           ].map(([path, label]) => (
             <NavLink end={path === "/"} to={path} key={path}>
@@ -220,8 +202,13 @@ export default function App() {
         )}
         <Routes>
           <Route path="/" element={<CalendarPage profile={profile} />} />
+          <Route path="/plans" element={<PlansPage profile={profile} />} />
           <Route path="/tasks" element={<TasksPage profile={profile} />} />
           <Route path="/events" element={<EventsPage profile={profile} />} />
+          <Route
+            path="/compatibility"
+            element={<CompatibilityPage profile={profile} />}
+          />
           <Route
             path="/settings"
             element={<SettingsPage profile={profile} />}
@@ -234,6 +221,10 @@ export default function App() {
 }
 
 function CalendarPage({ profile }: { profile: Profile }) {
+  const plan = useQuery({
+    queryKey: ["plans", "current"],
+    queryFn: () => api<Plan | null>("/plans/current"),
+  });
   const events = useQuery({
     queryKey: ["events"],
     queryFn: () => api<Event[]>("/events"),
@@ -251,7 +242,11 @@ function CalendarPage({ profile }: { profile: Profile }) {
       </header>
       <Alert
         type="info"
-        message="当前展示手动创建的固定事件；智能排程将在后续阶段接入。"
+        message={
+          plan.data?.stale
+            ? "当前计划的依据已变化，请到学习计划页重新生成并确认。"
+            : "展示固定事件与已采用的任务工作块；可到学习计划页生成草稿。"
+        }
       />
       {events.error && <Alert type="error" message={errorText(events.error)} />}
       <Card className="calendar">
@@ -267,338 +262,26 @@ function CalendarPage({ profile }: { profile: Profile }) {
           }}
           height="auto"
           allDaySlot={false}
-          slotMinTime="06:00:00"
+          slotMinTime="00:00:00"
           slotMaxTime="24:00:00"
-          events={
-            events.data?.map((e) => ({
+          events={[
+            ...(events.data?.map((e) => ({
               id: e.id,
-              title: e.title,
+              title: e.title + (e.is_skipped ? "（本次不参加）" : ""),
               start: e.start_at,
               end: e.end_at,
-              color: "#37735c",
-            })) ?? []
-          }
+              color: e.is_skipped ? "#a6a6a6" : "#37735c",
+            })) ?? []),
+            ...(plan.data?.blocks.map((b) => ({
+              id: `${b.task_id}-${b.start_at}`,
+              title: b.title,
+              start: b.start_at,
+              end: b.end_at,
+              color: "#3873ac",
+            })) ?? []),
+          ]}
         />
       </Card>
-    </>
-  );
-}
-
-function TasksPage({ profile }: { profile: Profile }) {
-  const client = useQueryClient();
-  const { message } = AntApp.useApp();
-  const [trashed, setTrashed] = useState(false);
-  const [editing, setEditing] = useState<Task | null | undefined>(undefined);
-  const [form] = Form.useForm();
-  const tasks = useQuery({
-    queryKey: ["tasks", trashed],
-    queryFn: () => api<Task[]>(`/tasks?trashed=${trashed}`),
-  });
-  const mutation = useMutation({
-    mutationFn: ({
-      path,
-      body,
-      method = "POST",
-    }: {
-      path: string;
-      body?: unknown;
-      method?: string;
-    }) => api(path, method, body),
-    onSuccess: () => {
-      void client.invalidateQueries({ queryKey: ["tasks"] });
-      setEditing(undefined);
-      void message.success("已保存");
-    },
-    onError: (e) => void message.error(errorText(e)),
-  });
-  const edit = (task: Task | null) => {
-    form.resetFields();
-    form.setFieldsValue(
-      task
-        ? { ...task, deadline_at: toLocal(task.deadline_at, profile.timezone) }
-        : { status: "todo", priority: 2, description: "" },
-    );
-    setEditing(task);
-  };
-  return (
-    <>
-      <header>
-        <div>
-          <div className="eyebrow">ONE STEP AT A TIME</div>
-          <h1>任务</h1>
-          <p className="muted">把想做的事记下来，为每一步留出空间。</p>
-        </div>
-        <Button type="primary" onClick={() => edit(null)}>
-          新建任务
-        </Button>
-      </header>
-      <Space className="toolbar">
-        <Button
-          type={!trashed ? "primary" : "default"}
-          onClick={() => setTrashed(false)}
-        >
-          我的任务
-        </Button>
-        <Button
-          type={trashed ? "primary" : "default"}
-          onClick={() => setTrashed(true)}
-        >
-          垃圾箱
-        </Button>
-      </Space>
-      {tasks.error && <Alert type="error" message={errorText(tasks.error)} />}
-      {tasks.isPending ? (
-        <Spin />
-      ) : !tasks.data?.length ? (
-        <Card>
-          <Empty
-            description={
-              trashed ? "垃圾箱为空" : "还没有任务，先添加一件想完成的事"
-            }
-          />
-        </Card>
-      ) : (
-        <div className="cards">
-          {tasks.data.map((task) => (
-            <Card key={task.id} className="task-card">
-              <div className="card-heading">
-                <h3>{task.title}</h3>
-                <Tag color={task.status === "done" ? "green" : "default"}>
-                  {states.find((s) => s.value === task.status)?.label}
-                </Tag>
-              </div>
-              <p className="description">{task.description || "暂无描述"}</p>
-              <div className="meta">
-                截止：{displayTime(task.deadline_at, profile.timezone)} · 预计{" "}
-                {task.estimate_minutes ?? "—"} 分钟 ·{" "}
-                {priorities[task.priority - 1].label}
-              </div>
-              <Space wrap>
-                {trashed ? (
-                  <Button
-                    onClick={() =>
-                      mutation.mutate({ path: `/tasks/${task.id}/restore` })
-                    }
-                    disabled={mutation.isPending}
-                  >
-                    恢复任务
-                  </Button>
-                ) : (
-                  <>
-                    <Button onClick={() => edit(task)}>编辑</Button>
-                    <Button
-                      danger
-                      onClick={() =>
-                        mutation.mutate({ path: `/tasks/${task.id}/trash` })
-                      }
-                      disabled={mutation.isPending}
-                    >
-                      移入垃圾箱
-                    </Button>
-                  </>
-                )}
-              </Space>
-            </Card>
-          ))}
-        </div>
-      )}
-      <Modal
-        title={editing ? "编辑任务" : "新建任务"}
-        open={editing !== undefined}
-        onCancel={() => setEditing(undefined)}
-        onOk={() => form.submit()}
-        confirmLoading={mutation.isPending}
-        destroyOnHidden
-      >
-        <Form
-          form={form}
-          layout="vertical"
-          onFinish={(values) => {
-            try {
-              const body: TaskInput = {
-                ...values,
-                deadline_at: toInstant(
-                  values.deadline_at ?? "",
-                  profile.timezone,
-                ),
-                estimate_minutes: values.estimate_minutes ?? null,
-                task_type: values.task_type || null,
-              };
-              mutation.mutate({
-                path: editing ? `/tasks/${editing.id}` : "/tasks",
-                method: editing ? "PUT" : "POST",
-                body,
-              });
-            } catch (e) {
-              void message.error(errorText(e));
-            }
-          }}
-        >
-          <Form.Item
-            name="title"
-            label="任务标题"
-            rules={[{ required: true, whitespace: true, max: 200 }]}
-          >
-            <Input />
-          </Form.Item>
-          <Form.Item name="description" label="任务描述">
-            <Input.TextArea rows={3} maxLength={20000} />
-          </Form.Item>
-          <div className="form-grid">
-            <Form.Item name="status" label="执行状态">
-              <Select options={states} />
-            </Form.Item>
-            <Form.Item name="priority" label="优先级">
-              <Select options={priorities} />
-            </Form.Item>
-          </div>
-          <Form.Item
-            name="deadline_at"
-            label={`截止时间（${profile.timezone}）`}
-          >
-            <Input type="datetime-local" />
-          </Form.Item>
-          <Form.Item name="estimate_minutes" label="预计用时（分钟，可留空）">
-            <InputNumber min={1} max={100000} precision={0} />
-          </Form.Item>
-          <Form.Item name="task_type" label="任务类型（可选）">
-            <Input placeholder="例如 reading / coding" maxLength={100} />
-          </Form.Item>
-        </Form>
-      </Modal>
-    </>
-  );
-}
-
-function EventsPage({ profile }: { profile: Profile }) {
-  const client = useQueryClient();
-  const { message } = AntApp.useApp();
-  const [editing, setEditing] = useState<Event | null | undefined>(undefined);
-  const [form] = Form.useForm();
-  const events = useQuery({
-    queryKey: ["events"],
-    queryFn: () => api<Event[]>("/events"),
-  });
-  const mutation = useMutation({
-    mutationFn: (body: EventInput) =>
-      api(
-        editing ? `/events/${editing.id}` : "/events",
-        editing ? "PUT" : "POST",
-        body,
-      ),
-    onSuccess: () => {
-      setEditing(undefined);
-      void client.invalidateQueries({ queryKey: ["events"] });
-      void message.success("事件已保存");
-    },
-    onError: (e) => void message.error(errorText(e)),
-  });
-  const edit = (event: Event | null) => {
-    form.resetFields();
-    form.setFieldsValue(
-      event
-        ? {
-            title: event.title,
-            location: event.location,
-            start_at: toLocal(event.start_at, profile.timezone),
-            end_at: toLocal(event.end_at, profile.timezone),
-          }
-        : { location: "" },
-    );
-    setEditing(event);
-  };
-  return (
-    <>
-      <header>
-        <div>
-          <div className="eyebrow">MAKE ROOM</div>
-          <h1>课表 / 事件</h1>
-          <p className="muted">手动添加课程、会议和其他固定安排。</p>
-        </div>
-        <Button type="primary" onClick={() => edit(null)}>
-          添加事件
-        </Button>
-      </header>
-      {events.error && <Alert type="error" message={errorText(events.error)} />}
-      {events.isPending ? (
-        <Spin />
-      ) : !events.data?.length ? (
-        <Card>
-          <Empty description="还没有固定事件" />
-        </Card>
-      ) : (
-        <div className="cards">
-          {events.data.map((event) => (
-            <Card key={event.id}>
-              <div className="card-heading">
-                <h3>{event.title}</h3>
-                <Tag>固定时间</Tag>
-              </div>
-              <p>
-                {displayTime(event.start_at, profile.timezone)} —{" "}
-                {displayTime(event.end_at, profile.timezone)}
-              </p>
-              <p className="muted">{event.location || "未设置地点"}</p>
-              <Button onClick={() => edit(event)}>编辑事件</Button>
-            </Card>
-          ))}
-        </div>
-      )}
-      <Modal
-        title={editing ? "编辑事件" : "添加事件"}
-        open={editing !== undefined}
-        onCancel={() => setEditing(undefined)}
-        onOk={() => form.submit()}
-        confirmLoading={mutation.isPending}
-        destroyOnHidden
-      >
-        <Form
-          form={form}
-          layout="vertical"
-          onFinish={(values) => {
-            try {
-              const start = toInstant(values.start_at, profile.timezone);
-              const end = toInstant(values.end_at, profile.timezone);
-              if (!start || !end) throw new Error("请填写起止时间");
-              mutation.mutate({
-                ...values,
-                start_at: start,
-                end_at: end,
-                timezone: profile.timezone,
-                locked: editing?.locked ?? true,
-                course_id: editing?.course_id ?? null,
-              });
-            } catch (e) {
-              void message.error(errorText(e));
-            }
-          }}
-        >
-          <Form.Item
-            name="title"
-            label="事件标题"
-            rules={[{ required: true, whitespace: true, max: 200 }]}
-          >
-            <Input />
-          </Form.Item>
-          <Form.Item
-            name="start_at"
-            label={`开始时间（${profile.timezone}）`}
-            rules={[{ required: true }]}
-          >
-            <Input type="datetime-local" />
-          </Form.Item>
-          <Form.Item
-            name="end_at"
-            label={`结束时间（${profile.timezone}）`}
-            rules={[{ required: true }]}
-          >
-            <Input type="datetime-local" />
-          </Form.Item>
-          <Form.Item name="location" label="地点">
-            <Input maxLength={500} />
-          </Form.Item>
-        </Form>
-      </Modal>
     </>
   );
 }

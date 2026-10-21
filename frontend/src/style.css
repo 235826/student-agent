@@ -243,3 +243,59 @@ header {
     font-size: 35px;
   }
 }
+.course-settings {
+  display: grid;
+  gap: 16px;
+}
+.course-settings > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.course-settings .ant-select {
+  min-width: 210px;
+}
+.policy-select {
+  width: 100%;
+  margin-bottom: 16px;
+}
+.type-policies {
+  margin-top: 16px;
+}
+.activity-select {
+  width: 100%;
+  margin-bottom: 16px;
+}
+.check-result {
+  margin-top: 20px;
+}
+.pair-result {
+  border-top: 1px solid #e4e8e1;
+  padding: 16px 0;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 700px) {
+  header {
+    flex-wrap: wrap;
+  }
+  header > .ant-space {
+    width: 100%;
+  }
+  .course-settings .ant-select {
+    width: 100%;
+  }
+}
+
+.form-grid {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+.form-grid > * {
+  min-width: 0;
+}
+@media (max-width: 700px) {
+  .form-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

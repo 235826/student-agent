@@ -30,6 +30,9 @@ def build_engine(url: str) -> Engine:
 def get_db(request: Request) -> Iterator[Session]:
     with Session(request.app.state.engine, expire_on_commit=False) as db:
         try:
+            if request.method not in {"GET", "HEAD", "OPTIONS"}:
+                # Serialize validation + mutation, including concurrent graph edits and publishing.
+                db.connection().exec_driver_sql("BEGIN IMMEDIATE")
             yield db
             db.commit()
         except Exception:

@@ -37,3 +37,13 @@ export async function api<T>(
   }
   return response.status === 204 ? (undefined as T) : response.json();
 }
+export type Draft = components["schemas"]["DraftOut"];
+export type Course = components["schemas"]["CourseOut"];
+export type Rule = components["schemas"]["RuleOut"];
+export type RuleInput = components["schemas"]["RuleInput"];
+export type Selector = components["schemas"]["Selector"];
+export type SeriesInput = components["schemas"]["SeriesInput"];
+export type TypePolicy = components["schemas"]["TypePolicyOut"];
+export type Compatibility = components["schemas"]["CompatibilityOut"];
+
+export type Plan = components["schemas"]["PlanOut"];

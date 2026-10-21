@@ -1,12 +1,10 @@
-from typing import Any, TypeVar
+from typing import Any
 
 from fastapi import HTTPException
 from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from app.db.models import Audit, Owned, User, Workspace
-
-T = TypeVar("T", bound=Owned)
 
 
 def owned[T: Owned](db: Session, model: type[T], object_id: str, user: User) -> T:
@@ -16,15 +14,18 @@ def owned[T: Owned](db: Session, model: type[T], object_id: str, user: User) -> 
     return obj
 
 
-def record_change(db: Session, user: User, action: str, obj: Any) -> None:
+def record_change(
+    db: Session, user: User, action: str, obj: Any, *, scheduling: bool = True
+) -> None:
     db.flush()
     db.add(Audit(workspace_id=user.workspace_id, action=action, object_id=obj.id))
-    db.execute(
-        update(Workspace)
-        .where(Workspace.id == user.workspace_id)
-        .values(
-            scheduling_revision=Workspace.scheduling_revision + 1,
+    if scheduling:
+        db.execute(
+            update(Workspace)
+            .where(Workspace.id == user.workspace_id)
+            .values(
+                scheduling_revision=Workspace.scheduling_revision + 1,
+            )
         )
-    )
     db.commit()
     db.refresh(obj)
