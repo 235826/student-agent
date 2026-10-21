@@ -5,6 +5,7 @@ import json
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 from urllib.parse import urlsplit
 
 import httpx
@@ -15,9 +16,80 @@ from app.config import Settings
 
 
 class ParseFailure(Exception):
-    def __init__(self, message: str, *, transient: bool = False):
+    def __init__(
+        self,
+        message: str,
+        *,
+        transient: bool = False,
+        rate_limited: bool = False,
+        retry_after_seconds: int = 0,
+    ):
         super().__init__(message)
         self.transient = transient
+        self.rate_limited = rate_limited
+        self.retry_after_seconds = retry_after_seconds
+
+
+def retry_after_seconds(value: str | None) -> int:
+    if not value:
+        return 0
+    try:
+        seconds = int(value)
+    except ValueError:
+        try:
+            seconds = int(
+                (parsedate_to_datetime(value).astimezone(UTC) - datetime.now(UTC)).total_seconds()
+            )
+        except (TypeError, ValueError, OverflowError):
+            return 0
+    return max(0, min(seconds, 3600))
+
+
+def provider_failure(response: httpx.Response, hostname: str) -> ParseFailure:
+    status = response.status_code
+    code = ""
+    if status == 429 and hostname == "open.bigmodel.cn":
+        # Read at most a small error envelope and never expose the provider's message,
+        # which could contain source text or account details.
+        raw = bytearray()
+        for chunk in response.iter_bytes():
+            raw.extend(chunk)
+            if len(raw) > 4096:
+                break
+        try:
+            envelope = json.loads(raw)
+            error = envelope.get("error", {})
+            if isinstance(error, dict):
+                code = str(error.get("code", ""))
+        except (UnicodeError, ValueError, TypeError):
+            pass
+    if status == 429:
+        messages = {
+            "1113": "模型账户欠费，请检查服务商余额",
+            "1302": "模型账户达到速率限制，请稍后重试",
+            "1305": "当前模型访问量过大，请稍后重试",
+            "1308": "模型使用额度已达上限，请等待额度重置",
+            "1309": "模型套餐已到期，请检查服务商账户",
+            "1310": "模型周/月使用额度已达上限，请等待重置",
+            "1311": "当前套餐没有此模型的访问权限",
+            "1313": "模型账户受到使用频率限制，请检查服务商账户",
+            "1314": "模型企业套餐已失效，请联系管理员",
+            "1315": "此 API Key 不适用于当前接口，请更换对应产品的密钥",
+            "1316": "模型使用额度已达上限，请检查余额或等待重置",
+            "1317": "模型使用额度已达上限，请检查余额或等待重置",
+            "1318": "模型使用额度已达上限，请联系管理员调整限额",
+            "1319": "模型使用额度已达上限，请联系管理员调整限额",
+            "1320": "模型使用额度已达上限，请联系管理员调整限额",
+            "1321": "模型使用额度已达上限，请联系管理员调整限额",
+        }
+        transient = code in {"1302", "1305"} or not code
+        return ParseFailure(
+            messages.get(code, "模型接口返回 HTTP 429，请检查服务商限额或稍后重试"),
+            transient=transient,
+            rate_limited=transient,
+            retry_after_seconds=retry_after_seconds(response.headers.get("retry-after")),
+        )
+    return ParseFailure(f"模型接口返回 HTTP {status}", transient=status >= 500)
 
 
 @dataclass(frozen=True)
@@ -109,10 +181,7 @@ class ChatCompletions:
                     },
                 ) as response:
                     if response.status_code != 200:
-                        transient = response.status_code == 429 or response.status_code >= 500
-                        raise ParseFailure(
-                            f"模型接口返回 HTTP {response.status_code}", transient=transient
-                        )
+                        raise provider_failure(response, url.hostname)
                     chunks = bytearray()
                     for chunk in response.iter_bytes():
                         chunks.extend(chunk)

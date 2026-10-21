@@ -211,6 +211,28 @@ def test_lease_recovery_and_bounded_retry(authenticated: TestClient) -> None:
     assert not run_once(client.app.state.engine, client.app.state.settings, Failing())
 
 
+def test_provider_backoff_uses_rate_limit_and_retry_after(authenticated: TestClient) -> None:
+    client = authenticated
+    job = create(client)
+
+    class Limited:
+        def parse(self, source: ParseInput) -> ModelDraft:
+            raise ParseFailure(
+                "当前模型访问量过大，请稍后重试",
+                transient=True,
+                rate_limited=True,
+                retry_after_seconds=120,
+            )
+
+    run_once(client.app.state.engine, client.app.state.settings, Limited())
+    with Session(client.app.state.engine) as db:
+        row = db.get(ImportJob, job["id"])
+        assert row.status == "queued"
+        assert row.attempts == 1
+        assert 119_000 <= row.next_run_at - now_ms() <= 121_000
+    assert not run_once(client.app.state.engine, client.app.state.settings, Limited())
+
+
 def test_image_validation_dedup_private_access_and_delete(
     authenticated: TestClient, tmp_path
 ) -> None:
@@ -329,3 +351,33 @@ def test_provider_errors_never_expose_response(status: int, transient: bool) -> 
         provider.parse(ParseInput("", None, "", "", "Asia/Shanghai", 0))
     assert caught.value.transient == transient
     assert "secret" not in str(caught.value)
+
+
+@pytest.mark.parametrize(
+    "code,transient,message",
+    [
+        ("1305", True, "当前模型访问量过大"),
+        ("1302", True, "速率限制"),
+        ("1113", False, "欠费"),
+        ("1308", False, "额度"),
+        ("1311", False, "没有此模型的访问权限"),
+    ],
+)
+def test_bigmodel_429_business_codes_are_safe(code: str, transient: bool, message: str) -> None:
+    settings = Settings(llm_base_url="https://open.bigmodel.cn/api/paas/v4", llm_model="model")
+    provider = ChatCompletions(
+        settings,
+        httpx.MockTransport(
+            lambda _: httpx.Response(
+                429,
+                json={"error": {"code": code, "message": "private secret response"}},
+                headers={"Retry-After": "120"},
+            )
+        ),
+    )
+    with pytest.raises(ParseFailure) as caught:
+        provider.parse(ParseInput("", None, "", "", "Asia/Shanghai", 0))
+    assert caught.value.transient == transient
+    assert message in str(caught.value)
+    assert "secret" not in str(caught.value)
+    assert caught.value.retry_after_seconds == 120

@@ -4,6 +4,7 @@ import logging
 import signal
 import threading
 from pathlib import Path
+from secrets import randbelow
 from typing import Protocol
 from uuid import uuid4
 
@@ -101,7 +102,9 @@ def run_once(engine: Engine, settings: Settings, provider: Provider) -> bool:
             assert failure is not None
             job.error = str(failure)
             job.status = "queued" if failure.transient and job.attempts < 3 else "failed"
-            job.next_run_at = now_ms() + 10000 * job.attempts
+            delay = 60 * job.attempts + randbelow(16) if failure.rate_limited else 10 * job.attempts
+            delay = max(delay, failure.retry_after_seconds)
+            job.next_run_at = now_ms() + delay * 1000
         db.commit()
     return True
 
