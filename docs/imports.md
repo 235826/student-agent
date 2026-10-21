@@ -26,7 +26,7 @@ cd backend
 uv run python -m app.workers.imports
 ```
 
-Compose 的 api 和 worker 均读取可选的 `backend/.env`，数据库与图片目录覆盖为容器共享卷路径。修改模型配置后执行 `docker compose up -d --force-recreate api worker`。本阶段没有真实服务商配置时，只验证本地 HTTP 协议与失败分支，不能据此判断真实模型识别准确率。
+Compose 的 api 和 worker 均读取可选的 `backend/.env`，数据库与图片目录覆盖为容器共享卷路径。仅修改模型配置后执行 `docker compose up -d --force-recreate api worker`。修改后端代码后需执行 `docker compose up -d --build --force-recreate api worker`，将新代码构建进镜像；仅重建容器仍会使用旧镜像。相同原文再次提交会返回已有草稿，更新服务后应在原导入记录中点击“重新解析”以获得新的识别结果。本阶段没有真实服务商配置时，只验证本地 HTTP 协议与失败分支，不能据此判断真实模型识别准确率。
 
 ## 草稿校对与边界
 
