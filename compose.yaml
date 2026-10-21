@@ -11,7 +11,12 @@ services:
     build:
       context: .
       dockerfile: deploy/Dockerfile.api
+    env_file:
+      - path: ./backend/.env
+        required: false
     environment:
+      SA_DATABASE_URL: sqlite:////app/data/student_agent.db
+      SA_SOURCE_DIR: /app/data/sources
       SA_ALLOWED_ORIGINS: '["http://localhost:8080","http://127.0.0.1:8080"]'
       SA_COOKIE_SECURE: 'false'
     volumes:
@@ -24,6 +29,23 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
+  worker:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.api
+    command: [".venv/bin/python", "-m", "app.workers.imports"]
+    env_file:
+      - path: ./backend/.env
+        required: false
+    environment:
+      SA_DATABASE_URL: sqlite:////app/data/student_agent.db
+      SA_SOURCE_DIR: /app/data/sources
+    volumes:
+      - student_data:/app/data
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
     restart: unless-stopped
   gateway:
     build:

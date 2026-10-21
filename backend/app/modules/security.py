@@ -24,7 +24,8 @@ def digest(token: str) -> str:
 
 
 class LoginLimiter:
-    def __init__(self) -> None:
+    def __init__(self, limit: int = 10) -> None:
+        self.limit = limit
         self.attempts: dict[str, deque[float]] = defaultdict(deque)
         self.lock = Lock()
 
@@ -38,7 +39,7 @@ class LoginLimiter:
                 if not times:
                     del self.attempts[address]
             times = self.attempts[key]
-            if len(times) >= 10:
+            if len(times) >= self.limit:
                 raise HTTPException(429, "尝试次数过多，请五分钟后重试")
             times.append(now)
 

@@ -11,6 +11,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError, OperationalError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from app.api.imports import router as imports_router
 from app.api.planning_foundation import router as planning_router
 from app.api.routes import router
 from app.api.scheduling import router as scheduling_router
@@ -111,13 +112,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         try:
             with app.state.engine.connect() as connection:
                 version = connection.scalar(text("SELECT version_num FROM alembic_version"))
-                if version != "0003":
+                if version != "0004":
                     raise HTTPException(503, "数据库版本不匹配，请执行迁移")
         except OperationalError:
             raise HTTPException(503, "数据库尚未就绪，请执行迁移") from None
         return Health(status="ready")
 
     app.include_router(router)
+    app.include_router(imports_router)
     app.include_router(planning_router)
     app.include_router(scheduling_router)
     return app

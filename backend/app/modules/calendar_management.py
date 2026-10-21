@@ -105,7 +105,9 @@ def series_view(db: Session, series: EventSeries) -> SeriesOut:
     )
 
 
-def create_series(db: Session, user: User, body: SeriesInput) -> EventSeries:
+def create_series(
+    db: Session, user: User, body: SeriesInput, *, commit: bool = True
+) -> EventSeries:
     payload = {
         "operation": "series.create",
         **body.model_dump(mode="json", exclude={"idempotency_key"}),
@@ -161,5 +163,8 @@ def create_series(db: Session, user: User, body: SeriesInput) -> EventSeries:
             )
         )
     remember(db, user, body.idempotency_key, payload, series.id)
-    record_change(db, user, "series.create", series)
+    if commit:
+        record_change(db, user, "series.create", series)
+    else:
+        db.flush()
     return series

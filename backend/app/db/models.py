@@ -207,3 +207,46 @@ class Plan(Owned, Base):
     blocks: Mapped[list[dict[str, Any]]] = mapped_column(JSON)
     reports: Mapped[list[dict[str, Any]]] = mapped_column(JSON)
     differences: Mapped[dict[str, Any]] = mapped_column(JSON)
+
+
+class ImportSource(Owned, Base):
+    __tablename__ = "import_sources"
+    __table_args__ = (UniqueConstraint("workspace_id", "digest"),)
+    kind: Mapped[str]
+    digest: Mapped[str]
+    text: Mapped[str] = mapped_column(default="")
+    file_name: Mapped[str] = mapped_column(default="")
+    media_type: Mapped[str] = mapped_column(default="")
+    deleted_at: Mapped[int | None] = mapped_column(BigInteger)
+
+
+class ImportJob(Owned, Base):
+    __tablename__ = "import_jobs"
+    source_id: Mapped[str] = mapped_column(ForeignKey("import_sources.id"), unique=True)
+    status: Mapped[str] = mapped_column(default="queued", index=True)
+    attempts: Mapped[int] = mapped_column(default=0)
+    next_run_at: Mapped[int] = mapped_column(BigInteger, default=0)
+    lease_until: Mapped[int] = mapped_column(BigInteger, default=0)
+    lease_token: Mapped[str] = mapped_column(default="")
+    context: Mapped[str] = mapped_column(default="")
+    timezone: Mapped[str]
+    reference_at: Mapped[int] = mapped_column(BigInteger)
+    revision: Mapped[int] = mapped_column(default=1)
+    candidates: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    warnings: Mapped[list[str]] = mapped_column(JSON, default=list)
+    error: Mapped[str] = mapped_column(default="")
+    published_records: Mapped[list[dict[str, str]]] = mapped_column(JSON, default=list)
+    published_revision: Mapped[int | None]
+
+
+class ImportLink(Owned, Base):
+    __tablename__ = "import_links"
+    job_id: Mapped[str] = mapped_column(ForeignKey("import_jobs.id"))
+    object_kind: Mapped[str]
+    object_id: Mapped[str] = mapped_column(index=True)
+
+
+class WorkerHeartbeat(Base):
+    __tablename__ = "worker_heartbeats"
+    name: Mapped[str] = mapped_column(primary_key=True)
+    heartbeat_at: Mapped[int] = mapped_column(BigInteger)
