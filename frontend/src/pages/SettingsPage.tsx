@@ -1,4 +1,5 @@
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
+import { useEffect } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { App as AntApp, Button, Card, Form, Input, Select } from "antd";
 import { api, type Profile, type ProfileInput } from "../api";
@@ -13,7 +14,14 @@ export default function SettingsPage({
   loggingOut: boolean;
 }) {
   const client = useQueryClient();
+  const location = useLocation();
   const { message } = AntApp.useApp();
+  useEffect(() => {
+    if (!location.hash) return;
+    document
+      .getElementById(location.hash.slice(1))
+      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [location.hash]);
   const [form] = Form.useForm();
   const save = useMutation({
     mutationFn: (body: ProfileInput) => api<Profile>("/profile", "PUT", body),
@@ -41,7 +49,7 @@ export default function SettingsPage({
           退出账号
         </Button>
       </Card>
-      <Card className="settings">
+      <Card className="settings" id="availability">
         <Form
           form={form}
           layout="vertical"

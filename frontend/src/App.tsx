@@ -7,6 +7,7 @@ import {
   Link,
   useSearchParams,
   useLocation,
+  useParams,
 } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Alert, Button, Spin, Result } from "antd";
@@ -21,13 +22,45 @@ import EventsPage from "./pages/EventsPage";
 import CompatibilityPage from "./pages/CompatibilityPage";
 const errorText = (e: unknown) =>
   e instanceof Error ? e.message : "操作失败，请重试";
-function ImportEntry({ profile }: { profile: Profile }) {
+function LegacyImports() {
   const [params] = useSearchParams();
+  const { search } = useLocation();
   const job = params.get("job");
-  return job ? (
-    <Navigate replace to={`/imports/${encodeURIComponent(job)}`} />
-  ) : (
-    <ImportsPage profile={profile} />
+  return (
+    <Navigate
+      replace
+      to={
+        job
+          ? `/inbox/imports/${encodeURIComponent(job)}`
+          : `/inbox/imports${search}`
+      }
+    />
+  );
+}
+function LegacyPath({ to }: { to: string }) {
+  const { search } = useLocation();
+  return <Navigate replace to={`${to}${search}`} />;
+}
+function HierarchyRoute({
+  kind,
+  profile,
+}: {
+  kind: "course" | "series";
+  profile: Profile;
+}) {
+  const { id } = useParams();
+  return (
+    <HierarchyPage key={`${kind}:${id}`} kind={kind} profile={profile} />
+  );
+}
+function LegacyDetail({ prefix }: { prefix: string }) {
+  const { id } = useParams();
+  const { search } = useLocation();
+  return (
+    <Navigate
+      replace
+      to={`${prefix}/${encodeURIComponent(id ?? "")}${search}`}
+    />
   );
 }
 export default function App() {
@@ -99,27 +132,28 @@ export default function App() {
     );
   }
   const profile = me.data.user;
+  const nav = [
+    ["/", "今日"],
+    ["/inbox", "收件箱"],
+    ["/tasks", "任务"],
+    ["/calendar", "日历与课程"],
+    ["/plans", "学习计划"],
+  ];
   return (
     <div className="shell">
       <aside>
         <div className="brand">STUDENT AGENT</div>
         <div className="brand-sub">你的学习安排</div>
         <nav>
-          {[
-            ["/", "今日"],
-            ["/inbox", "待确认"],
-            ["/tasks", "任务"],
-            ["/calendar", "日历与课程"],
-            ["/plans", "学习计划"],
-          ].map(([path, label]) => (
+          {nav.map(([path, label]) => (
             <NavLink
               end={path === "/"}
               to={path}
               key={path}
               className={({ isActive }) =>
                 isActive ||
-                (path === "/calendar" &&
-                  /^\/(courses|series|events)\//.test(pathname))
+                (path === "/calendar" && pathname.startsWith("/calendar")) ||
+                (path === "/inbox" && pathname.startsWith("/inbox"))
                   ? "active"
                   : ""
               }
@@ -129,9 +163,22 @@ export default function App() {
           ))}
         </nav>
         <div className="sidebar-bottom">
-          <Link to="/settings">设置</Link>
-          <Link to="/imports">导入整理</Link>
-          <Link to="/settings/rules">并行规则</Link>
+          <NavLink
+            to="/settings"
+            className={() =>
+              pathname.startsWith("/settings") ? "active" : ""
+            }
+          >
+            设置
+          </NavLink>
+          <NavLink
+            to="/settings/rules"
+            className={() =>
+              pathname.startsWith("/settings/rules") ? "active" : ""
+            }
+          >
+            并行规则
+          </NavLink>
         </div>
         <div className="account">
           <span>{profile.username}</span>
@@ -150,40 +197,80 @@ export default function App() {
         )}
         <Routes>
           <Route path="/" element={<TodayPage profile={profile} />} />
-          <Route path="/imports" element={<ImportEntry profile={profile} />} />
-          <Route path="/plans" element={<PlansPage profile={profile} />} />
-          <Route path="/tasks" element={<TasksPage profile={profile} />} />
-          <Route path="/events" element={<Navigate to="/calendar" replace />} />
-          <Route path="/calendar" element={<EventsPage profile={profile} />} />
           <Route path="/inbox" element={<TasksPage profile={profile} />} />
-          <Route path="/tasks/:id" element={<TasksPage profile={profile} />} />
-          <Route path="/plans/:id" element={<PlansPage profile={profile} />} />
           <Route
-            path="/imports/:id"
-            element={<ImportEntry profile={profile} />}
+            path="/inbox/imports"
+            element={<ImportsPage profile={profile} />}
           />
           <Route
-            path="/events/:id"
+            path="/inbox/imports/:id"
+            element={<ImportsPage profile={profile} />}
+          />
+          <Route path="/imports" element={<LegacyImports />} />
+          <Route
+            path="/imports/:id"
+            element={<LegacyDetail prefix="/inbox/imports" />}
+          />
+          <Route path="/plans" element={<PlansPage profile={profile} />} />
+          <Route path="/plans/new" element={<PlansPage profile={profile} />} />
+          <Route path="/plans/:id" element={<PlansPage profile={profile} />} />
+          <Route path="/tasks" element={<TasksPage profile={profile} />} />
+          <Route path="/tasks/new" element={<TasksPage profile={profile} />} />
+          <Route path="/tasks/:id" element={<TasksPage profile={profile} />} />
+          <Route path="/calendar" element={<EventsPage profile={profile} />} />
+          <Route
+            path="/calendar/events/new"
             element={<EventsPage profile={profile} />}
           />
           <Route
+            path="/calendar/events/:id"
+            element={<EventsPage profile={profile} />}
+          />
+          <Route
+            path="/calendar/courses/:id"
+            element={<HierarchyRoute kind="course" profile={profile} />}
+          />
+          <Route
+            path="/calendar/series/new"
+            element={<EventsPage profile={profile} />}
+          />
+          <Route
+            path="/calendar/series/:id"
+            element={<HierarchyRoute kind="series" profile={profile} />}
+          />
+          <Route path="/events" element={<LegacyPath to="/calendar" />} />
+          <Route
+            path="/events/:id"
+            element={<LegacyDetail prefix="/calendar/events" />}
+          />
+          <Route
             path="/courses/:id"
-            element={<HierarchyPage kind="course" profile={profile} />}
+            element={<LegacyDetail prefix="/calendar/courses" />}
           />
           <Route
             path="/series/:id"
-            element={<HierarchyPage kind="series" profile={profile} />}
-          />
-          <Route
-            path="/compatibility"
-            element={<Navigate to="/settings/rules" replace />}
+            element={<LegacyDetail prefix="/calendar/series" />}
           />
           <Route
             path="/settings/rules"
             element={<CompatibilityPage profile={profile} />}
           />
           <Route
+            path="/compatibility"
+            element={<Navigate to="/settings/rules" replace />}
+          />
+          <Route
             path="/settings"
+            element={
+              <SettingsPage
+                profile={profile}
+                onLogout={() => logout.mutate()}
+                loggingOut={logout.isPending}
+              />
+            }
+          />
+          <Route
+            path="/settings/schedule"
             element={
               <SettingsPage
                 profile={profile}

@@ -1,5 +1,5 @@
-import { Link, useParams, useNavigate } from "react-router-dom";
-import { useRef } from "react";
+import { Link, useLocation, useParams, useNavigate } from "react-router-dom";
+import { useEffect, useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Alert,
@@ -25,12 +25,14 @@ import { DateTime } from "luxon";
 import { api } from "../api";
 import type { Plan, Profile, Event } from "../api";
 import { displayTime, toInstant } from "../time";
+import { withFrom } from "../navigation";
 
 export default function PlansPage({ profile }: { profile: Profile }) {
   const client = useQueryClient();
   const { message, modal } = App.useApp();
   const [form] = Form.useForm();
   const { id: selected } = useParams();
+  const location = useLocation();
   const navigate = useNavigate();
   const setSelected = (id: string) => navigate(`/plans/${id}`);
   const request = useRef<{ payload: string; key: string } | null>(null);
@@ -74,6 +76,12 @@ export default function PlansPage({ profile }: { profile: Profile }) {
   const missing = active?.reports.some(
     (r) => r.unscheduled_minutes === null || r.unscheduled_minutes > 0,
   );
+  useEffect(() => {
+    if (location.hash !== "#reports" || !active) return;
+    document
+      .getElementById("reports")
+      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [active, location.hash]);
   return (
     <>
       <header>
@@ -84,6 +92,12 @@ export default function PlansPage({ profile }: { profile: Profile }) {
             先预览，再确认采用。当前时区：{profile.timezone}
           </p>
         </div>
+        {selected && (
+          <Space wrap>
+            <Link to="/plans">返回计划列表</Link>
+            <Link to="/plans/new">生成新草稿</Link>
+          </Space>
+        )}
       </header>
       <Alert
         type="info"
@@ -92,7 +106,12 @@ export default function PlansPage({ profile }: { profile: Profile }) {
       {!profile.available_windows?.length && (
         <Alert
           type="warning"
-          message="尚未设置可用时间，请先到设置页添加每周可用时段。"
+          message={
+            <span>
+              尚未设置可用时间，请先到设置页添加每周可用时段。
+              <Link to="/settings/schedule#availability"> 去设置</Link>
+            </span>
+          }
         />
       )}
       {!selected && (
@@ -277,7 +296,7 @@ export default function PlansPage({ profile }: { profile: Profile }) {
               <Alert
                 type="warning"
                 message="任务、课表、规则或当前计划已变化，或草稿时间已过期；请重新生成，历史计划仍保留。"
-                action={<Link to="/plans">重新生成</Link>}
+                action={<Link to="/plans/new">重新生成</Link>}
               />
             )}
             {missing && (
@@ -315,6 +334,12 @@ export default function PlansPage({ profile }: { profile: Profile }) {
               >
                 确认采用
               </Button>
+            )}
+            {active.status === "adopted" && (
+              <Space wrap>
+                <Link to="/">查看今日安排</Link>
+                <Link to="/calendar">查看日历</Link>
+              </Space>
             )}
           </Card>
           <Card className="calendar">
@@ -354,7 +379,14 @@ export default function PlansPage({ profile }: { profile: Profile }) {
             {active.reports.map((r) => (
               <Card key={r.task_id}>
                 <h3>
-                  <Link to={`/tasks/${r.task_id}`}>{r.title}</Link>
+                  <Link
+                    to={withFrom(
+                      `/tasks/${r.task_id}`,
+                      `${location.pathname}#reports`,
+                    )}
+                  >
+                    {r.title}
+                  </Link>
                 </h3>
                 <p>
                   已排 {r.scheduled_minutes} 分钟 ·{" "}

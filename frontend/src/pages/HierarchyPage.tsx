@@ -1,4 +1,10 @@
-import { Link, useNavigate, useParams } from "react-router-dom";
+import {
+  Link,
+  useLocation,
+  useNavigate,
+  useParams,
+  useSearchParams,
+} from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Alert,
@@ -22,6 +28,7 @@ import {
 } from "../api";
 import { displayTime } from "../time";
 import SourceButton from "../components/SourceButton";
+import { backTarget, withFrom } from "../navigation";
 
 type Write = { path: string; method: string; body: unknown };
 export default function HierarchyPage({
@@ -32,6 +39,8 @@ export default function HierarchyPage({
   kind: "course" | "series";
 }) {
   const { id } = useParams();
+  const location = useLocation();
+  const [params] = useSearchParams();
   const navigate = useNavigate();
   const client = useQueryClient();
   const { modal, message } = App.useApp();
@@ -52,6 +61,15 @@ export default function HierarchyPage({
     (c) => c.id === (kind === "course" ? id : currentSeries?.course_id),
   );
   const instances = events.data?.filter((e) => e.series_id === id) ?? [];
+  const here = `${location.pathname}${location.search}`;
+  const back = backTarget(params.get("from"), {
+    to: "/calendar",
+    label: "返回日历",
+  });
+  const courseSeries = series.data?.filter((s) => s.course_id === id) ?? [];
+  const courseEvents =
+    events.data?.filter((e) => e.course_id === id && !e.series_id) ?? [];
+  const blocked = courseSeries.length > 0 || courseEvents.length > 0;
   const refresh = () => {
     for (const key of ["courses", "series", "events", "plans"])
       void client.invalidateQueries({ queryKey: [key] });
@@ -73,7 +91,7 @@ export default function HierarchyPage({
       ),
     onSuccess: () => {
       refresh();
-      navigate("/calendar");
+      navigate(back.to);
     },
     onError: (e) => void message.error(e.message),
   });
@@ -91,7 +109,13 @@ export default function HierarchyPage({
   if (courses.isPending || series.isPending || events.isPending)
     return <Spin />;
   if (!course || (kind === "series" && !currentSeries))
-    return <Empty description="记录不存在或已删除" />;
+    return (
+      <Card>
+        <Empty description="记录不存在或已删除">
+          <Link to={back.to}>{back.label}</Link>
+        </Empty>
+      </Card>
+    );
   return (
     <>
       <header>
@@ -100,9 +124,17 @@ export default function HierarchyPage({
             {course.name} · {kind === "course" ? "课程详情" : "系列详情"}
           </h1>
           <Space wrap>
-            <Link to="/calendar">日历与课程</Link>
+            <Link to={back.to}>{back.label}</Link>
             {kind === "series" && (
-              <Link to={`/courses/${course.id}`}>所属课程</Link>
+              <Link
+                to={
+                  back.to.startsWith(`/calendar/courses/${course.id}`)
+                    ? back.to
+                    : withFrom(`/calendar/courses/${course.id}`, back.to)
+                }
+              >
+                所属课程
+              </Link>
             )}
             <Link to="/settings/rules?tab=courses">查看相关并行规则</Link>
           </Space>
@@ -158,30 +190,58 @@ export default function HierarchyPage({
             <p>仅应用于没有单次覆盖的课程实例。</p>
           </Card>
           <Card title="重复系列" className="toolbar">
-            {series.data
-              ?.filter((s) => s.course_id === id)
-              .map((s) => (
-                <p key={s.id}>
-                  <Link to={`/series/${s.id}`}>
-                    {s.dtstart_local.slice(0, 10)} 起 · {s.event_ids.length}{" "}
-                    次课程
-                  </Link>
-                </p>
-              ))}
-            {!series.data?.some((s) => s.course_id === id) && (
+            <Button
+              className="toolbar"
+              onClick={() =>
+                navigate(
+                  withFrom(`/calendar/series/new?course=${id}`, here),
+                )
+              }
+            >
+              建立重复系列
+            </Button>
+            {courseSeries.map((s) => (
+              <p key={s.id}>
+                <Link
+                  to={withFrom(
+                    `/calendar/series/${s.id}`,
+                    here,
+                  )}
+                >
+                  {s.dtstart_local.slice(0, 10)} 起 · {s.event_ids.length} 次课程
+                </Link>
+              </p>
+            ))}
+            {!courseSeries.length && (
               <Empty description="尚未建立重复课表" />
             )}
           </Card>
           <Card title="独立课程事件">
-            {events.data
-              ?.filter((e) => e.course_id === id && !e.series_id)
-              .map((e) => (
-                <p key={e.id}>
-                  <Link to={`/events/${e.id}`}>
-                    {e.title} · {displayTime(e.start_at, profile.timezone)}
-                  </Link>
-                </p>
-              ))}
+            <Button
+              className="toolbar"
+              onClick={() =>
+                navigate(
+                  withFrom(
+                    `/calendar/events/new?course=${id}&date=${DateTime.now()
+                      .setZone(profile.timezone)
+                      .toFormat("yyyy-MM-dd")}`,
+                    here,
+                  ),
+                )
+              }
+            >
+              添加课程事件
+            </Button>
+            {courseEvents.map((e) => (
+              <p key={e.id}>
+                <Link
+                  to={withFrom(`/calendar/events/${e.id}`, here)}
+                >
+                  {e.title} · {displayTime(e.start_at, profile.timezone)}
+                </Link>
+              </p>
+            ))}
+            {!courseEvents.length && <p className="muted">暂无独立课程事件。</p>}
           </Card>
         </>
       ) : (
@@ -279,7 +339,9 @@ export default function HierarchyPage({
             <div className="instance-list">
               {instances.map((e, i) => (
                 <p key={e.id}>
-                  <Link to={`/events/${e.id}`}>
+                  <Link
+                    to={withFrom(`/calendar/events/${e.id}`, here)}
+                  >
                     第 {i + 1} 次 · {displayTime(e.start_at, profile.timezone)}{" "}
                     · {e.title}
                   </Link>{" "}
@@ -290,9 +352,41 @@ export default function HierarchyPage({
           </Card>
         </>
       )}
+      {kind === "course" && blocked && (
+        <Alert
+          className="toolbar"
+          type="info"
+          message={`删除课程前需要先清理 ${courseSeries.length} 个系列和 ${courseEvents.length} 个独立事件。`}
+          description={
+            <Space wrap>
+              {courseSeries[0] && (
+                <Link
+                  to={withFrom(
+                    `/calendar/series/${courseSeries[0].id}`,
+                    here,
+                  )}
+                >
+                  查看重复系列
+                </Link>
+              )}
+              {courseEvents[0] && (
+                <Link
+                  to={withFrom(
+                    `/calendar/events/${courseEvents[0].id}`,
+                    here,
+                  )}
+                >
+                  查看独立事件
+                </Link>
+              )}
+            </Space>
+          }
+        />
+      )}
       <Button
         className="toolbar"
         danger
+        disabled={kind === "course" && blocked}
         loading={remove.isPending}
         onClick={() =>
           modal.confirm({

@@ -5,9 +5,10 @@ import {
   useParams,
   useSearchParams,
   useNavigate,
+  useLocation,
 } from "react-router-dom";
 import SourceButton from "../components/SourceButton";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Alert,
@@ -35,6 +36,7 @@ import type {
   Series,
 } from "../api";
 import { displayTime, toInstant, toLocal } from "../time";
+import { backTarget, withFrom } from "../navigation";
 const policyOptions = [
   { value: "inherit", label: "沿用课程设置 / 默认禁止" },
   { value: "none", label: "本次禁止并行" },
@@ -44,8 +46,11 @@ const errorText = (e: unknown) => (e instanceof Error ? e.message : "操作失�
 type Write = { path: string; method?: string; body?: unknown };
 export default function EventsPage({ profile }: { profile: Profile }) {
   const { id } = useParams();
+  const location = useLocation();
   const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
+  const isNewEvent = location.pathname === "/calendar/events/new";
+  const isNewSeries = location.pathname === "/calendar/series/new";
   const fallbackWeek = DateTime.now()
     .setZone(profile.timezone)
     .startOf("week")
@@ -57,6 +62,11 @@ export default function EventsPage({ profile }: { profile: Profile }) {
     DateTime.fromISO(weekParam, { zone: profile.timezone }).isValid
       ? weekParam
       : fallbackWeek;
+  const from = params.get("from");
+  const back = backTarget(from, {
+    to: weekParam ? `/calendar?week=${encodeURIComponent(week)}` : "/calendar",
+    label: "返回日历",
+  });
   const setWeek = (day: string) => {
     const next = new URLSearchParams(params);
     next.set("week", day);
@@ -65,23 +75,98 @@ export default function EventsPage({ profile }: { profile: Profile }) {
   const client = useQueryClient();
   const { message, modal } = App.useApp();
   const [editing, setEditing] = useState<Event | null | undefined>(
-    params.has("new") ? null : undefined,
+    isNewEvent || params.has("new") ? null : undefined,
   );
-  const [seriesOpen, setSeriesOpen] = useState(false);
+  const [seriesOpen, setSeriesOpen] = useState(isNewSeries);
   const [courseOpen, setCourseOpen] = useState(false);
+  const [courseTarget, setCourseTarget] = useState<"event" | "series" | null>(
+    null,
+  );
   const [form] = Form.useForm();
   const [seriesForm] = Form.useForm();
   const [courseForm] = Form.useForm();
   const seriesKey = useRef("");
   const kind = Form.useWatch("kind", form);
+  const openNewEvent = (start?: string, end?: string, courseId?: string) => {
+    form.resetFields();
+    form.setFieldsValue({
+      location: "",
+      kind: courseId ? "course" : "other",
+      note: "",
+      details: "",
+      note_scope: "single",
+      details_scope: "single",
+      start_at: start,
+      end_at: end,
+      course_id: courseId,
+    });
+    setEditing(null);
+  };
+  const openNewSeries = (courseId?: string) => {
+    seriesForm.resetFields();
+    seriesForm.setFieldsValue({
+      course_id: courseId,
+      timezone: profile.timezone,
+      weekdays: [0],
+      start_date: week,
+      end_date: DateTime.fromISO(week)
+        .setZone(profile.timezone)
+        .plus({ days: 7 })
+        .toISODate(),
+      start_time: "09:00",
+      end_time: "10:00",
+      note: "",
+      details: "",
+    });
+    seriesKey.current = crypto.randomUUID();
+    setSeriesOpen(true);
+  };
   const closeEditor = () => {
     setEditing(undefined);
-    if (params.has("new")) {
+    if (isNewEvent) {
+      navigate(from ?? `/calendar?week=${encodeURIComponent(week)}`, {
+        replace: true,
+      });
+    } else if (params.has("new")) {
       const next = new URLSearchParams(params);
       next.delete("new");
       setParams(next, { replace: true });
     }
   };
+  const closeSeries = () => {
+    setSeriesOpen(false);
+    if (isNewSeries) {
+      navigate(from ?? `/calendar?week=${encodeURIComponent(week)}`, {
+        replace: true,
+      });
+    }
+  };
+  const openCourse = (target: "event" | "series" | null) => {
+    courseForm.resetFields();
+    setCourseTarget(target);
+    setCourseOpen(true);
+  };
+  useEffect(() => {
+    if (!isNewEvent && !isNewSeries) return;
+    if (isNewEvent) {
+      const raw = params.get("date");
+      const start = raw
+        ? raw.length === 10
+          ? `${raw}T09:00`
+          : raw
+        : `${week}T09:00`;
+      const end = raw
+        ? DateTime.fromISO(start, { zone: profile.timezone })
+            .plus({ minutes: 60 })
+            .toFormat("yyyy-MM-dd'T'HH:mm")
+        : `${week}T10:00`;
+      openNewEvent(start, end, params.get("course") ?? undefined);
+    } else {
+      openNewSeries(params.get("course") ?? undefined);
+    }
+    // The create route is resolved once when the page is opened.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const events = useQuery({
     queryKey: ["events"],
     queryFn: () => api<Event[]>("/events"),
@@ -107,6 +192,20 @@ export default function EventsPage({ profile }: { profile: Profile }) {
     },
     onError: (e) => void message.error(errorText(e)),
   });
+  const createCourse = useMutation({
+    mutationFn: (values: { name: string; semester?: string }) =>
+      api<Course>("/courses", "POST", values),
+    onSuccess: (course) => {
+      void client.invalidateQueries({ queryKey: ["courses"] });
+      if (courseTarget === "event") form.setFieldValue("course_id", course.id);
+      if (courseTarget === "series")
+        seriesForm.setFieldValue("course_id", course.id);
+      setCourseOpen(false);
+      setCourseTarget(null);
+      void message.success("课程已创建");
+    },
+    onError: (e) => void message.error(errorText(e)),
+  });
   const remove = useMutation({
     mutationFn: (eventId: string) =>
       api(`/events/${eventId}`, "DELETE", { confirmed: true }),
@@ -114,9 +213,7 @@ export default function EventsPage({ profile }: { profile: Profile }) {
       void client.invalidateQueries({ queryKey: ["events"] });
       void client.invalidateQueries({ queryKey: ["series"] });
       void client.invalidateQueries({ queryKey: ["plans"] });
-      navigate(
-        weekParam ? `/calendar?week=${encodeURIComponent(week)}` : "/calendar",
-      );
+      navigate(back.to);
     },
     onError: (e) => void message.error(e.message),
   });
@@ -211,32 +308,17 @@ export default function EventsPage({ profile }: { profile: Profile }) {
         </div>
         {!id && (
           <Space wrap>
+            <Button onClick={() => openCourse(null)}>添加课程</Button>
+            <Button onClick={() => openNewSeries()}>建立重复课表</Button>
             <Button
-              onClick={() => {
-                courseForm.resetFields();
-                setCourseOpen(true);
-              }}
+              type="primary"
+              onClick={() =>
+                openNewEvent(
+                  `${week}T09:00`,
+                  `${week}T10:00`,
+                )
+              }
             >
-              添加课程
-            </Button>
-            <Button
-              onClick={() => {
-                seriesForm.resetFields();
-                seriesForm.setFieldsValue({
-                  timezone: profile.timezone,
-                  weekdays: [0],
-                  start_time: "09:00",
-                  end_time: "10:00",
-                  note: "",
-                  details: "",
-                });
-                seriesKey.current = crypto.randomUUID();
-                setSeriesOpen(true);
-              }}
-            >
-              建立重复课表
-            </Button>
-            <Button type="primary" onClick={() => edit(null)}>
               添加事件
             </Button>
           </Space>
@@ -257,12 +339,24 @@ export default function EventsPage({ profile }: { profile: Profile }) {
               ) : courses.error ? null : courses.data?.length ? (
                 courses.data.map((c) => (
                   <div key={c.id} className="toolbar">
-                    <Link to={`/courses/${c.id}`}>{c.name}</Link>
+                    <Link
+                      to={withFrom(
+                        `/calendar/courses/${c.id}`,
+                        `/calendar?week=${week}`,
+                      )}
+                    >
+                      {c.name}
+                    </Link>
                     {series.data
                       ?.filter((s) => s.course_id === c.id)
                       .map((s) => (
                         <p key={s.id}>
-                          <Link to={`/series/${s.id}`}>
+                          <Link
+                            to={withFrom(
+                              `/calendar/series/${s.id}`,
+                              `/calendar?week=${week}`,
+                            )}
+                          >
                             {s.dtstart_local.slice(0, 10)} 起 ·{" "}
                             {s.event_ids.length} 次
                           </Link>
@@ -280,6 +374,16 @@ export default function EventsPage({ profile }: { profile: Profile }) {
                   profile={profile}
                   week={week}
                   onWeekChange={setWeek}
+                  onSelect={(start, end) =>
+                    openNewEvent(
+                      DateTime.fromJSDate(start)
+                        .setZone(profile.timezone)
+                        .toFormat("yyyy-MM-dd'T'HH:mm"),
+                      DateTime.fromJSDate(end)
+                        .setZone(profile.timezone)
+                        .toFormat("yyyy-MM-dd'T'HH:mm"),
+                    )
+                  }
                 />
               )}
               <p className="muted">
@@ -291,15 +395,7 @@ export default function EventsPage({ profile }: { profile: Profile }) {
       )}
       {id && (
         <Space className="toolbar">
-          <Link
-            to={
-              weekParam
-                ? `/calendar?week=${encodeURIComponent(week)}`
-                : "/calendar"
-            }
-          >
-            返回日历
-          </Link>
+          <Link to={back.to}>{back.label}</Link>
           <Link to="/settings/rules?tab=courses">查看相关并行规则</Link>
         </Space>
       )}
@@ -318,8 +414,8 @@ export default function EventsPage({ profile }: { profile: Profile }) {
                   <Link
                     to={
                       weekParam
-                        ? `/events/${event.id}?week=${encodeURIComponent(week)}`
-                        : `/events/${event.id}`
+                        ? `/calendar/events/${event.id}?week=${encodeURIComponent(week)}`
+                        : `/calendar/events/${event.id}`
                     }
                   >
                     {event.title}
@@ -374,10 +470,36 @@ export default function EventsPage({ profile }: { profile: Profile }) {
               )}
               <Space wrap>
                 {event.course_id && (
-                  <Link to={`/courses/${event.course_id}`}>所属课程</Link>
+                  <Link
+                    to={
+                      back.to.startsWith(
+                        `/calendar/courses/${event.course_id}`,
+                      )
+                        ? back.to
+                        : withFrom(
+                            `/calendar/courses/${event.course_id}`,
+                            back.to,
+                          )
+                    }
+                  >
+                    所属课程
+                  </Link>
                 )}
                 {event.series_id && (
-                  <Link to={`/series/${event.series_id}`}>所属系列</Link>
+                  <Link
+                    to={
+                      back.to.startsWith(
+                        `/calendar/series/${event.series_id}`,
+                      )
+                        ? back.to
+                        : withFrom(
+                            `/calendar/series/${event.series_id}`,
+                            back.to,
+                          )
+                    }
+                  >
+                    所属系列
+                  </Link>
                 )}
                 <SourceButton objectId={event.id} />
                 {id && (
@@ -486,7 +608,7 @@ export default function EventsPage({ profile }: { profile: Profile }) {
             rules={[
               {
                 required: kind === "course",
-                message: "请选择课程，或先添加课程",
+                message: "请选择课程，或先新建课程",
               },
             ]}
           >
@@ -499,6 +621,15 @@ export default function EventsPage({ profile }: { profile: Profile }) {
               }))}
             />
           </Form.Item>
+          {!editing?.series_id && (
+            <Button
+              size="small"
+              className="toolbar"
+              onClick={() => openCourse("event")}
+            >
+              新建课程
+            </Button>
+          )}
           <Form.Item
             name="start_at"
             label={`开始时间（${profile.timezone}）`}
@@ -573,23 +704,19 @@ export default function EventsPage({ profile }: { profile: Profile }) {
         </Form>
       </Modal>
       <Modal
-        title="添加课程"
+        title="新建课程"
         open={courseOpen}
-        onCancel={() => setCourseOpen(false)}
+        onCancel={() => {
+          setCourseOpen(false);
+          setCourseTarget(null);
+        }}
         onOk={() => courseForm.submit()}
-        confirmLoading={write.isPending}
+        confirmLoading={createCourse.isPending}
       >
         <Form
           form={courseForm}
           layout="vertical"
-          onFinish={async (values) => {
-            try {
-              await write.mutateAsync({ path: "/courses", body: values });
-              setCourseOpen(false);
-            } catch {
-              /* mutation reports errors */
-            }
-          }}
+          onFinish={(values) => createCourse.mutate(values)}
         >
           <Form.Item
             name="name"
@@ -606,7 +733,7 @@ export default function EventsPage({ profile }: { profile: Profile }) {
       <Modal
         title="建立每周重复课表"
         open={seriesOpen}
-        onCancel={() => setSeriesOpen(false)}
+        onCancel={closeSeries}
         onOk={() => seriesForm.submit()}
         confirmLoading={write.isPending}
       >
@@ -621,7 +748,7 @@ export default function EventsPage({ profile }: { profile: Profile }) {
                 idempotency_key: seriesKey.current,
               };
               await write.mutateAsync({ path: "/event-series", body });
-              setSeriesOpen(false);
+              closeSeries();
             } catch {
               /* keep form and idempotency key for retry */
             }
@@ -639,6 +766,13 @@ export default function EventsPage({ profile }: { profile: Profile }) {
               }))}
             />
           </Form.Item>
+          <Button
+            size="small"
+            className="toolbar"
+            onClick={() => openCourse("series")}
+          >
+            新建课程
+          </Button>
           <div className="form-grid">
             <Form.Item
               name="start_date"

@@ -70,7 +70,7 @@ export default function ImportRecords({
             label: `${key}（${jobs.length} 批）`,
             children: jobs.map((job) => (
               <p key={job.id}>
-                <Link to={`/imports/${job.id}`}>
+                <Link to={`/inbox/imports/${job.id}`}>
                   {job.source.kind === "image"
                     ? "课表图片"
                     : job.source.text.slice(0, 60) || "文本材料"}{" "}

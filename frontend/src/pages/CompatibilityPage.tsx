@@ -169,9 +169,12 @@ export default function CompatibilityPage({ profile }: { profile: Profile }) {
           <h1>并行规则</h1>
           <p className="muted">决定哪些活动可以同时进行，每个判断都有依据。</p>
         </div>
-        <Button type="primary" onClick={() => open(null)}>
-          添加组合允许规则
-        </Button>
+        <Space wrap>
+          <Link to="/settings">返回设置</Link>
+          <Button type="primary" onClick={() => open(null)}>
+            添加组合允许规则
+          </Button>
+        </Space>
       </header>
       <Alert
         type="info"

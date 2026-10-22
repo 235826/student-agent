@@ -22,7 +22,7 @@ test("空标题草稿、正式任务校验与关系跳转", async ({ page }) => 
   await page.getByRole("button", { name: "保存草稿", exact: true }).click();
   await expect(page.getByRole("dialog")).not.toBeVisible();
   expect(await (await page.request.get("/api/v1/tasks")).json()).toEqual([]);
-  await page.getByRole("link", { name: "待确认", exact: true }).click();
+  await expect(page).toHaveURL(/\/inbox$/);
   await expect(
     page.getByRole("heading", { name: "未命名草稿", exact: true }),
   ).toBeVisible();
@@ -59,10 +59,10 @@ test("空标题草稿、正式任务校验与关系跳转", async ({ page }) => 
     .locator(".ant-alert")
     .getByRole("link", { name: "父任务", exact: true })
     .click();
-  await expect(page).toHaveURL(new RegExp(`/tasks/${parent.id}$`));
+  await expect(page).toHaveURL(new RegExp(`/tasks/${parent.id}(\\?|$)`));
   await page.reload();
   await page.getByRole("link", { name: childTitle, exact: true }).click();
-  await expect(page).toHaveURL(new RegExp(`/tasks/${child.id}$`));
+  await expect(page).toHaveURL(new RegExp(`/tasks/${child.id}(\\?|$)`));
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= innerWidth,
@@ -93,6 +93,13 @@ test("系列批量修改、事件删除与空课程清理", async ({ page }) => 
   });
   expect(response.status()).toBe(201);
   const series = await response.json();
+  await page.goto(`/calendar/courses/${course.id}`);
+  await expect(
+    page.getByText("删除课程前需要先清理", { exact: false }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "删除课程", exact: true }),
+  ).toBeDisabled();
   await page.goto(`/series/${series.id}`);
   await page.getByLabel("上课地点").fill("新教室");
   await page.getByRole("button", { name: "批量保存", exact: true }).click();
@@ -111,16 +118,15 @@ test("系列批量修改、事件删除与空课程清理", async ({ page }) => 
     .getByRole("dialog")
     .getByRole("button", { name: /^确\s*定$/ })
     .click();
-  await expect(page).toHaveURL(/\/calendar$/);
-  await page.getByRole("link", { name: "可清理课程", exact: true }).click();
+  await expect(page).toHaveURL(/\/calendar\/series\//);
+  await page.getByRole("link", { name: "所属课程", exact: true }).click();
   await page.getByRole("link", { name: /起 · 1 次课程/ }).click();
   await page.getByRole("button", { name: "删除系列", exact: true }).click();
   await page
     .getByRole("dialog")
     .getByRole("button", { name: /^确\s*定$/ })
     .click();
-  await expect(page).toHaveURL(/\/calendar$/);
-  await page.getByRole("link", { name: "可清理课程", exact: true }).click();
+  await expect(page).toHaveURL(/\/calendar\/courses\//);
   await page.getByRole("button", { name: "删除课程", exact: true }).click();
   await page
     .getByRole("dialog")
@@ -213,4 +219,35 @@ test("事件备注范围、课程重命名与周次 URL", async ({ page }) => {
   await page.goto(`/events/${first}?week=2030-01-07`);
   await expect(page.getByText("改名课程").first()).toBeVisible();
   await expect(page.getByText("系列备注；单次备注").first()).toBeVisible();
+});
+
+
+test("今日新建事件继承日期并在表单内联新建课程", async ({ page }) => {
+  await login(page);
+  await page.getByRole("link", { name: "新建事件", exact: true }).click();
+  await expect(page).toHaveURL(/\/calendar\/events\/new\?date=/);
+  const start = page.getByLabel("开始时间");
+  await expect(start).not.toHaveValue("");
+  await expect(page.getByLabel("结束时间")).not.toHaveValue("");
+  await page.getByRole("button", { name: "新建课程", exact: true }).click();
+  await page.getByLabel("课程名称").fill("内联课程");
+  await page
+    .getByRole("dialog")
+    .last()
+    .getByRole("button", { name: /^确\s*定$/ })
+    .click();
+  await expect(page.getByLabel("事件标题")).toBeVisible();
+  await expect(
+    page.getByText("内联课程", { exact: true }).first(),
+  ).toBeVisible();
+  await page.getByLabel("事件标题").fill("内联课程事件");
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: /^确\s*定$/ })
+    .click();
+  await expect(page).toHaveURL(/\/$/);
+  await page.getByRole("link", { name: "日历与课程" }).click();
+  await expect(
+    page.getByRole("heading", { name: "内联课程事件", exact: true }),
+  ).toBeVisible();
 });

@@ -8,7 +8,8 @@ async function login(page: Page) {
   await page
     .getByRole("button", { name: /^(创建账号并进入|登\s*录)$/ })
     .click();
-  await page.getByRole("link", { name: "导入整理" }).click();
+  await page.getByRole("link", { name: "收件箱", exact: true }).click();
+  await page.getByRole("link", { name: "提交新材料" }).click();
 }
 async function reviewAndPublish(page: Page, count: number) {
   const checks = page.getByRole("checkbox", {
@@ -35,7 +36,7 @@ test("文本解析、校对、确认、来源与重复导入", async ({ page }, 
   page.on("pageerror", (e) => errors.push(e.message));
   await login(page);
   const title = `导入报告-${info.project.name}`;
-  await expect(page).toHaveURL(/\/imports$/);
+  await expect(page).toHaveURL(/\/inbox\/imports$/);
   await page.getByLabel("导入原文").fill(title);
   await page.getByRole("checkbox", { name: /我同意/ }).check();
   await page.getByRole("button", { name: "保存并解析" }).click();
@@ -46,8 +47,8 @@ test("文本解析、校对、确认、来源与重复导入", async ({ page }, 
   );
   await page.getByLabel("条目 1 标题").fill(title + "-校对");
   await reviewAndPublish(page, 1);
-  await page.getByRole("link", { name: "导入整理", exact: true }).click();
-  await expect(page).toHaveURL(/\/imports$/);
+  await page.getByRole("link", { name: "返回导入记录", exact: true }).click();
+  await expect(page).toHaveURL(/\/inbox\/imports$/);
   await page.getByLabel("导入原文").fill(title);
   await page.getByRole("checkbox", { name: /我同意/ }).check();
   await page.getByRole("button", { name: "保存并解析" }).click();
@@ -66,6 +67,13 @@ test("文本解析、校对、确认、来源与重复导入", async ({ page }, 
   await expect(
     page.getByRole("dialog").getByText(title, { exact: true }),
   ).toBeVisible();
+  await page
+    .getByRole("dialog")
+    .getByRole("link", { name: "打开导入记录与字段依据" })
+    .click();
+  await expect(page).toHaveURL(/\/inbox\/imports\//);
+  await page.getByRole("link", { name: "返回任务列表" }).click();
+  await expect(page).toHaveURL(/\/tasks$/);
   expect(errors).toEqual([]);
 });
 
@@ -119,7 +127,7 @@ test("仅保存、批次深链和未校对定位", async ({ page }) => {
     page.getByRole("checkbox", { name: /我同意/ }),
   ).not.toBeChecked();
   await page.getByRole("button", { name: "仅保存材料", exact: true }).click();
-  await expect(page).toHaveURL(/\/imports\/[^/]+$/);
+  await expect(page).toHaveURL(/\/inbox\/imports\/[^/]+$/);
   const url = page.url();
   await page.reload();
   await expect(page).toHaveURL(url);

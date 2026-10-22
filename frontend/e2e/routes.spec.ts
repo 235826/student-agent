@@ -21,9 +21,9 @@ test("导航、旧路径与详情刷新", async ({ page }) => {
   await page.goto("/compatibility");
   await expect(page).toHaveURL(/\/settings\/rules$/);
   await page.goto("/events");
-  await expect(page).toHaveURL(/\/calendar$/);
+  await expect(page).toHaveURL(/\/calendar(\?|$)/);
   await page.goto("/imports?job=missing");
-  await expect(page).toHaveURL(/\/imports\/missing$/);
+  await expect(page).toHaveURL(/\/inbox\/imports\/missing$/);
   await expect(page.getByText("记录不存在")).toBeVisible();
   await page.goto("/not-a-page");
   await expect(page.getByText("页面不存在，请检查地址")).toBeVisible();

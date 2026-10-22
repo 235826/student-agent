@@ -4,6 +4,7 @@ import { Alert, Card, Empty, Space, Spin } from "antd";
 import { DateTime } from "luxon";
 import { api, type Plan, type Event, type Task, type Profile } from "../api";
 import { displayTime } from "../time";
+import { withFrom } from "../navigation";
 
 export default function TodayPage({ profile }: { profile: Profile }) {
   const plan = useQuery({
@@ -29,7 +30,7 @@ export default function TodayPage({ profile }: { profile: Profile }) {
         title: e.title,
         start: e.start_at,
         end: e.end_at,
-        to: `/events/${e.id}`,
+        to: `/calendar/events/${e.id}`,
         kind: "固定事件",
       })),
     ...(plan.data?.blocks ?? []).map((b) => ({
@@ -46,9 +47,7 @@ export default function TodayPage({ profile }: { profile: Profile }) {
         DateTime.fromISO(a.start) < tomorrow && DateTime.fromISO(a.end) > day,
     )
     .sort((a, b) => a.start.localeCompare(b.start));
-  const next = agenda.find(
-    (a) => a.kind === "计划任务" && DateTime.fromISO(a.end) > now,
-  );
+  const next = agenda.find((a) => DateTime.fromISO(a.end) > now);
   const due = (tasks.data ?? [])
     .filter(
       (t) =>
@@ -69,8 +68,14 @@ export default function TodayPage({ profile }: { profile: Profile }) {
           </p>
         </div>
         <Space wrap>
-          <Link to="/tasks?new=1">新建任务</Link>
-          <Link to="/calendar?new=1">新建事件</Link>
+          <Link to="/tasks/new?from=/">新建任务</Link>
+          <Link
+            to={`/calendar/events/new?date=${now.toFormat(
+              "yyyy-MM-dd",
+            )}&from=/`}
+          >
+            新建事件
+          </Link>
           <Link to="/calendar">查看本周</Link>
         </Space>
       </header>
@@ -79,21 +84,28 @@ export default function TodayPage({ profile }: { profile: Profile }) {
         <Alert
           type="warning"
           message="当前计划依据已变化；原计划保留，重新生成后需确认采用。"
-          action={<Link to="/plans">重新生成</Link>}
+          action={<Link to="/plans/new?from=/">重新生成</Link>}
         />
       )}
       {plan.isPending || events.isPending || tasks.isPending ? (
         <Spin />
       ) : (
         <>
-          <Card className="toolbar" title="下一项任务">
+          <Card className="toolbar" title="接下来">
             {next ? (
-              <Link to={next.to}>
-                {next.title} · {displayTime(next.start, profile.timezone)}
+              <Link to={withFrom(next.to, "/")}>
+                {next.title} · {next.kind} ·{" "}
+                {displayTime(next.start, profile.timezone)}
               </Link>
             ) : (
               <p>
-                今天没有待执行的计划任务。<Link to="/plans">生成计划草稿</Link>
+                今天没有更多安排。
+                {!plan.data && (
+                  <>
+                    {" "}
+                    <Link to="/plans/new?from=/">生成计划草稿</Link>
+                  </>
+                )}
               </p>
             )}
           </Card>
@@ -104,7 +116,7 @@ export default function TodayPage({ profile }: { profile: Profile }) {
                   <span>
                     {displayTime(a.start, profile.timezone)} · {a.kind} ·{" "}
                   </span>
-                  <Link to={a.to}>{a.title}</Link>
+                  <Link to={withFrom(a.to, "/")}>{a.title}</Link>
                 </p>
               ))
             ) : (
@@ -115,7 +127,7 @@ export default function TodayPage({ profile }: { profile: Profile }) {
             {due.length ? (
               due.map((t) => (
                 <p key={t.id}>
-                  <Link to={`/tasks/${t.id}`}>{t.title}</Link> ·{" "}
+                  <Link to={withFrom(`/tasks/${t.id}`, "/")}>{t.title}</Link> ·{" "}
                   {DateTime.fromISO(t.deadline_at!) < now
                     ? "已逾期"
                     : "即将到期"}{" "}

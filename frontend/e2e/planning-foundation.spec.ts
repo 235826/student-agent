@@ -31,7 +31,7 @@ test("草稿发布、重复课程单次变更与规则检查", async ({ page }, 
     .getByLabel("任务类型（可选）", { exact: true })
     .fill(`reading-${info.project.name}`);
   await page.getByRole("button", { name: "保存草稿" }).click();
-  await page.getByRole("link", { name: "待确认", exact: true }).click();
+  await expect(page).toHaveURL(/\/inbox$/);
   const draft = page
     .locator(".ant-card")
     .filter({ has: page.getByRole("heading", { name: title, exact: true }) });
@@ -53,7 +53,7 @@ test("草稿发布、重复课程单次变更与规则检查", async ({ page }, 
     .click();
   await expect(page.getByText(course, { exact: true })).toBeVisible();
   await page.getByRole("link", { name: course, exact: true }).click();
-  await expect(page).toHaveURL(/\/courses\//);
+  await expect(page).toHaveURL(/\/calendar\/courses\//);
   await choose(page, `${course}默认并行设置`, "接受已允许的组合");
   await page
     .getByRole("link", { name: "日历与课程", exact: true })
@@ -69,11 +69,11 @@ test("草稿发布、重复课程单次变更与规则检查", async ({ page }, 
     .click();
   await page.getByRole("link", { name: course, exact: true }).click();
   await page.getByRole("link", { name: /起 · 2 次课程/ }).click();
-  await expect(page).toHaveURL(/\/series\//);
+  await expect(page).toHaveURL(/\/calendar\/series\//);
   const seriesUrl = page.url();
   await expect(page.locator(".instance-list a")).toHaveCount(2);
   await page.locator(".instance-list a").first().click();
-  await expect(page).toHaveURL(/\/events\//);
+  await expect(page).toHaveURL(/\/calendar\/events\//);
   await page.reload();
   await page.getByRole("button", { name: "本次不参加", exact: true }).click();
   await page

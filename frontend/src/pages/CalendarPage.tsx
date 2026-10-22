@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import type { DateSelectArg } from "@fullcalendar/core";
 import { Link, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Alert, Card } from "antd";
@@ -9,15 +10,18 @@ import luxonPlugin from "@fullcalendar/luxon3";
 import zhLocale from "@fullcalendar/core/locales/zh-cn";
 import { DateTime } from "luxon";
 import { api, type Plan, type Event, type Profile } from "../api";
+import { withFrom } from "../navigation";
 const errorText = (e: unknown) => (e instanceof Error ? e.message : "操作失败");
 export default function CalendarPage({
   profile,
   week,
   onWeekChange,
+  onSelect,
 }: {
   profile: Profile;
   week?: string;
   onWeekChange?: (day: string) => void;
+  onSelect?: (start: Date, end: Date) => void;
 }) {
   const navigate = useNavigate();
   const calendar = useRef<FullCalendar | null>(null);
@@ -64,6 +68,10 @@ export default function CalendarPage({
             right: "timeGridWeek,listWeek",
           }}
           height="auto"
+          selectable={!!onSelect}
+          select={(info: DateSelectArg) =>
+            onSelect?.(info.start, info.end)
+          }
           datesSet={(info) => onWeekChange?.(info.startStr.slice(0, 10))}
           eventClick={(info) => navigate(info.event.extendedProps.to)}
           eventContent={(arg) => (
@@ -85,7 +93,9 @@ export default function CalendarPage({
           events={[
             ...(events.data?.map((e) => ({
               id: e.id,
-              to: week ? `/events/${e.id}?week=${week}` : `/events/${e.id}`,
+              to: week
+                ? `/calendar/events/${e.id}?week=${week}`
+                : `/calendar/events/${e.id}`,
               title: e.title + (e.is_skipped ? "（本次不参加）" : ""),
               start: e.start_at,
               end: e.end_at,
@@ -94,7 +104,10 @@ export default function CalendarPage({
             })) ?? []),
             ...(plan.data?.blocks.map((b) => ({
               id: `${b.task_id}-${b.start_at}`,
-              to: `/tasks/${b.task_id}`,
+              to: withFrom(
+                `/tasks/${b.task_id}`,
+                week ? `/calendar?week=${week}` : "/calendar",
+              ),
               title: b.title,
               start: b.start_at,
               end: b.end_at,

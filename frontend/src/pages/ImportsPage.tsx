@@ -1,6 +1,12 @@
 import ImportRecords, { importLabels } from "../components/ImportRecords";
-import { Link, useParams, useNavigate } from "react-router-dom";
+import {
+  Link,
+  useParams,
+  useNavigate,
+  useSearchParams,
+} from "react-router-dom";
 import { useRef, useState } from "react";
+import { backTarget } from "../navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Alert,
@@ -48,8 +54,13 @@ export default function ImportsPage({ profile }: { profile: Profile }) {
     DateTime.now().setZone(profile.timezone).toFormat("yyyy-MM-dd'T'HH:mm"),
   );
   const { id: jobId } = useParams();
+  const [params] = useSearchParams();
   const navigate = useNavigate();
-  const setJobId = (id: string) => navigate(`/imports/${id}`);
+  const setJobId = (id: string) => navigate(`/inbox/imports/${id}`);
+  const back = backTarget(params.get("from"), {
+    to: "/inbox/imports",
+    label: "返回导入记录",
+  });
   const [consent, setConsent] = useState(false);
   const capabilities = useQuery({
     queryKey: ["import-capabilities"],
@@ -213,7 +224,16 @@ export default function ImportsPage({ profile }: { profile: Profile }) {
             </Button>
             <Button
               type="primary"
-              disabled={!consent || (!text.trim() && !file)}
+              disabled={
+                !consent ||
+                (!text.trim() && !file) ||
+                capabilities.data?.configured === false
+              }
+              title={
+                capabilities.data?.configured === false
+                  ? "模型尚未配置，请先仅保存材料"
+                  : undefined
+              }
               loading={submit.isPending && submit.variables === true}
               onClick={() => submit.mutate(true)}
             >
@@ -232,8 +252,9 @@ export default function ImportsPage({ profile }: { profile: Profile }) {
       )}
       {jobId && (
         <Space className="toolbar">
-          <Link to="/imports">返回导入记录</Link>
-          <Link to="/inbox">返回待确认</Link>
+          {params.get("from") && <Link to={back.to}>{back.label}</Link>}
+          <Link to="/inbox/imports">返回导入记录</Link>
+          <Link to="/inbox">返回收件箱</Link>
         </Space>
       )}
       {jobId && job.isPending && <Spin />}

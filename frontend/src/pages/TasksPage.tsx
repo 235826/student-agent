@@ -1,12 +1,14 @@
 import ImportRecords from "../components/ImportRecords";
 import {
   Link,
+  useNavigate,
   useParams,
   useLocation,
   useSearchParams,
 } from "react-router-dom";
 import SourceButton from "../components/SourceButton";
 import { Fragment, useState } from "react";
+import { backTarget, currentLocation, withFrom } from "../navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Alert,
@@ -50,8 +52,10 @@ const errorText = (e: unknown) =>
 export default function TasksPage({ profile }: { profile: Profile }) {
   const { id } = useParams();
   const location = useLocation();
+  const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const inbox = location.pathname === "/inbox";
+  const isNew = location.pathname === "/tasks/new";
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("all");
   const [sort, setSort] = useState("status");
@@ -61,12 +65,18 @@ export default function TasksPage({ profile }: { profile: Profile }) {
     location.pathname === "/inbox" ? "drafts" : "tasks",
   );
   const [editor, setEditor] = useState<Editor | null>(
-    params.has("new") ? { kind: "task" } : null,
+    isNew || params.has("new") ? { kind: "task" } : null,
   );
   const [form] = Form.useForm();
   const closeEditor = () => {
     setEditor(null);
-    if (params.has("new")) {
+    if (isNew) {
+      const back = backTarget(params.get("from"), {
+        to: "/tasks",
+        label: "返回任务列表",
+      });
+      navigate(back.to, { replace: true });
+    } else if (params.has("new")) {
       const next = new URLSearchParams(params);
       next.delete("new");
       setParams(next, { replace: true });
@@ -97,7 +107,21 @@ export default function TasksPage({ profile }: { profile: Profile }) {
     onError: (e: unknown) => void message.error(errorText(e)),
   };
   const mutation = useMutation(writeOptions);
-  const draftSave = useMutation(writeOptions);
+  const draftSave = useMutation({
+    ...writeOptions,
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ["tasks"] });
+      void client.invalidateQueries({ queryKey: ["drafts"] });
+      void client.invalidateQueries({ queryKey: ["plans"] });
+      closeEditor();
+      if (!inbox) {
+        void message.success("草稿已保存到收件箱");
+        navigate("/inbox");
+      } else {
+        void message.success("草稿已保存");
+      }
+    },
+  });
   const trashWrite = useMutation(writeOptions);
   const publishWrite = useMutation(writeOptions);
   const draftDelete = useMutation(writeOptions);
@@ -232,13 +256,20 @@ export default function TasksPage({ profile }: { profile: Profile }) {
           ? b.priority - a.priority
           : a.status.localeCompare(b.status),
     );
+  const here = currentLocation(
+    location.pathname,
+    location.search,
+    location.hash,
+  );
+  const back = backTarget(params.get("from"), {
+    to: "/tasks",
+    label: "返回任务列表",
+  });
+  const taskLink = (relationId: string) =>
+    withFrom(`/tasks/${relationId}`, here);
   const relations = (ids: string[]) =>
     ids.map((relationId) => (
-      <Link
-        key={relationId}
-        to={`/tasks/${relationId}`}
-        style={{ marginRight: 8 }}
-      >
+      <Link key={relationId} to={taskLink(relationId)} style={{ marginRight: 8 }}>
         {titleOf(relationId)}
       </Link>
     ));
@@ -294,8 +325,8 @@ export default function TasksPage({ profile }: { profile: Profile }) {
       )}
       {id && (
         <Space className="toolbar">
-          <Link to="/tasks">返回任务列表</Link>
-          <Link to="/settings/rules">查看相关并行规则</Link>
+          <Link to={back.to}>{back.label}</Link>
+          <Link to="/settings/rules?tab=check">查看相关并行规则</Link>
         </Space>
       )}
       {!inbox && !id && (
@@ -326,8 +357,11 @@ export default function TasksPage({ profile }: { profile: Profile }) {
       )}
       {inbox ? (
         <>
-          <Card title="导入待确认" className="toolbar">
-            <Link to="/imports">提交新材料</Link>
+          <Card title="材料待处理" className="toolbar">
+            <Space wrap>
+              <Link to="/inbox/imports">提交新材料</Link>
+              <Link to="/inbox/imports">查看全部导入记录</Link>
+            </Space>
             <ImportRecords timezone={profile.timezone} pendingOnly />
           </Card>
           <h2>手动任务草稿</h2>
