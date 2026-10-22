@@ -186,7 +186,8 @@ header {
   aside {
     width: 100%;
     height: auto;
-    position: static;
+    position: relative;
+    z-index: 100;
     padding: 20px 16px 10px;
     border-right: 0;
     border-bottom: 1px solid #e4e8e1;
@@ -210,6 +211,8 @@ header {
     margin-top: 12px;
   }
   .content {
+    position: relative;
+    z-index: 0;
     padding: 26px 16px;
   }
   h1 {

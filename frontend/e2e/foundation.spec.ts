@@ -79,6 +79,27 @@ test("账号、任务、事件、设置和手机布局闭环", async ({ page }, 
     path: `test-results/${testInfo.project.name}-settings.png`,
     fullPage: true,
   });
+  if (testInfo.project.name === "mobile") {
+    for (const position of [0, 0.5, 1]) {
+      await page.evaluate((fraction) => {
+        window.scrollTo(0, document.documentElement.scrollHeight * fraction);
+      }, position);
+      await expect
+        .poll(() =>
+          page.locator("aside nav a").evaluateAll((links) =>
+            links.every((link) => {
+              const rect = link.getBoundingClientRect();
+              const target = document.elementFromPoint(
+                rect.x + rect.width / 2,
+                rect.y + rect.height / 2,
+              );
+              return target !== null && link.contains(target);
+            }),
+          ),
+        )
+        .toBe(true);
+    }
+  }
   await page.getByRole("link", { name: "任务", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: `${title}-已编辑` }),
