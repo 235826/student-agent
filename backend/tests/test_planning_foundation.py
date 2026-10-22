@@ -255,6 +255,7 @@ def test_recurring_skip_and_edit_are_single_instance(authenticated):
         ).json()["is_skipped"]
         is False
     )
+    exam_type = next(t for t in c.get("/api/v1/event-types").json() if t["system_key"] == "exam")
     exam = post(
         c,
         "/events",
@@ -262,7 +263,8 @@ def test_recurring_skip_and_edit_are_single_instance(authenticated):
             "title": "期末考试",
             "start_at": "2026-11-03T09:00:00+08:00",
             "end_at": "2026-11-03T10:00:00+08:00",
-            "kind": "exam",
+            "kind": "other",
+            "event_type_id": exam_type["id"],
             "course_id": course["id"],
         },
     )

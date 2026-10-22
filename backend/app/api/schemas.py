@@ -119,6 +119,26 @@ class TaskOut(TaskInput):
     updated_at: Timestamp
 
 
+Color = Annotated[str, Field(pattern=r"^#[0-9a-fA-F]{6}$")]
+
+
+class EventTypeInput(Schema):
+    name: Annotated[str, Field(min_length=1, max_length=100)]
+    color: Color = "#8c8c8c"
+
+
+class EventTypeRef(Schema):
+    id: str
+    name: str
+    color: str
+    system_key: str | None = None
+
+
+class EventTypeOut(EventTypeRef):
+    archived_at: Timestamp | None = None
+    usage_count: int = 0
+
+
 class EventInput(Schema):
     title: Title
     start_at: datetime
@@ -131,13 +151,16 @@ class EventInput(Schema):
     details_scope: Literal["single", "series"] = "single"
     locked: bool = True
     course_id: str | None = None
-    kind: Literal["course", "meeting", "exam", "other"] = "other"
+    event_type_id: str | None = None
+    kind: Literal["course", "other"] = "other"
 
     @model_validator(mode="after")
     def valid_time(self) -> Self:
         ProfileInput.valid_timezone(self.timezone)
         if self.kind == "course" and not self.course_id:
             raise ValueError("课程事件需要关联课程")
+        if self.kind == "course" and self.event_type_id:
+            raise ValueError("课程事件不能使用自定义事件类型")
         if self.start_at.utcoffset() is None or self.end_at.utcoffset() is None:
             raise ValueError("事件时间必须包含 UTC 偏移")
         if self.end_at <= self.start_at:
@@ -148,6 +171,7 @@ class EventInput(Schema):
 class EventOut(EventInput):
     id: str
     series_id: str | None = None
+    event_type: EventTypeRef | None = None
     occurrence_local_date: str | None = None
     is_skipped: bool = False
     parallel_policy_override: Policy | None = None

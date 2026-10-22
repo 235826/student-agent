@@ -447,3 +447,15 @@ header {
   overflow-wrap: anywhere;
   line-height: 1.7;
 }
+.fc-event-type {
+  font-size: 10px;
+  opacity: 0.8;
+}
+.event-type-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 8px;
+  border-radius: 50%;
+  vertical-align: middle;
+}

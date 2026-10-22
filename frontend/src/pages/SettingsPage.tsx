@@ -1,7 +1,7 @@
 import { Link, useLocation } from "react-router-dom";
 import { useEffect } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { App as AntApp, Button, Card, Form, Input, Select } from "antd";
+import { App as AntApp, Button, Card, Form, Input, Select, Space } from "antd";
 import { api, type Profile, type ProfileInput } from "../api";
 const errorText = (e: unknown) => (e instanceof Error ? e.message : "操作失败");
 export default function SettingsPage({
@@ -40,9 +40,10 @@ export default function SettingsPage({
           <p className="muted">可以先使用默认设置，之后随时调整。</p>
         </div>
       </header>
-      <p>
+      <Space wrap className="toolbar">
+        <Link to="/settings/event-types">事件类型</Link>
         <Link to="/settings/rules">并行规则</Link>
-      </p>
+      </Space>
       <Card title="账号" className="toolbar">
         <p>{profile.username}</p>
         <Button onClick={onLogout} loading={loggingOut}>

@@ -31,12 +31,14 @@ import type {
   Course,
   Event,
   EventInput,
+  EventType,
   Profile,
   SeriesInput,
   Series,
 } from "../api";
 import { displayTime, toInstant, toLocal } from "../time";
 import { backTarget, withFrom } from "../navigation";
+import { eventTypeColor, eventTypeLabel } from "../semantics";
 const policyOptions = [
   { value: "inherit", label: "沿用课程设置 / 默认禁止" },
   { value: "none", label: "本次禁止并行" },
@@ -82,11 +84,14 @@ export default function EventsPage({ profile }: { profile: Profile }) {
   const [courseTarget, setCourseTarget] = useState<"event" | "series" | null>(
     null,
   );
+  const [typeOpen, setTypeOpen] = useState(false);
   const [form] = Form.useForm();
   const [seriesForm] = Form.useForm();
   const [courseForm] = Form.useForm();
+  const [typeForm] = Form.useForm();
   const seriesKey = useRef("");
   const kind = Form.useWatch("kind", form);
+  const eventTypeId = Form.useWatch("event_type_id", form);
   const openNewEvent = (start?: string, end?: string, courseId?: string) => {
     form.resetFields();
     form.setFieldsValue({
@@ -99,6 +104,7 @@ export default function EventsPage({ profile }: { profile: Profile }) {
       start_at: start,
       end_at: end,
       course_id: courseId,
+      event_type_id: courseId ? undefined : otherType?.id,
     });
     setEditing(null);
   };
@@ -179,6 +185,13 @@ export default function EventsPage({ profile }: { profile: Profile }) {
     queryKey: ["series"],
     queryFn: () => api<Series[]>("/event-series"),
   });
+  const eventTypes = useQuery({
+    queryKey: ["event-types"],
+    queryFn: () => api<EventType[]>("/event-types"),
+  });
+  const otherType = eventTypes.data?.find((t) => t.system_key === "other");
+  const typeValue =
+    kind === "course" ? "course" : (eventTypeId ?? otherType?.id);
   const write = useMutation({
     mutationFn: ({ path, method = "POST", body }: Write) =>
       api(path, method, body),
@@ -203,6 +216,18 @@ export default function EventsPage({ profile }: { profile: Profile }) {
       setCourseOpen(false);
       setCourseTarget(null);
       void message.success("课程已创建");
+    },
+    onError: (e) => void message.error(errorText(e)),
+  });
+  const createEventType = useMutation({
+    mutationFn: (values: { name: string; color: string }) =>
+      api<EventType>("/event-types", "POST", values),
+    onSuccess: (eventType) => {
+      void client.invalidateQueries({ queryKey: ["event-types"] });
+      form.setFieldsValue({ kind: "other", event_type_id: eventType.id });
+      setTypeOpen(false);
+      typeForm.resetFields();
+      void message.success("事件类型已创建");
     },
     onError: (e) => void message.error(errorText(e)),
   });
@@ -250,6 +275,7 @@ export default function EventsPage({ profile }: { profile: Profile }) {
             end_at: toLocal(event.end_at, profile.timezone),
             kind: event.kind,
             course_id: event.course_id,
+            event_type_id: event.event_type_id,
             note: event.series_id
               ? noteScope === "single"
                 ? (event.single_note ?? "")
@@ -424,12 +450,13 @@ export default function EventsPage({ profile }: { profile: Profile }) {
                     {event.title}
                   </Link>
                 </h3>
-                <Tag color={event.is_skipped ? "orange" : "default"}>
-                  {event.is_skipped
-                    ? "本次不参加"
-                    : event.kind === "exam"
-                      ? "考试"
-                      : "固定时间"}
+                <Tag
+                  color={
+                    event.is_skipped ? "orange" : eventTypeColor(event)
+                  }
+                >
+                  {eventTypeLabel(event)}
+                  {event.is_skipped ? " · 本次不参加" : ""}
                 </Tag>
               </div>
               <p>
@@ -593,17 +620,51 @@ export default function EventsPage({ profile }: { profile: Profile }) {
           >
             <Input />
           </Form.Item>
-          <Form.Item name="kind" label="事件类型">
+          <Form.Item name="kind" hidden>
+            <Input />
+          </Form.Item>
+          <Form.Item name="event_type_id" hidden>
+            <Input />
+          </Form.Item>
+          <Form.Item label="事件类型">
             <Select
+              aria-label="事件类型"
               disabled={!!editing?.series_id}
+              value={typeValue}
               options={[
-                { value: "other", label: "其他活动" },
-                { value: "meeting", label: "会议" },
                 { value: "course", label: "课程" },
-                { value: "exam", label: "考试（不可跳过）" },
+                ...(eventTypes.data ?? []).map((type) => ({
+                  value: type.id,
+                  label: type.name,
+                })),
               ]}
+              onChange={(value) => {
+                if (value === "course") {
+                  form.setFieldsValue({
+                    kind: "course",
+                    event_type_id: undefined,
+                  });
+                } else {
+                  form.setFieldsValue({
+                    kind: "other",
+                    event_type_id: value,
+                  });
+                }
+              }}
             />
           </Form.Item>
+          {!editing?.series_id && (
+            <Button
+              size="small"
+              className="toolbar"
+              onClick={() => {
+                typeForm.setFieldsValue({ name: "", color: "#1677ff" });
+                setTypeOpen(true);
+              }}
+            >
+              新建事件类型
+            </Button>
+          )}
           <Form.Item
             name="course_id"
             label="关联课程"
@@ -703,6 +764,39 @@ export default function EventsPage({ profile }: { profile: Profile }) {
                 )}
               </details>
             )}
+        </Form>
+      </Modal>
+      <Modal
+        title="新建事件类型"
+        open={typeOpen}
+        onCancel={() => setTypeOpen(false)}
+        onOk={() => typeForm.submit()}
+        confirmLoading={createEventType.isPending}
+        destroyOnHidden
+      >
+        <Form
+          form={typeForm}
+          layout="vertical"
+          onFinish={(values) => createEventType.mutate(values)}
+        >
+          <Form.Item
+            name="name"
+            label="类型名称"
+            rules={[
+              { required: true, whitespace: true, max: 100 },
+              {
+                validator: (_, value: string) =>
+                  ["课程", "每周课程", "考试", "会议", "其他"].includes(value)
+                    ? Promise.reject(new Error("该名称是保留类型"))
+                    : Promise.resolve(),
+              },
+            ]}
+          >
+            <Input placeholder="例如：社团活动、实验、讲座" />
+          </Form.Item>
+          <Form.Item name="color" label="颜色">
+            <Input type="color" />
+          </Form.Item>
         </Form>
       </Modal>
       <Modal

@@ -22,6 +22,7 @@ from app.api.schemas import (
 from app.db.models import Course, Event, User, Workspace, now_ms
 from app.db.models import Session as LoginSession
 from app.modules.calendar_management import event_view, update_event_record
+from app.modules.event_types import ensure_system_types, resolve_event_type
 from app.modules.records import owned, record_change
 from app.modules.security import COOKIE, DB, SessionDep, UserDep, digest, hasher
 
@@ -78,6 +79,8 @@ def setup(body: SetupInput, request: Request, response: Response, db: DB) -> Aut
         timezone=body.timezone,
     )
     db.add(user)
+    db.flush()
+    ensure_system_types(db, user)
     db.flush()
     return login_response(user, request, response, db)
 
@@ -157,7 +160,10 @@ def list_events(db: DB, user: UserDep) -> list[EventOut]:
 def create_event(body: EventInput, db: DB, user: UserDep) -> EventOut:
     if body.course_id:
         owned(db, Course, body.course_id, user)
-    event = Event(workspace_id=user.workspace_id, **values(body))
+    event_type = resolve_event_type(db, user, kind=body.kind, event_type_id=body.event_type_id)
+    data = values(body)
+    data["event_type_id"] = event_type.id if event_type else None
+    event = Event(workspace_id=user.workspace_id, **data)
     db.add(event)
     record_change(db, user, "event.create", event)
     return event_view(db, event)

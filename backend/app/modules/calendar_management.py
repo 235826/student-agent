@@ -7,7 +7,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.schemas import EventInput, EventOut, SeriesInput, SeriesOut
-from app.db.models import Course, Event, EventOverride, EventSeries, User
+from app.db.models import Course, Event, EventOverride, EventSeries, EventType, User
+from app.modules.event_types import event_type_ref, resolve_event_type
 from app.modules.idempotency import remember, replay
 from app.modules.records import owned, record_change
 
@@ -49,6 +50,9 @@ def event_view(db: Session, event: Event) -> EventOut:
     }
     data["original_start_at"] = event.start_at
     data["original_end_at"] = event.end_at
+    data["event_type"] = event_type_ref(
+        db.get(EventType, event.event_type_id) if event.event_type_id else None
+    )
     override = instance_override(db, event)
     series = db.get(EventSeries, event.series_id) if event.series_id else None
     if override:
@@ -72,11 +76,29 @@ def event_view(db: Session, event: Event) -> EventOut:
 def update_event_record(db: Session, user: User, event: Event, body: EventInput) -> None:
     if body.course_id:
         owned(db, Course, body.course_id, user)
+    event_type = resolve_event_type(
+        db,
+        user,
+        kind=body.kind,
+        event_type_id=body.event_type_id,
+        series_id=event.series_id,
+    )
     data = body.model_dump(exclude={"note_scope", "details_scope"})
+    data["event_type_id"] = event_type.id if event_type else None
     data["start_at"] = int(body.start_at.timestamp() * 1000)
     data["end_at"] = int(body.end_at.timestamp() * 1000)
     if event.series_id:
-        if (body.course_id, body.kind, body.locked) != (event.course_id, event.kind, event.locked):
+        if (
+            body.course_id,
+            body.kind,
+            body.locked,
+            body.event_type_id,
+        ) != (
+            event.course_id,
+            event.kind,
+            event.locked,
+            event.event_type_id,
+        ):
             raise HTTPException(409, "单次课程修改不能改变课程归属、类型或锁定设置")
         override = instance_override(db, event, create=True)
         assert override is not None

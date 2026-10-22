@@ -32,6 +32,7 @@
 | `/plans/:id` | 单份计划日历、差异、未排报告、二次确认采用、返回列表与重新生成 |
 | `/settings` | 账号与时区、可用时间、休息窗口 |
 | `/settings/schedule` | 设置页可用时间锚点，供计划页深链 |
+| `/settings/event-types` | 非课程事件的自定义类型管理：名称、颜色、归档与使用数量 |
 | `/settings/rules` | 任务类型设置、课程默认设置、组合规则、兼容性检查；`?tab=types/courses/rules/check` 直达 |
 
 旧路径重定向：`/imports` → `/inbox/imports`，`/imports/:id` → `/inbox/imports/:id`，`/events` → `/calendar`，`/events/:id` → `/calendar/events/:id`，`/courses/:id` → `/calendar/courses/:id`，`/series/:id` → `/calendar/series/:id`，`/compatibility` → `/settings/rules`。
@@ -47,14 +48,21 @@
 - 计划页在未配置可用时间时深链到 `/settings/schedule#availability`。
 - 导入校对从任务/事件打开时保留来源返回；未配置模型时禁用“保存并解析”，只允许仅保存材料。
 - 收件箱使用“材料待处理”而不是笼统的“导入待确认”，解析中、失败、已取消解析和已创建均有明确状态。
+- 课程身份只由 `series_id` 或 `kind=course` 表示；每周课程、单次课程不接受自定义事件类型。其他事件使用内置考试/会议/其他或自定义类型，行为仍按普通事件处理。
+- 事件展示统一按“每周课程 → 课程 → 自定义类型名称 → 其他”解析；颜色来自课程固定色或事件类型颜色，并用于事件卡片、今日议程和周历。
+- 事件类型可新建、改名、改色和归档。归档类型不能用于新事件，但历史事件继续显示原名称和颜色。
 - 页面不存在、对象已删除时提供返回入口；设置、收件箱和日历子路由保持对应导航选中态。
 
 ## API 变更
 
-所有路径以下列 `/api/v1` 为前缀。本次新增迁移 `0005_event_notes_and_details`，为事件、单次调整和系列增加备注/详情字段。
+所有路径以下列 `/api/v1` 为前缀。事件类型改造新增迁移 `0006_event_types`；此前的 `0005_event_notes_and_details` 增加备注/详情字段。
 
 | 接口 | 语义 |
 | --- | --- |
+| `GET /event-types` | 列出当前工作区事件类型；默认排除已归档，`include_archived=true` 包含归档 |
+| `POST /event-types` | 新建自定义类型：名称、颜色；内置名称不可占用 |
+| `PUT /event-types/{id}` | 修改自定义类型；内置类型不可修改 |
+| `DELETE /event-types/{id}` | 归档自定义类型；历史事件保留显示 |
 | `PUT /courses/{id}` | 修改课程名称、学期；同步该课程下事件和单次调整的标题，备注/详情不变 |
 | `DELETE /courses/{id}` | `confirmed=true`；拒绝删除仍有关联系列/事件的课程 |
 | `DELETE /events/{id}` | `confirmed=true`；删除单次及其覆盖，其他周次保留 |
@@ -64,7 +72,7 @@
 | `POST /imports/text` | 新增 `parse`，默认 true；`parse=false` 无需模型发送同意 |
 | `POST /imports/image` | multipart 新增 `parse`，默认 true；`parse=false` 可 `confirmed=false` |
 
-事件和系列接口新增 `note`（最多 120 字）与 `details`（最多 5000 字）字段；事件的 `note_scope`/`details_scope` 分别控制单次或系列写入。读取事件时返回有效 `note`/`details`、系列值和单次值。沿用会话、CSRF、工作区归属、UTC/时区、夏令时拒绝、幂等重放、导入确认、计划 stale 校验；未改动排程算法。
+事件接口新增 `event_type_id`；`kind` 收敛为 `course/other`，课程事件不能设置自定义类型。非课程事件未指定类型时使用内置“其他”。导入候选可携带 `event_type_id`，模型输出的 `event_kind` 仅作为考试/会议/其他提示。事件和系列接口仍支持 `note`（最多 120 字）与 `details`（最多 5000 字）；事件的 `note_scope`/`details_scope` 分别控制单次或系列写入。读取事件时返回有效 `note`/`details`、系列值和单次值。沿用会话、CSRF、工作区归属、UTC/时区、夏令时拒绝、幂等重放、导入确认、计划 stale 校验；未改动排程算法。
 
 ## 分阶段文件清单
 

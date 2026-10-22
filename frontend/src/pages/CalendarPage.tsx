@@ -11,7 +11,7 @@ import zhLocale from "@fullcalendar/core/locales/zh-cn";
 import { DateTime } from "luxon";
 import { api, type Plan, type Event, type Profile } from "../api";
 import { withFrom } from "../navigation";
-import { staleInfo } from "../semantics";
+import { eventTypeColor, eventTypeLabel, staleInfo } from "../semantics";
 const errorText = (e: unknown) => (e instanceof Error ? e.message : "操作失败");
 export default function CalendarPage({
   profile,
@@ -82,6 +82,9 @@ export default function CalendarPage({
                 <div className="fc-event-time">{arg.timeText}</div>
               )}
               <div className="fc-event-title">{arg.event.title}</div>
+              <div className="fc-event-type">
+                {arg.event.extendedProps.typeLabel}
+              </div>
               {arg.event.extendedProps.note && (
                 <div className="fc-event-note">
                   {arg.event.extendedProps.note}
@@ -102,7 +105,8 @@ export default function CalendarPage({
               start: e.start_at,
               end: e.end_at,
               note: e.note,
-              color: e.is_skipped ? "#a6a6a6" : "#37735c",
+              typeLabel: eventTypeLabel(e),
+              color: e.is_skipped ? "#a6a6a6" : eventTypeColor(e),
             })) ?? []),
             ...(plan.data?.blocks.map((b) => ({
               id: `${b.task_id}-${b.start_at}`,
@@ -114,6 +118,7 @@ export default function CalendarPage({
               start: b.start_at,
               end: b.end_at,
               note: "",
+              typeLabel: "计划块",
               color: plan.data?.stale ? "#9ca3af" : "#3873ac",
             })) ?? []),
           ]}

@@ -25,6 +25,7 @@ import {
 import { DateTime } from "luxon";
 import {
   api,
+  type EventType,
   type ImportJob,
   type ImportCandidate,
   type Profile,
@@ -63,6 +64,10 @@ export default function ImportsPage({ profile }: { profile: Profile }) {
     label: "返回导入记录",
   });
   const [consent, setConsent] = useState(false);
+  const eventTypes = useQuery({
+    queryKey: ["event-types"],
+    queryFn: () => api<EventType[]>("/event-types"),
+  });
   const capabilities = useQuery({
     queryKey: ["import-capabilities"],
     queryFn: () =>
@@ -265,6 +270,7 @@ export default function ImportsPage({ profile }: { profile: Profile }) {
           key={`${job.data.id}:${job.data.revision}`}
           job={job.data}
           refresh={refresh}
+          eventTypes={eventTypes.data ?? []}
         />
       )}
     </div>
@@ -274,11 +280,15 @@ export default function ImportsPage({ profile }: { profile: Profile }) {
 function DraftEditor({
   job,
   refresh,
+  eventTypes,
 }: {
   job: ImportJob;
   refresh: () => Promise<void>;
+  eventTypes: EventType[];
 }) {
   const [items, setItems] = useState<ImportCandidate[]>(job.candidates);
+  const typeIdForHint = (hint: string) =>
+    eventTypes.find((type) => type.system_key === hint)?.id;
   const [context, setContext] = useState(job.context);
   const [dirty, setDirty] = useState(false);
   const busy = ["queued", "running"].includes(job.status);
@@ -568,14 +578,18 @@ function DraftEditor({
               </label>
               <Select
                 aria-label="事件类型"
-                value={item.event_kind}
+                style={{ width: "100%" }}
+                value={
+                  item.event_type_id ?? typeIdForHint(item.event_kind)
+                }
                 disabled={readOnly}
-                options={[
-                  { value: "other", label: "其他" },
-                  { value: "exam", label: "考试" },
-                  { value: "meeting", label: "会议" },
-                ]}
-                onChange={(event_kind) => change(index, { event_kind })}
+                options={eventTypes.map((type) => ({
+                  value: type.id,
+                  label: type.name,
+                }))}
+                onChange={(event_type_id) =>
+                  change(index, { event_type_id })
+                }
               />
             </>
           )}

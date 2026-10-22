@@ -60,3 +60,5 @@ export type ImportJob = components["schemas"]["ImportOut"];
 export type ImportCandidate = components["schemas"]["ImportCandidate"];
 
 export type Series = components["schemas"]["SeriesOut"];
+export type EventType = components["schemas"]["EventTypeOut"];
+export type EventTypeInput = components["schemas"]["EventTypeInput"];

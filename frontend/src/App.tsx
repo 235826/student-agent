@@ -20,6 +20,7 @@ import PlansPage from "./pages/PlansPage";
 import TasksPage from "./pages/TasksPage";
 import EventsPage from "./pages/EventsPage";
 import CompatibilityPage from "./pages/CompatibilityPage";
+import EventTypesPage from "./pages/EventTypesPage";
 const errorText = (e: unknown) =>
   e instanceof Error ? e.message : "操作失败，请重试";
 function LegacyImports() {
@@ -243,6 +244,7 @@ export default function App() {
             path="/series/:id"
             element={<LegacyDetail prefix="/calendar/series" />}
           />
+          <Route path="/settings/event-types" element={<EventTypesPage />} />
           <Route
             path="/settings/rules"
             element={<CompatibilityPage profile={profile} />}

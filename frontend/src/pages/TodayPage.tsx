@@ -5,7 +5,7 @@ import { DateTime } from "luxon";
 import { api, type Plan, type Event, type Task, type Profile } from "../api";
 import { displayTime } from "../time";
 import { withFrom } from "../navigation";
-import { staleInfo } from "../semantics";
+import { eventTypeLabel, staleInfo } from "../semantics";
 
 export default function TodayPage({ profile }: { profile: Profile }) {
   const plan = useQuery({
@@ -32,7 +32,7 @@ export default function TodayPage({ profile }: { profile: Profile }) {
         start: e.start_at,
         end: e.end_at,
         to: `/calendar/events/${e.id}`,
-        kind: "事件",
+        kind: eventTypeLabel(e),
         stale: false,
       })),
     ...(plan.data?.blocks ?? []).map((b) => ({

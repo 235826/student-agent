@@ -87,6 +87,18 @@ class Course(Owned, Base):
     policy_revision: Mapped[int] = mapped_column(default=0, server_default="0")
 
 
+class EventType(Owned, Base):
+    __tablename__ = "event_types"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "name"),
+        UniqueConstraint("workspace_id", "system_key"),
+    )
+    name: Mapped[str] = mapped_column(String(100))
+    color: Mapped[str] = mapped_column(String(7), default="#8c8c8c")
+    system_key: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    archived_at: Mapped[int | None] = mapped_column(BigInteger, index=True)
+
+
 class EventSeries(Owned, Base):
     __tablename__ = "event_series"
     course_id: Mapped[str | None] = mapped_column(ForeignKey("courses.id"))
@@ -115,6 +127,9 @@ class Event(Owned, Base):
     locked: Mapped[bool] = mapped_column(Boolean, default=True)
     course_id: Mapped[str | None] = mapped_column(ForeignKey("courses.id"))
     series_id: Mapped[str | None] = mapped_column(ForeignKey("event_series.id"))
+    event_type_id: Mapped[str | None] = mapped_column(
+        ForeignKey("event_types.id"), index=True, nullable=True
+    )
     occurrence_local_date: Mapped[str | None]
     kind: Mapped[str] = mapped_column(default="other", server_default="other")
     is_skipped: Mapped[bool] = mapped_column(default=False, server_default="0")

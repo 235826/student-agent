@@ -36,6 +36,7 @@ from app.db.models import (
     now_ms,
 )
 from app.modules.calendar_management import create_series, unambiguous_instant
+from app.modules.event_types import ensure_system_types, resolve_event_type
 from app.modules.idempotency import remember, replay
 from app.modules.records import owned, record_change
 from app.modules.security import DB, UserDep
@@ -248,6 +249,16 @@ def save_draft(job_id: str, body: ImportEdit, db: DB, user: UserDep) -> ImportOu
         raise HTTPException(409, "请等待解析完成，或先取消解析")
     if len({c.key for c in body.candidates}) != len(body.candidates):
         raise HTTPException(422, "每项草稿的标识必须唯一")
+    for candidate in body.candidates:
+        if candidate.event_type_id and candidate.kind != "event":
+            raise HTTPException(422, "只有单次事件可以设置事件类型")
+        if candidate.event_type_id:
+            resolve_event_type(
+                db,
+                user,
+                kind="other",
+                event_type_id=candidate.event_type_id,
+            )
     job.candidates = [c.model_dump(mode="json") for c in body.candidates]
     job.revision += 1
     job.status = "succeeded"
@@ -362,13 +373,22 @@ def publish(job_id: str, body: ImportPublish, db: DB, user: UserDep) -> ImportOu
                 elif candidate.kind == "event":
                     if candidate.start_local is None or candidate.end_local is None:
                         raise HTTPException(422, "事件需要明确的开始和结束时间")
+                    system_types = ensure_system_types(db, user)
+                    event_type_id = candidate.event_type_id or system_types[candidate.event_kind].id
+                    event_type = resolve_event_type(
+                        db,
+                        user,
+                        kind="other",
+                        event_type_id=event_type_id,
+                    )
                     event = EventInput(
                         title=candidate.title,
                         start_at=unambiguous_instant(candidate.start_local, zone),
                         end_at=unambiguous_instant(candidate.end_local, zone),
                         timezone=job.timezone,
                         location=candidate.location,
-                        kind=candidate.event_kind,
+                        kind="other",
+                        event_type_id=event_type.id if event_type else None,
                     )
                     obj = Event(
                         workspace_id=user.workspace_id,

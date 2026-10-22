@@ -26,7 +26,7 @@ import { api } from "../api";
 import type { Plan, Profile, Event } from "../api";
 import { displayTime, toInstant } from "../time";
 import { withFrom } from "../navigation";
-import { staleInfo } from "../semantics";
+import { eventTypeColor, eventTypeLabel, staleInfo } from "../semantics";
 
 export default function PlansPage({ profile }: { profile: Profile }) {
   const client = useQueryClient();
@@ -365,10 +365,10 @@ export default function PlansPage({ profile }: { profile: Profile }) {
               }}
               events={[
                 ...(events.data ?? []).map((e) => ({
-                  title: e.title + (e.is_skipped ? "（不参加）" : ""),
+                  title: `${eventTypeLabel(e)} · ${e.title}${e.is_skipped ? "（不参加）" : ""}`,
                   start: e.start_at,
                   end: e.end_at,
-                  color: e.is_skipped ? "#999" : "#37735c",
+                  color: e.is_skipped ? "#999" : eventTypeColor(e),
                 })),
                 ...active.blocks.map((b) => ({
                   title: b.title,

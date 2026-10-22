@@ -30,6 +30,7 @@ class ImportCandidate(Schema):
     end_local: datetime | None = None
     location: str = Field(default="", max_length=500)
     event_kind: Literal["meeting", "exam", "other"] = "other"
+    event_type_id: str | None = None
     parent_key: Key | None = None
     predecessor_keys: list[Key] = Field(default_factory=list, max_length=100)
     recurrence: RecurrenceDraft | None = None

@@ -127,7 +127,7 @@ def test_sqlite_constraints_and_workspace(authenticated: TestClient) -> None:
     with engine.connect() as conn:
         assert conn.scalar(text("PRAGMA foreign_keys")) == 1
         assert conn.scalar(text("PRAGMA journal_mode")) == "wal"
-        assert conn.scalar(text("SELECT version_num FROM alembic_version")) == "0005"
+        assert conn.scalar(text("SELECT version_num FROM alembic_version")) == "0006"
     with Session(engine) as db:
         workspace = Workspace()
         db.add(workspace)
