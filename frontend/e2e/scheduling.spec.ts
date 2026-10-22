@@ -13,6 +13,9 @@ test("排程预览、确认、版本保留及失效提示", async ({ page }, inf
   await page.getByRole("button", { name: "添加时段" }).first().click();
   await page.getByRole("button", { name: "保存设置" }).click();
   await expect(page.getByText("设置已保存", { exact: true })).toBeVisible();
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth),
+  ).toBeLessThanOrEqual(page.viewportSize()!.width);
   await page.getByRole("link", { name: "任务", exact: true }).click();
   await page.getByRole("button", { name: "新建任务", exact: true }).click();
   const title = `排程作业-${info.project.name}`;

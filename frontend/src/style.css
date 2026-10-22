@@ -157,8 +157,15 @@ header {
 }
 .window-row {
   display: grid;
-  grid-template-columns: 90px 1fr 1fr auto;
+  grid-template-columns: 90px minmax(0, 1fr) minmax(0, 1fr) auto;
   gap: 8px;
+}
+.window-row > * {
+  min-width: 0;
+}
+.window-row input {
+  min-width: 0;
+  max-width: 100%;
 }
 .login {
   max-width: 460px;
@@ -232,10 +239,10 @@ header {
     font-size: 15px;
   }
   .window-row {
-    grid-template-columns: 75px 1fr 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
   .window-row > button {
-    grid-column: 3;
+    justify-self: end;
     margin-bottom: 14px;
   }
   .calendar .ant-card-body {

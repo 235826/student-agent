@@ -75,6 +75,21 @@ test("账号、任务、事件、设置和手机布局闭环", async ({ page }, 
       () => document.documentElement.scrollWidth <= window.innerWidth,
     ),
   ).toBe(true);
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth),
+  ).toBeLessThanOrEqual(page.viewportSize()!.width);
+  if (testInfo.project.name === "mobile") {
+    for (const input of await page
+      .locator('.window-row input[type="time"]')
+      .all()) {
+      await expect(input).toBeVisible();
+      expect(
+        await input.evaluate(
+          (element) => element.getBoundingClientRect().right,
+        ),
+      ).toBeLessThanOrEqual(page.viewportSize()!.width);
+    }
+  }
   await page.screenshot({
     path: `test-results/${testInfo.project.name}-settings.png`,
     fullPage: true,
