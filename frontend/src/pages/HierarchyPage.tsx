@@ -104,7 +104,7 @@ export default function HierarchyPage({
             {kind === "series" && (
               <Link to={`/courses/${course.id}`}>所属课程</Link>
             )}
-            <Link to="/settings/rules">查看相关并行规则</Link>
+            <Link to="/settings/rules?tab=courses">查看相关并行规则</Link>
           </Space>
         </div>
       </header>

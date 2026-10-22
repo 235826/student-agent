@@ -100,7 +100,7 @@ test("草稿发布、重复课程单次变更与规则检查", async ({ page }, 
     page.getByRole("button", { name: "本次不参加", exact: true }),
   ).toBeVisible();
   await page.getByRole("link", { name: "并行规则", exact: true }).click();
-  await page.getByLabel("任务类型").fill(`reading-${info.project.name}`);
+  await page.getByLabel("任务类型", { exact: true }).fill(`reading-${info.project.name}`);
   await choose(page, "类型默认设置", "接受已允许的组合");
   await page.getByRole("button", { name: "保存类型设置" }).click();
   await expect(
@@ -108,7 +108,7 @@ test("草稿发布、重复课程单次变更与规则检查", async ({ page }, 
       name: `reading-${info.project.name}：接受选定组合`,
     }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "添加组合规则" }).click();
+  await page.getByRole("button", { name: "添加组合允许规则" }).click();
   await choose(page, "活动一对象", course);
   await page.getByLabel("活动二对象").fill(`reading-${info.project.name}`);
   await page
@@ -120,6 +120,7 @@ test("草稿发布、重复课程单次变更与规则检查", async ({ page }, 
       name: `${course} ＋ 类型：reading-${info.project.name}`,
     }),
   ).toBeVisible();
+  await page.getByRole("tab", { name: "兼容性检查", exact: true }).click();
   await choose(page, "选择待检查活动", `任务：${title}`);
   await page.keyboard.press("Escape");
   await choose(page, "选择待检查活动", `事件：${course}`);
@@ -136,6 +137,7 @@ test("草稿发布、重复课程单次变更与规则检查", async ({ page }, 
     fullPage: true,
   });
   await page.reload();
+  await page.getByRole("tab", { name: "组合允许规则", exact: true }).click();
   await expect(
     page.getByRole("heading", {
       name: `${course} ＋ 类型：reading-${info.project.name}`,

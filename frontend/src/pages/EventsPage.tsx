@@ -186,7 +186,7 @@ export default function EventsPage({ profile }: { profile: Profile }) {
       {id && (
         <Space className="toolbar">
           <Link to="/calendar">返回日历</Link>
-          <Link to="/settings/rules">查看相关并行规则</Link>
+          <Link to="/settings/rules?tab=courses">查看相关并行规则</Link>
         </Space>
       )}
       {events.isPending ? (

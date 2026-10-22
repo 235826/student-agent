@@ -1,3 +1,4 @@
+import { Link, useSearchParams } from "react-router-dom";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -13,6 +14,8 @@ import {
   Select,
   Space,
   Tag,
+  Tabs,
+  Spin,
 } from "antd";
 import { api } from "../api";
 import type {
@@ -36,6 +39,10 @@ const scopes = [
 ];
 const errorText = (e: unknown) => (e instanceof Error ? e.message : "操作失败");
 export default function CompatibilityPage({ profile }: { profile: Profile }) {
+  const [params, setParams] = useSearchParams();
+  const tab = params.get("tab") ?? "types";
+  const setTab = (value: string) => setParams({ tab: value });
+  const [includePast, setIncludePast] = useState(false);
   const client = useQueryClient();
   const { message, modal } = App.useApp();
   const tasks = useQuery({
@@ -75,9 +82,12 @@ export default function CompatibilityPage({ profile }: { profile: Profile }) {
       method?: string;
       body?: unknown;
     }) => api(path, method, body),
-    onSuccess: () => {
+    onSuccess: (_, variables) => {
       void client.invalidateQueries({ queryKey: ["rules"] });
       void client.invalidateQueries({ queryKey: ["type-policies"] });
+      void client.invalidateQueries({ queryKey: ["courses"] });
+      void client.invalidateQueries({ queryKey: ["plans"] });
+      if (variables.path.includes("compatibility-rules")) setTab("rules");
       setEditing(undefined);
       check.reset();
       void message.success("规则设置已保存");
@@ -134,10 +144,16 @@ export default function CompatibilityPage({ profile }: { profile: Profile }) {
     ...(tasks.data ?? [])
       .filter((t) => !["done", "cancelled"].includes(t.status))
       .map((t) => ({ value: `task:${t.id}`, label: `任务：${t.title}` })),
-    ...(events.data ?? []).map((e) => ({
-      value: `event:${e.id}`,
-      label: `事件：${e.title} · ${displayTime(e.start_at, profile.timezone)}${e.is_skipped ? "（不参加）" : ""}`,
-    })),
+    ...(events.data ?? [])
+      .filter(
+        (e) =>
+          !e.is_skipped &&
+          (includePast || new Date(e.end_at).getTime() > Date.now()),
+      )
+      .map((e) => ({
+        value: `event:${e.id}`,
+        label: `事件：${e.title} · ${displayTime(e.start_at, profile.timezone)}${e.is_skipped ? "（不参加）" : ""}`,
+      })),
   ];
   const canOverride =
     decision === "allow" &&
@@ -152,182 +168,248 @@ export default function CompatibilityPage({ profile }: { profile: Profile }) {
           <p className="muted">决定哪些活动可以同时进行，每个判断都有依据。</p>
         </div>
         <Button type="primary" onClick={() => open(null)}>
-          添加组合规则
+          添加组合允许规则
         </Button>
       </header>
       <Alert
         type="info"
-        message="默认禁止重叠。通常需要双方均接受并行，再设置组合允许规则。这里只检查规则，尚不生成计划。"
+        message="默认禁止重叠。通常需要双方均接受并行，再设置组合允许规则。此处配置与检查并行规则，生成计划请到学习计划。"
       />
       {[tasks, events, courses, types, rules]
         .filter((q) => q.error)
         .map((q, i) => (
           <Alert key={i} type="error" message={errorText(q.error)} />
         ))}
-      <Card title="任务类型并行偏好" className="toolbar">
-        <Form
-          form={typeForm}
-          layout="vertical"
-          initialValues={{ parallel_policy: "none" }}
-          onFinish={(values) =>
-            write.mutate({
-              path: "/task-type-policies",
-              method: "PUT",
-              body: values,
-            })
-          }
-        >
-          <div className="form-grid">
-            <Form.Item
-              name="task_type"
-              label="任务类型"
-              rules={[{ required: true, whitespace: true, max: 100 }]}
-            >
-              <Input placeholder="例如 reading" />
-            </Form.Item>
-            <Form.Item name="parallel_policy" label="类型默认设置">
-              <Select
-                options={[
-                  { value: "none", label: "禁止并行" },
-                  { value: "allow_selected", label: "接受已允许的组合" },
-                ]}
-              />
-            </Form.Item>
-          </div>
-          <Button htmlType="submit" loading={write.isPending}>
-            保存类型设置
-          </Button>
-        </Form>
-        <Space className="type-policies" wrap>
-          {types.data?.map((t) => (
-            <Button
-              key={t.id}
-              onClick={() =>
-                typeForm.setFieldsValue({
-                  task_type: t.task_type,
-                  parallel_policy: t.parallel_policy,
-                })
-              }
-            >
-              {t.task_type}：
-              {t.parallel_policy === "none" ? "禁止" : "接受选定组合"}
-            </Button>
-          ))}
-        </Space>
-        <p className="muted">
-          具体任务中的明确设置优先于类型偏好。课程默认设置和单次覆盖在“课表 /
-          事件”页面管理。
-        </p>
-      </Card>
-      <div className="cards toolbar">
-        {rules.data?.length ? (
-          rules.data.map((rule) => (
-            <Card key={rule.id}>
-              <h3>
-                {label(rule.left)} ＋ {label(rule.right)}
-              </h3>
-              <Space wrap>
-                <Tag color={rule.decision === "allow" ? "green" : "red"}>
-                  {rule.decision === "allow" ? "允许组合" : "禁止组合"}
-                </Tag>
-                <Tag>
-                  {rule.status === "confirmed" ? "用户已确认" : "已停用"}
-                </Tag>
-                {rule.override_conflicts && (
-                  <Tag color="orange">包含明确覆盖确认</Tag>
-                )}
-              </Space>
-              <p className="muted">
-                修改时间：{displayTime(rule.updated_at, profile.timezone)}
-              </p>
-              <Space>
-                <Button onClick={() => open(rule)}>编辑规则</Button>
-                {rule.status === "confirmed" && (
+      <Tabs
+        activeKey={tab}
+        onChange={setTab}
+        items={[
+          { key: "types", label: "任务类型偏好" },
+          { key: "courses", label: "课程默认设置" },
+          { key: "rules", label: "组合允许规则" },
+          { key: "check", label: "兼容性检查" },
+        ]}
+      />
+      {[tasks, events, courses, types, rules].some((q) => q.isPending) ? (
+        <Spin />
+      ) : (
+        <>
+          {tab === "types" && (
+            <Card title="任务类型偏好" className="toolbar">
+              <Form
+                form={typeForm}
+                layout="vertical"
+                initialValues={{ parallel_policy: "none" }}
+                onFinish={(values) =>
+                  write.mutate({
+                    path: "/task-type-policies",
+                    method: "PUT",
+                    body: values,
+                  })
+                }
+              >
+                <div className="form-grid">
+                  <Form.Item
+                    name="task_type"
+                    label="任务类型"
+                    rules={[{ required: true, whitespace: true, max: 100 }]}
+                  >
+                    <Input placeholder="例如 reading" />
+                  </Form.Item>
+                  <Form.Item name="parallel_policy" label="类型默认设置">
+                    <Select
+                      options={[
+                        { value: "none", label: "禁止并行" },
+                        { value: "allow_selected", label: "接受已允许的组合" },
+                      ]}
+                    />
+                  </Form.Item>
+                </div>
+                <Button htmlType="submit" loading={write.isPending}>
+                  保存类型设置
+                </Button>
+              </Form>
+              <Space className="type-policies" wrap>
+                {types.data?.map((t) => (
                   <Button
-                    danger
-                    disabled={write.isPending}
+                    key={t.id}
                     onClick={() =>
-                      modal.confirm({
-                        title: "停用组合规则？",
-                        content: "后续检查将不再使用此规则；历史记录保留。",
-                        onOk: () =>
-                          write.mutateAsync({
-                            path: `/compatibility-rules/${rule.id}`,
-                            method: "DELETE",
-                          }),
+                      typeForm.setFieldsValue({
+                        task_type: t.task_type,
+                        parallel_policy: t.parallel_policy,
                       })
                     }
                   >
-                    停用规则
+                    {t.task_type}：
+                    {t.parallel_policy === "none" ? "禁止" : "接受选定组合"}
                   </Button>
-                )}
+                ))}
               </Space>
+              <p className="muted">
+                具体任务的单项设置优先于类型偏好；单次覆盖在事件详情管理。
+              </p>
             </Card>
-          ))
-        ) : (
-          <Card>
-            <Empty description="还没有组合规则" />
-          </Card>
-        )}
-      </div>
-      <Card title="检查两项或多项活动能否同时进行">
-        <Select
-          className="activity-select"
-          aria-label="选择待检查活动"
-          mode="multiple"
-          maxCount={20}
-          value={selected}
-          options={activityOptions}
-          optionFilterProp="label"
-          onChange={(value) => {
-            setSelected(value);
-            check.reset();
-          }}
-          placeholder="选择至少两项活动"
-        />
-        <Button
-          type="primary"
-          disabled={selected.length < 2}
-          loading={check.isPending}
-          onClick={() => check.mutate()}
-        >
-          检查兼容性
-        </Button>
-        {check.error && <Alert type="error" message={errorText(check.error)} />}
-        {check.data && (
-          <div className="check-result">
-            <Alert
-              type={check.data.allowed ? "success" : "warning"}
-              message={
-                check.data.allowed
-                  ? "所有两两组合均通过"
-                  : "存在不允许同时进行的组合"
-              }
-            />
-            {check.data.pairs.map((pair, i) => (
-              <div key={i} className="pair-result">
-                <strong>
-                  {activityLabel(pair.left.kind, pair.left.id)} ＋{" "}
-                  {activityLabel(pair.right.kind, pair.right.id)}
-                </strong>
-                <p>
-                  <Tag color={pair.allowed ? "green" : "red"}>
-                    {pair.allowed ? "允许" : "不允许"}
-                  </Tag>
-                  {pair.reason}
-                </p>
-                <p className="muted">
-                  {(pair.rule_ids ?? []).length
-                    ? `依据 ${(pair.rule_ids ?? []).length} 条用户确认的组合规则及双方设置`
-                    : "依据活动状态、依赖关系或默认禁止规则"}
-                </p>
-              </div>
-            ))}
-          </div>
-        )}
-      </Card>
+          )}
+          {tab === "courses" && (
+            <Card title="课程默认设置">
+              <p className="muted">
+                应用于没有单次覆盖的课程实例；任务与课程都接受并行后，仍需组合允许规则。
+              </p>
+              {courses.data?.length ? (
+                courses.data.map((course) => (
+                  <div className="course-settings toolbar" key={course.id}>
+                    <Link to={`/courses/${course.id}`}>{course.name}</Link>
+                    <Select
+                      className="activity-select"
+                      aria-label={`${course.name}默认并行设置`}
+                      value={course.parallel_policy}
+                      options={[
+                        { value: "none", label: "禁止并行" },
+                        { value: "allow_selected", label: "接受已允许的组合" },
+                      ]}
+                      onChange={(parallel_policy) =>
+                        write.mutate({
+                          path: `/courses/${course.id}/parallel-policy`,
+                          method: "PATCH",
+                          body: { parallel_policy },
+                        })
+                      }
+                    />
+                  </div>
+                ))
+              ) : (
+                <Empty description="尚未添加课程" />
+              )}
+            </Card>
+          )}
+          {tab === "rules" && (
+            <div className="cards toolbar">
+              {rules.data?.length ? (
+                rules.data.map((rule) => (
+                  <Card key={rule.id}>
+                    <h3>
+                      {label(rule.left)} ＋ {label(rule.right)}
+                    </h3>
+                    <Space wrap>
+                      <Tag color={rule.decision === "allow" ? "green" : "red"}>
+                        {rule.decision === "allow" ? "允许组合" : "禁止组合"}
+                      </Tag>
+                      <Tag>
+                        {rule.status === "confirmed" ? "用户已确认" : "已停用"}
+                      </Tag>
+                      {rule.override_conflicts && (
+                        <Tag color="orange">包含明确覆盖确认</Tag>
+                      )}
+                    </Space>
+                    <p className="muted">
+                      修改时间：{displayTime(rule.updated_at, profile.timezone)}
+                    </p>
+                    <Space>
+                      <Button onClick={() => open(rule)}>编辑规则</Button>
+                      {rule.status === "confirmed" && (
+                        <Button
+                          danger
+                          disabled={write.isPending}
+                          onClick={() =>
+                            modal.confirm({
+                              title: "停用组合规则？",
+                              content:
+                                "后续检查将不再使用此规则；历史记录保留。",
+                              onOk: () =>
+                                write.mutateAsync({
+                                  path: `/compatibility-rules/${rule.id}`,
+                                  method: "DELETE",
+                                }),
+                            })
+                          }
+                        >
+                          停用规则
+                        </Button>
+                      )}
+                    </Space>
+                  </Card>
+                ))
+              ) : (
+                <Card>
+                  <Empty description="还没有组合规则" />
+                </Card>
+              )}
+            </div>
+          )}
+          {tab === "check" && (
+            <Card title="检查两项或多项活动能否同时进行">
+              <Checkbox
+                checked={includePast}
+                onChange={(e) => {
+                  setIncludePast(e.target.checked);
+                  setSelected([]);
+                  check.reset();
+                }}
+              >
+                包含过去事件
+              </Checkbox>
+              <Select
+                className="activity-select"
+                aria-label="选择待检查活动"
+                mode="multiple"
+                maxCount={20}
+                value={selected}
+                options={activityOptions}
+                optionFilterProp="label"
+                onChange={(value) => {
+                  setSelected(value);
+                  check.reset();
+                }}
+                placeholder="选择至少两项活动"
+              />
+              <Button
+                type="primary"
+                disabled={selected.length < 2}
+                loading={check.isPending}
+                onClick={() => check.mutate()}
+              >
+                检查兼容性
+              </Button>
+              {check.error && (
+                <Alert type="error" message={errorText(check.error)} />
+              )}
+              {check.data && (
+                <div className="check-result">
+                  <Alert
+                    type={check.data.allowed ? "success" : "warning"}
+                    message={
+                      check.data.allowed
+                        ? "所有两两组合均通过"
+                        : "存在不允许同时进行的组合"
+                    }
+                  />
+                  {check.data.pairs.map((pair, i) => (
+                    <div key={i} className="pair-result">
+                      <strong>
+                        {activityLabel(pair.left.kind, pair.left.id)} ＋{" "}
+                        {activityLabel(pair.right.kind, pair.right.id)}
+                      </strong>
+                      <p>
+                        <Tag color={pair.allowed ? "green" : "red"}>
+                          {pair.allowed ? "允许" : "不允许"}
+                        </Tag>
+                        {pair.reason}
+                      </p>
+                      <p className="muted">
+                        {(pair.rule_ids ?? []).length
+                          ? `依据 ${(pair.rule_ids ?? []).length} 条用户确认的组合规则及双方设置`
+                          : "依据活动状态、依赖关系或默认禁止规则"}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card>
+          )}
+        </>
+      )}
       <Modal
-        title={editing ? "编辑组合规则" : "添加组合规则"}
+        title={editing ? "编辑组合允许规则" : "添加组合允许规则"}
         open={editing !== undefined}
         onCancel={() => setEditing(undefined)}
         onOk={() => form.submit()}
