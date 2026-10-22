@@ -92,6 +92,7 @@ npm run test:e2e
 
 ## 需求与架构
 
+- [产品主线](docs/product-mvp.md)
 - [产品意图](intent.md)
 - [功能规格 v0.3](spec-v0.3.md)
 - [技术基线 v1.0](architecture-tech-stack-v1.0.md)
@@ -99,4 +100,4 @@ npm run test:e2e
 
 第二阶段说明见 [任务与规则基础](docs/planning-foundation.md)，验证结果见 [验证记录](docs/verification.md)。第三阶段说明见 [确定性排程](docs/scheduling.md)。第四阶段说明见 [文本与课表图片导入](docs/imports.md)。任务完成后可记录实际耗时、原因和 reflection；重新生成计划时会扣除已记录工时。当前不运行后台提醒。
 
-前端最新导航、详情路由、课程清理及仅保存材料流程见 [信息架构与交互重构](docs/ui-architecture.md)。
+前端最新导航、详情路由、课程清理及仅保存材料流程见 [信息架构与交互重构](docs/ui-architecture.md)。产品主线以 [产品主线](docs/product-mvp.md) 为准，`spec-v0.3.md` 作为能力与约束参考。
