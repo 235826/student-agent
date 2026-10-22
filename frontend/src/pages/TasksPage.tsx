@@ -50,7 +50,7 @@ const errorText = (e: unknown) =>
 export default function TasksPage({ profile }: { profile: Profile }) {
   const { id } = useParams();
   const location = useLocation();
-  const [params] = useSearchParams();
+  const [params, setParams] = useSearchParams();
   const inbox = location.pathname === "/inbox";
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("all");
@@ -64,6 +64,14 @@ export default function TasksPage({ profile }: { profile: Profile }) {
     params.has("new") ? { kind: "task" } : null,
   );
   const [form] = Form.useForm();
+  const closeEditor = () => {
+    setEditor(null);
+    if (params.has("new")) {
+      const next = new URLSearchParams(params);
+      next.delete("new");
+      setParams(next, { replace: true });
+    }
+  };
   const tasks = useQuery({
     queryKey: ["tasks", false],
     queryFn: () => api<Task[]>("/tasks"),
@@ -83,7 +91,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
       void client.invalidateQueries({ queryKey: ["tasks"] });
       void client.invalidateQueries({ queryKey: ["drafts"] });
       void client.invalidateQueries({ queryKey: ["plans"] });
-      setEditor(null);
+      closeEditor();
       void message.success("已保存");
     },
     onError: (e: unknown) => void message.error(errorText(e)),
@@ -204,7 +212,8 @@ export default function TasksPage({ profile }: { profile: Profile }) {
           },
         }),
     });
-  const current = tab === "trash" ? trash : tasks;
+  const activeTab = inbox ? "drafts" : tab === "drafts" ? "tasks" : tab;
+  const current = activeTab === "trash" ? trash : tasks;
   const visible = (
     id ? catalog.filter((t) => t.id === id) : (current.data ?? [])
   )
@@ -255,11 +264,15 @@ export default function TasksPage({ profile }: { profile: Profile }) {
           <h1>{inbox ? "待确认" : id ? "任务详情" : "任务"}</h1>
           <p className="muted">从草稿开始，明确每一步的先后关系。</p>
         </div>
-        <Space wrap>
+        {inbox ? (
+          <Button type="primary" onClick={() => open({ kind: "draft" })}>
+            新建草稿
+          </Button>
+        ) : !id ? (
           <Button type="primary" onClick={() => open({ kind: "task" })}>
             新建任务
           </Button>
-        </Space>
+        ) : null}
       </header>
       {!inbox && !id && (
         <Space className="toolbar" wrap>
@@ -271,7 +284,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
           ).map(([key, label]) => (
             <Button
               key={key}
-              type={tab === key ? "primary" : "default"}
+              type={activeTab === key ? "primary" : "default"}
               onClick={() => setTab(key)}
             >
               {label}
@@ -390,7 +403,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
                 description={
                   id
                     ? "任务不存在或已删除"
-                    : tab === "trash"
+                    : activeTab === "trash"
                       ? "垃圾箱为空"
                       : "还没有任务，先添加一件想完成的事"
                 }
@@ -505,17 +518,19 @@ export default function TasksPage({ profile }: { profile: Profile }) {
       <Modal
         title={
           editor?.kind === "draft"
-            ? "编辑任务草稿"
+            ? editor.draft
+              ? "编辑任务草稿"
+              : "新建任务草稿"
             : currentTask
               ? "编辑任务"
               : "新建任务"
         }
         open={!!editor}
-        onCancel={() => setEditor(null)}
+        onCancel={closeEditor}
         destroyOnHidden
         footer={
           <Space>
-            <Button onClick={() => setEditor(null)}>取消</Button>
+            <Button onClick={closeEditor}>取消</Button>
             {editor?.kind === "task" && !currentTask && (
               <Button
                 disabled={draftSave.isPending}

@@ -202,7 +202,13 @@ export default function PlansPage({ profile }: { profile: Profile }) {
           ))}
         </div>
       ) : !active ? (
-        <Empty description="计划不存在" />
+        <Empty
+          description={
+            <span>
+              计划不存在。<Link to="/plans">返回计划列表</Link>
+            </span>
+          }
+        />
       ) : (
         <>
           <Card className="toolbar">

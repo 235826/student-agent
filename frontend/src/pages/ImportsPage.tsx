@@ -1,4 +1,4 @@
-import ImportRecords from "../components/ImportRecords";
+import ImportRecords, { importLabels } from "../components/ImportRecords";
 import { Link, useParams, useNavigate } from "react-router-dom";
 import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -37,14 +37,6 @@ const fieldLabels: Record<string, string> = {
   predecessor_keys: "前置任务",
   event_kind: "事件类型",
 };
-const labels: Record<string, string> = {
-  queued: "等待解析",
-  running: "正在解析",
-  succeeded: "待校对",
-  failed: "解析失败",
-  cancelled: "已取消解析",
-};
-
 export default function ImportsPage({ profile }: { profile: Profile }) {
   const client = useQueryClient();
   const [text, setText] = useState("");
@@ -313,7 +305,9 @@ function DraftEditor({
   return (
     <Card
       title={
-        job.published_revision ? "已确认入库" : `草稿 · ${labels[job.status]}`
+        job.published_revision
+          ? "已确认入库"
+          : `草稿 · ${importLabels[job.status]}`
       }
     >
       <p>
