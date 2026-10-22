@@ -41,6 +41,7 @@ export default function PlansPage({ profile }: { profile: Profile }) {
   const events = useQuery({
     queryKey: ["events"],
     queryFn: () => api<Event[]>("/events"),
+    enabled: !!selected,
   });
   const active = selected
     ? plans.data?.find((p) => p.id === selected)
@@ -170,9 +171,10 @@ export default function PlansPage({ profile }: { profile: Profile }) {
           </Form>
         </Card>
       )}
-      {plans.error && <Alert type="error" message={plans.error.message} />}
-      {events.error && <Alert type="error" message={events.error.message} />}
-      {plans.isPending ? (
+      {(plans.error || events.error) && (
+        <Alert type="error" message={(plans.error ?? events.error)?.message} />
+      )}
+      {plans.error ? null : plans.isPending ? (
         <Spin />
       ) : !selected ? (
         <div className="cards">

@@ -100,7 +100,9 @@ test("草稿发布、重复课程单次变更与规则检查", async ({ page }, 
     page.getByRole("button", { name: "本次不参加", exact: true }),
   ).toBeVisible();
   await page.getByRole("link", { name: "并行规则", exact: true }).click();
-  await page.getByLabel("任务类型", { exact: true }).fill(`reading-${info.project.name}`);
+  await page
+    .getByLabel("任务类型", { exact: true })
+    .fill(`reading-${info.project.name}`);
   await choose(page, "类型默认设置", "接受已允许的组合");
   await page.getByRole("button", { name: "保存类型设置" }).click();
   await expect(

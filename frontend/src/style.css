@@ -354,3 +354,61 @@ header {
     padding: 12px 0 0;
   }
 }
+
+.content p,
+.ant-card-head-title {
+  overflow-wrap: anywhere;
+}
+.ant-card-head-title {
+  white-space: normal;
+}
+.instance-list {
+  max-height: 65vh;
+  overflow: auto;
+}
+@media (max-width: 700px) {
+  .account {
+    display: none;
+  }
+  .sidebar-bottom {
+    justify-content: flex-end;
+    font-size: 13px;
+  }
+  .ant-modal {
+    max-width: calc(100vw - 24px);
+  }
+  .ant-card-body {
+    padding: 16px;
+  }
+  .ant-space {
+    max-width: 100%;
+  }
+  .ant-space-item {
+    min-width: 0;
+  }
+  .content .ant-tabs .ant-tabs-tab {
+    font-size: 12px;
+  }
+  .content .ant-tabs .ant-tabs-tab + .ant-tabs-tab {
+    margin-left: 12px;
+  }
+}
+
+.calendar-layout {
+  display: grid;
+  grid-template-columns: minmax(160px, 220px) minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+.calendar-layout .calendar {
+  margin-top: 0;
+}
+.course-sidebar {
+  max-height: 70vh;
+  overflow: auto;
+}
+@media (max-width: 1000px) {
+  .calendar-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

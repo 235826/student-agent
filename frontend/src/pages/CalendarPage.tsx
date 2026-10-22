@@ -26,7 +26,9 @@ export default function CalendarPage({
   });
   return (
     <>
-      {events.error && <Alert type="error" message={errorText(events.error)} />}
+      {(events.error || plan.error) && (
+        <Alert type="error" message={errorText(events.error ?? plan.error)} />
+      )}
       <Card className="calendar">
         <FullCalendar
           plugins={[timeGridPlugin, listPlugin, luxonPlugin]}

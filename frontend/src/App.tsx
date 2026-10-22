@@ -6,6 +6,7 @@ import {
   Routes,
   Link,
   useSearchParams,
+  useLocation,
 } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Alert, Button, Spin, Result } from "antd";
@@ -30,6 +31,7 @@ function ImportEntry({ profile }: { profile: Profile }) {
   );
 }
 export default function App() {
+  const { pathname } = useLocation();
   const client = useQueryClient();
   const me = useQuery({
     queryKey: ["me"],
@@ -107,10 +109,21 @@ export default function App() {
             ["/", "今日"],
             ["/inbox", "待确认"],
             ["/tasks", "任务"],
-            ["/plans", "学习计划"],
             ["/calendar", "日历与课程"],
+            ["/plans", "学习计划"],
           ].map(([path, label]) => (
-            <NavLink end={path === "/"} to={path} key={path}>
+            <NavLink
+              end={path === "/"}
+              to={path}
+              key={path}
+              className={({ isActive }) =>
+                isActive ||
+                (path === "/calendar" &&
+                  /^\/(courses|series|events)\//.test(pathname))
+                  ? "active"
+                  : ""
+              }
+            >
               {label}
             </NavLink>
           ))}
@@ -171,7 +184,13 @@ export default function App() {
           />
           <Route
             path="/settings"
-            element={<SettingsPage profile={profile} />}
+            element={
+              <SettingsPage
+                profile={profile}
+                onLogout={() => logout.mutate()}
+                loggingOut={logout.isPending}
+              />
+            }
           />
           <Route
             path="*"

@@ -87,11 +87,13 @@ test("账号、任务、事件、设置和手机布局闭环", async ({ page }, 
     path: `test-results/${testInfo.project.name}-tasks.png`,
     fullPage: true,
   });
-  await page.getByRole("button", { name: /^退\s*出$/ }).click();
+  await page.getByRole("link", { name: "设置", exact: true }).click();
+  await page.getByRole("button", { name: "退出账号", exact: true }).click();
   await expect(page.getByLabel("用户名")).toBeVisible();
   await page.getByLabel("用户名").fill("student");
   await page.getByLabel("密码", { exact: true }).fill("test-password-123");
   await page.getByRole("button", { name: /^登\s*录$/ }).click();
+  await page.getByRole("link", { name: "任务", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: `${title}-已编辑` }),
   ).toBeVisible();

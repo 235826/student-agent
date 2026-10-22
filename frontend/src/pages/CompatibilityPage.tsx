@@ -155,6 +155,8 @@ export default function CompatibilityPage({ profile }: { profile: Profile }) {
         label: `事件：${e.title} · ${displayTime(e.start_at, profile.timezone)}${e.is_skipped ? "（不参加）" : ""}`,
       })),
   ];
+  const queryError =
+    tasks.error ?? events.error ?? courses.error ?? types.error ?? rules.error;
   const canOverride =
     decision === "allow" &&
     ["event", "task"].includes(leftScope) &&
@@ -175,11 +177,7 @@ export default function CompatibilityPage({ profile }: { profile: Profile }) {
         type="info"
         message="默认禁止重叠。通常需要双方均接受并行，再设置组合允许规则。此处配置与检查并行规则，生成计划请到学习计划。"
       />
-      {[tasks, events, courses, types, rules]
-        .filter((q) => q.error)
-        .map((q, i) => (
-          <Alert key={i} type="error" message={errorText(q.error)} />
-        ))}
+      {queryError && <Alert type="error" message={errorText(queryError)} />}
       <Tabs
         activeKey={tab}
         onChange={setTab}
@@ -190,7 +188,9 @@ export default function CompatibilityPage({ profile }: { profile: Profile }) {
           { key: "check", label: "兼容性检查" },
         ]}
       />
-      {[tasks, events, courses, types, rules].some((q) => q.isPending) ? (
+      {queryError ? null : [tasks, events, courses, types, rules].some(
+          (q) => q.isPending,
+        ) ? (
         <Spin />
       ) : (
         <>

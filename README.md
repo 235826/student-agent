@@ -76,3 +76,5 @@ npm run test:e2e
 - [本阶段边界与实现说明](docs/foundation.md)
 
 第二阶段说明见 [任务与规则基础](docs/planning-foundation.md)，验证结果见 [验证记录](docs/verification.md)。第三阶段说明见 [确定性排程](docs/scheduling.md)。第四阶段说明见 [文本与课表图片导入](docs/imports.md)。后续可补充实际耗时反馈与重排；当前不运行后台提醒。
+
+前端最新导航、详情路由、课程清理及仅保存材料流程见 [信息架构与交互重构](docs/ui-architecture.md)。

@@ -25,7 +25,14 @@ import {
   Tag,
 } from "antd";
 import { api, ApiError } from "../api";
-import type { Course, Event, EventInput, Profile, SeriesInput } from "../api";
+import type {
+  Course,
+  Event,
+  EventInput,
+  Profile,
+  SeriesInput,
+  Series,
+} from "../api";
 import { displayTime, toInstant, toLocal } from "../time";
 const policyOptions = [
   { value: "inherit", label: "沿用课程设置 / 默认禁止" },
@@ -60,6 +67,10 @@ export default function EventsPage({ profile }: { profile: Profile }) {
   const courses = useQuery({
     queryKey: ["courses"],
     queryFn: () => api<Course[]>("/courses"),
+  });
+  const series = useQuery({
+    queryKey: ["series"],
+    queryFn: () => api<Series[]>("/event-series"),
   });
   const write = useMutation({
     mutationFn: ({ path, method = "POST", body }: Write) =>
@@ -160,27 +171,47 @@ export default function EventsPage({ profile }: { profile: Profile }) {
           </Button>
         </Space>
       </header>
-      {courses.error && (
-        <Alert type="error" message={errorText(courses.error)} />
+      {(courses.error || events.error || series.error) && (
+        <Alert
+          type="error"
+          message={errorText(courses.error ?? events.error ?? series.error)}
+        />
       )}
-      {events.error && <Alert type="error" message={errorText(events.error)} />}
       {!id && (
         <>
-          <Card className="toolbar" title="课程与系列">
-            {courses.data?.length ? (
-              courses.data.map((c) => (
-                <p key={c.id}>
-                  <Link to={`/courses/${c.id}`}>{c.name}</Link>
-                </p>
-              ))
-            ) : (
-              <Empty description="尚未添加课程" />
-            )}
-          </Card>
-          <CalendarPage profile={profile} onWeekChange={setWeek} />
-          <p className="muted">
-            选中周：{week}（仅显示本周事件，点击日历或下方事件进入详情）
-          </p>
+          <div className="calendar-layout">
+            <Card className="toolbar course-sidebar" title="课程与系列">
+              {courses.isPending ? (
+                <Spin />
+              ) : courses.error ? null : courses.data?.length ? (
+                courses.data.map((c) => (
+                  <div key={c.id} className="toolbar">
+                    <Link to={`/courses/${c.id}`}>{c.name}</Link>
+                    {series.data
+                      ?.filter((s) => s.course_id === c.id)
+                      .map((s) => (
+                        <p key={s.id}>
+                          <Link to={`/series/${s.id}`}>
+                            {s.dtstart_local.slice(0, 10)} 起 ·{" "}
+                            {s.event_ids.length} 次
+                          </Link>
+                        </p>
+                      ))}
+                  </div>
+                ))
+              ) : (
+                <Empty description="尚未添加课程" />
+              )}
+            </Card>
+            <div>
+              {events.data && !events.error && (
+                <CalendarPage profile={profile} onWeekChange={setWeek} />
+              )}
+              <p className="muted">
+                选中周：{week}（仅显示本周事件，点击日历或下方事件进入详情）
+              </p>
+            </div>
+          </div>
         </>
       )}
       {id && (
@@ -189,11 +220,11 @@ export default function EventsPage({ profile }: { profile: Profile }) {
           <Link to="/settings/rules?tab=courses">查看相关并行规则</Link>
         </Space>
       )}
-      {events.isPending ? (
+      {events.error ? null : events.isPending ? (
         <Spin />
       ) : !visible.length ? (
         <Card>
-          <Empty description="还没有固定事件" />
+          <Empty description={id ? "事件不存在或已删除" : "本周没有固定事件"} />
         </Card>
       ) : (
         <div className="cards">

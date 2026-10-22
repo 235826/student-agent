@@ -321,7 +321,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
           {drafts.error && (
             <Alert type="error" message={errorText(drafts.error)} />
           )}
-          {drafts.isPending ? (
+          {drafts.error ? null : drafts.isPending ? (
             <Spin />
           ) : !drafts.data?.length ? (
             <Card>
@@ -375,10 +375,14 @@ export default function TasksPage({ profile }: { profile: Profile }) {
         </>
       ) : (
         <>
-          {current.error && (
-            <Alert type="error" message={errorText(current.error)} />
+          {(current.error || (id && trash.error)) && (
+            <Alert
+              type="error"
+              message={errorText(current.error ?? trash.error)}
+            />
           )}{" "}
-          {current.isPending ? (
+          {current.error || (id && trash.error) ? null : current.isPending ||
+            (id && trash.isPending) ? (
             <Spin />
           ) : !visible.length ? (
             <Card>
@@ -465,9 +469,9 @@ export default function TasksPage({ profile }: { profile: Profile }) {
                               path: `/tasks/${task.id}/restore`,
                             })
                           }
-                          disabled={
-                            trashWrite.isPending &&
-                            trashWrite.variables?.path.includes(task.id)
+                          loading={
+                            restoreWrite.isPending &&
+                            restoreWrite.variables?.path.includes(task.id)
                           }
                         >
                           恢复任务
@@ -548,7 +552,12 @@ export default function TasksPage({ profile }: { profile: Profile }) {
             parallel_policy: "inherit",
           }}
         >
-          <Form.Item name="title" label="任务标题" rules={[{ max: 200 }]}>
+          <Form.Item
+            name="title"
+            label="任务标题"
+            extra="创建正式任务必填；保存草稿可留空"
+            rules={[{ max: 200 }]}
+          >
             <Input />
           </Form.Item>
           <Form.Item name="description" label="任务描述">

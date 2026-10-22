@@ -3,7 +3,15 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { App as AntApp, Button, Card, Form, Input, Select } from "antd";
 import { api, type Profile, type ProfileInput } from "../api";
 const errorText = (e: unknown) => (e instanceof Error ? e.message : "操作失败");
-export default function SettingsPage({ profile }: { profile: Profile }) {
+export default function SettingsPage({
+  profile,
+  onLogout,
+  loggingOut,
+}: {
+  profile: Profile;
+  onLogout: () => void;
+  loggingOut: boolean;
+}) {
   const client = useQueryClient();
   const { message } = AntApp.useApp();
   const [form] = Form.useForm();
@@ -27,6 +35,12 @@ export default function SettingsPage({ profile }: { profile: Profile }) {
       <p>
         <Link to="/settings/rules">并行规则</Link>
       </p>
+      <Card title="账号" className="toolbar">
+        <p>{profile.username}</p>
+        <Button onClick={onLogout} loading={loggingOut}>
+          退出账号
+        </Button>
+      </Card>
       <Card className="settings">
         <Form
           form={form}

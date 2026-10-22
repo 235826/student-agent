@@ -117,3 +117,54 @@ def test_bulk_time_dst_failure_is_atomic(authenticated: TestClient) -> None:
     )
     assert response.status_code == 422
     assert c.get("/api/v1/events").json() == before
+
+
+def test_deleting_imported_series_keeps_source_links(authenticated: TestClient) -> None:
+    c = authenticated
+    job = c.post(
+        "/api/v1/imports/text",
+        json={"text": "课程材料保留", "parse": False, "idempotency_key": "retain-source-test"},
+    ).json()
+    job = c.put(
+        f"/api/v1/imports/{job['id']}/draft",
+        json={
+            "revision": job["revision"],
+            "candidates": [
+                {
+                    "key": "course",
+                    "kind": "course",
+                    "title": "课程",
+                    "reviewed": True,
+                    "recurrence": {
+                        "start_date": "2030-01-07",
+                        "end_date": "2030-01-14",
+                        "weekdays": [0],
+                        "start_time": "09:00",
+                        "end_time": "10:00",
+                    },
+                }
+            ],
+        },
+    ).json()
+    response = c.post(
+        f"/api/v1/imports/{job['id']}/publish",
+        json={
+            "revision": job["revision"],
+            "confirmed": True,
+            "idempotency_key": "retain-source-publish",
+        },
+    )
+    assert response.status_code == 200
+    series_id = response.json()["published_records"][0]["id"]
+    event_id = c.get("/api/v1/events").json()[0]["id"]
+    assert (
+        c.request(
+            "DELETE", f"/api/v1/event-series/{series_id}", json={"confirmed": True}
+        ).status_code
+        == 204
+    )
+    for object_id in [series_id, event_id]:
+        origin = c.get("/api/v1/imports/origins", params={"object_id": object_id}).json()
+        assert origin[0]["source"]["text"] == "课程材料保留"
+        assert origin[0]["published_records"][0]["id"] == series_id
+    assert c.get(f"/api/v1/imports/{job['id']}").json()["published_revision"] is not None
