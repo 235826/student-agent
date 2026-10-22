@@ -10,7 +10,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Alert, Button, Spin, Result } from "antd";
 import { api, ApiError, setCsrf, type Auth, type Profile } from "./api";
 import Login from "./pages/Login";
-import CalendarPage from "./pages/CalendarPage";
+import TodayPage from "./pages/TodayPage";
 import SettingsPage from "./pages/SettingsPage";
 import ImportsPage from "./pages/ImportsPage";
 import PlansPage from "./pages/PlansPage";
@@ -135,7 +135,7 @@ export default function App() {
           <Alert type="error" message={errorText(logout.error)} />
         )}
         <Routes>
-          <Route path="/" element={<CalendarPage profile={profile} />} />
+          <Route path="/" element={<TodayPage profile={profile} />} />
           <Route path="/imports" element={<ImportEntry profile={profile} />} />
           <Route path="/plans" element={<PlansPage profile={profile} />} />
           <Route path="/tasks" element={<TasksPage profile={profile} />} />

@@ -8,7 +8,7 @@ test("账号、任务、事件、设置和手机布局闭环", async ({ page }, 
   await page
     .getByRole("button", { name: /^(创建账号并进入|登\s*录)$/ })
     .click();
-  await expect(page.getByRole("heading", { name: "留出时间，专注当下" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "今日工作台" })).toBeVisible();
   await page.getByRole("link", { name: "任务", exact: true }).click();
   await page.getByRole("button", { name: "新建任务", exact: true }).click();
   const title = `算法作业-${testInfo.project.name}`;

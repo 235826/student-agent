@@ -1,4 +1,4 @@
-import { useParams, useNavigate } from "react-router-dom";
+import { Link, useParams, useNavigate } from "react-router-dom";
 import { useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -14,6 +14,7 @@ import {
   Select,
   Space,
   Tag,
+  Spin,
 } from "antd";
 import FullCalendar from "@fullcalendar/react";
 import timeGridPlugin from "@fullcalendar/timegrid";
@@ -93,80 +94,113 @@ export default function PlansPage({ profile }: { profile: Profile }) {
           message="尚未设置可用时间，请先到设置页添加每周可用时段。"
         />
       )}
-      <Card className="toolbar" title="生成计划草稿">
-        <Form
-          form={form}
-          layout="vertical"
-          initialValues={{
-            start_at: tomorrow.toFormat("yyyy-MM-dd'T'HH:mm"),
-            end_at: tomorrow.plus({ days: 7 }).toFormat("yyyy-MM-dd'T'HH:mm"),
-            min_block_minutes: 25,
-            max_block_minutes: 90,
-          }}
-          onFinish={(values) => {
-            try {
-              const body = {
-                ...values,
-                start_at: toInstant(values.start_at, profile.timezone),
-                end_at: toInstant(values.end_at, profile.timezone),
-              };
-              const payload = JSON.stringify(body);
-              if (request.current?.payload !== payload)
-                request.current = { payload, key: crypto.randomUUID() };
-              generate.mutate({
-                ...body,
-                idempotency_key: request.current.key,
-              });
-            } catch (e) {
-              void message.error(e instanceof Error ? e.message : "时间无效");
-            }
-          }}
-        >
-          <div className="form-grid">
-            <Form.Item
-              name="start_at"
-              label="排程开始"
-              rules={[{ required: true }]}
+      {!selected && (
+        <Card className="toolbar" title="生成计划草稿">
+          <Form
+            form={form}
+            layout="vertical"
+            initialValues={{
+              start_at: tomorrow.toFormat("yyyy-MM-dd'T'HH:mm"),
+              end_at: tomorrow.plus({ days: 7 }).toFormat("yyyy-MM-dd'T'HH:mm"),
+              min_block_minutes: 25,
+              max_block_minutes: 90,
+            }}
+            onFinish={(values) => {
+              try {
+                const body = {
+                  ...values,
+                  start_at: toInstant(values.start_at, profile.timezone),
+                  end_at: toInstant(values.end_at, profile.timezone),
+                };
+                const payload = JSON.stringify(body);
+                if (request.current?.payload !== payload)
+                  request.current = { payload, key: crypto.randomUUID() };
+                generate.mutate({
+                  ...body,
+                  idempotency_key: request.current.key,
+                });
+              } catch (e) {
+                void message.error(e instanceof Error ? e.message : "时间无效");
+              }
+            }}
+          >
+            <div className="form-grid">
+              <Form.Item
+                name="start_at"
+                label="排程开始"
+                rules={[{ required: true }]}
+              >
+                <Input type="datetime-local" />
+              </Form.Item>
+              <Form.Item
+                name="end_at"
+                label="排程结束"
+                rules={[{ required: true }]}
+              >
+                <Input type="datetime-local" />
+              </Form.Item>
+            </div>
+            <div className="form-grid">
+              <Form.Item
+                name="min_block_minutes"
+                label="最小工作块（分钟）"
+                rules={[{ required: true }]}
+              >
+                <InputNumber min={1} max={90} />
+              </Form.Item>
+              <Form.Item
+                name="max_block_minutes"
+                label="最大工作块（分钟）"
+                rules={[{ required: true }]}
+              >
+                <InputNumber min={1} max={180} />
+              </Form.Item>
+            </div>
+            <Button
+              type="primary"
+              htmlType="submit"
+              loading={generate.isPending}
             >
-              <Input type="datetime-local" />
-            </Form.Item>
-            <Form.Item
-              name="end_at"
-              label="排程结束"
-              rules={[{ required: true }]}
-            >
-              <Input type="datetime-local" />
-            </Form.Item>
-          </div>
-          <div className="form-grid">
-            <Form.Item
-              name="min_block_minutes"
-              label="最小工作块（分钟）"
-              rules={[{ required: true }]}
-            >
-              <InputNumber min={1} max={90} />
-            </Form.Item>
-            <Form.Item
-              name="max_block_minutes"
-              label="最大工作块（分钟）"
-              rules={[{ required: true }]}
-            >
-              <InputNumber min={1} max={180} />
-            </Form.Item>
-          </div>
-          <Button type="primary" htmlType="submit" loading={generate.isPending}>
-            生成草稿
-          </Button>
-          <p className="muted">
-            最多安排未来 31
-            天范围内的任务；最后一个工作块可短于最小值。休息窗口不会安排任务。
-          </p>
-        </Form>
-      </Card>
+              生成草稿
+            </Button>
+            <p className="muted">
+              最多安排未来 31
+              天范围内的任务；最后一个工作块可短于最小值。休息窗口不会安排任务。
+            </p>
+          </Form>
+        </Card>
+      )}
       {plans.error && <Alert type="error" message={plans.error.message} />}
       {events.error && <Alert type="error" message={events.error.message} />}
-      {!active ? (
-        <Empty description="还没有计划，先生成一份草稿" />
+      {plans.isPending ? (
+        <Spin />
+      ) : !selected ? (
+        <div className="cards">
+          {!plans.data?.length && !plans.error && (
+            <Empty description="还没有计划，先生成一份草稿" />
+          )}
+          {plans.data?.map((p) => (
+            <Card
+              key={p.id}
+              title={
+                p.status === "adopted"
+                  ? "当前计划"
+                  : p.status === "draft"
+                    ? "计划草稿"
+                    : "历史计划"
+              }
+            >
+              <p>{displayTime(p.created_at, profile.timezone)}</p>
+              <p>
+                {p.blocks.length} 个工作块{" "}
+                {p.stale && <Tag color="orange">依据已变化</Tag>}
+              </p>
+              <Link to={`/plans/${p.id}`}>查看计划详情</Link>
+            </Card>
+          ))}
+        </div>
+      ) : !active ? (
+        <Empty description="计划不存在" />
       ) : (
         <>
           <Card className="toolbar">
@@ -235,12 +269,24 @@ export default function PlansPage({ profile }: { profile: Profile }) {
               <Alert
                 type="warning"
                 message="任务、课表、规则或当前计划已变化，或草稿时间已过期；请重新生成，历史计划仍保留。"
+                action={<Link to="/plans">重新生成</Link>}
               />
             )}
             {missing && (
               <Alert
                 type="warning"
                 message="部分任务尚未完整安排，请查看下方未排工时与原因。"
+                action={
+                  <Button
+                    onClick={() =>
+                      document
+                        .getElementById("reports")
+                        ?.scrollIntoView({ behavior: "smooth" })
+                    }
+                  >
+                    查看未排任务
+                  </Button>
+                }
               />
             )}
             {active.status === "draft" && (
@@ -296,10 +342,12 @@ export default function PlansPage({ profile }: { profile: Profile }) {
               ]}
             />
           </Card>
-          <div className="cards toolbar">
+          <div id="reports" className="cards toolbar">
             {active.reports.map((r) => (
               <Card key={r.task_id}>
-                <h3>{r.title}</h3>
+                <h3>
+                  <Link to={`/tasks/${r.task_id}`}>{r.title}</Link>
+                </h3>
                 <p>
                   已排 {r.scheduled_minutes} 分钟 ·{" "}
                   {r.unscheduled_minutes === null

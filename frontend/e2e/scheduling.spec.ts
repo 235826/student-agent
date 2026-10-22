@@ -21,6 +21,7 @@ test("排程预览、确认、版本保留及失效提示", async ({ page }, inf
   await page.getByRole("button", { name: /^确\s*定$/ }).click();
   await expect(page.getByRole("heading", { name: title })).toBeVisible();
   await page.getByRole("link", { name: "学习计划", exact: true }).click();
+  await page.getByRole("link", { name: "学习计划", exact: true }).click();
   await page.getByLabel("排程开始").fill("2030-01-07T00:00");
   await page.getByLabel("排程结束").fill("2030-01-08T00:00");
   await page.getByRole("button", { name: "生成草稿" }).click();
@@ -39,8 +40,11 @@ test("排程预览、确认、版本保留及失效提示", async ({ page }, inf
     .getByRole("button", { name: /^确\s*定$/ })
     .click();
   await expect(page.getByText("已采用计划", { exact: true })).toBeVisible();
+  const firstPlanUrl = page.url();
   await page.reload();
+  await expect(page).toHaveURL(firstPlanUrl);
   await expect(page.getByText("当前计划", { exact: true })).toBeVisible();
+  await page.getByRole("link", { name: "学习计划", exact: true }).click();
   await page.getByLabel("排程开始").fill("2030-01-07T00:00");
   await page.getByLabel("排程结束").fill("2030-01-08T00:00");
   await page.getByRole("button", { name: "生成草稿" }).click();
@@ -53,6 +57,7 @@ test("排程预览、确认、版本保留及失效提示", async ({ page }, inf
     page.getByRole("heading", { name: `${title}-新增` }),
   ).toBeVisible();
   await page.getByRole("link", { name: "学习计划", exact: true }).click();
+  await page.getByRole("link", { name: "查看计划详情" }).first().click();
   await expect(page.getByRole("button", { name: "确认采用" })).toBeDisabled();
   await expect(
     page.getByText(/任务、课表、规则或当前计划已变化/),
