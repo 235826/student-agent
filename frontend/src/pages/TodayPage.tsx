@@ -5,6 +5,7 @@ import { DateTime } from "luxon";
 import { api, type Plan, type Event, type Task, type Profile } from "../api";
 import { displayTime } from "../time";
 import { withFrom } from "../navigation";
+import { staleInfo } from "../semantics";
 
 export default function TodayPage({ profile }: { profile: Profile }) {
   const plan = useQuery({
@@ -31,7 +32,8 @@ export default function TodayPage({ profile }: { profile: Profile }) {
         start: e.start_at,
         end: e.end_at,
         to: `/calendar/events/${e.id}`,
-        kind: "固定事件",
+        kind: "事件",
+        stale: false,
       })),
     ...(plan.data?.blocks ?? []).map((b) => ({
       id: `${b.task_id}-${b.start_at}`,
@@ -39,7 +41,8 @@ export default function TodayPage({ profile }: { profile: Profile }) {
       start: b.start_at,
       end: b.end_at,
       to: `/tasks/${b.task_id}`,
-      kind: "计划任务",
+      kind: "计划块",
+      stale: !!plan.data?.stale,
     })),
   ]
     .filter(
@@ -47,7 +50,10 @@ export default function TodayPage({ profile }: { profile: Profile }) {
         DateTime.fromISO(a.start) < tomorrow && DateTime.fromISO(a.end) > day,
     )
     .sort((a, b) => a.start.localeCompare(b.start));
-  const next = agenda.find((a) => DateTime.fromISO(a.end) > now);
+  const next = agenda.find(
+    (a) => !a.stale && DateTime.fromISO(a.end) > now,
+  );
+  const stale = plan.data ? staleInfo(plan.data) : null;
   const due = (tasks.data ?? [])
     .filter(
       (t) =>
@@ -56,6 +62,7 @@ export default function TodayPage({ profile }: { profile: Profile }) {
         DateTime.fromISO(t.deadline_at) < now.plus({ days: 3 }),
     )
     .sort((a, b) => a.deadline_at!.localeCompare(b.deadline_at!));
+  const nextDue = due[0];
   const error = plan.error ?? events.error ?? tasks.error;
   return (
     <>
@@ -80,10 +87,10 @@ export default function TodayPage({ profile }: { profile: Profile }) {
         </Space>
       </header>
       {error && <Alert type="error" message={error.message} />}
-      {plan.data?.stale && (
+      {stale && (
         <Alert
           type="warning"
-          message="当前计划依据已变化；原计划保留，重新生成后需确认采用。"
+          message={stale.detail}
           action={<Link to="/plans/new?from=/">重新生成</Link>}
         />
       )}
@@ -96,6 +103,14 @@ export default function TodayPage({ profile }: { profile: Profile }) {
               <Link to={withFrom(next.to, "/")}>
                 {next.title} · {next.kind} ·{" "}
                 {displayTime(next.start, profile.timezone)}
+              </Link>
+            ) : nextDue ? (
+              <Link to={withFrom(`/tasks/${nextDue.id}`, "/")}>
+                {nextDue.title} ·{" "}
+                {DateTime.fromISO(nextDue.deadline_at!) < now
+                  ? "已逾期"
+                  : "最近截止"}{" "}
+                · {displayTime(nextDue.deadline_at, profile.timezone)}
               </Link>
             ) : (
               <p>
@@ -114,16 +129,17 @@ export default function TodayPage({ profile }: { profile: Profile }) {
               agenda.map((a) => (
                 <p key={a.id}>
                   <span>
-                    {displayTime(a.start, profile.timezone)} · {a.kind} ·{" "}
+                    {displayTime(a.start, profile.timezone)} · {a.kind}
+                    {a.stale ? "（旧计划）" : ""} ·{" "}
                   </span>
                   <Link to={withFrom(a.to, "/")}>{a.title}</Link>
                 </p>
               ))
             ) : (
-              <Empty description="今天没有固定安排或计划块" />
+              <Empty description="今天没有事件或计划块" />
             )}
           </Card>
-          <Card title="逾期与三天内到期">
+          <Card title="逾期与 72 小时内到期">
             {due.length ? (
               due.map((t) => (
                 <p key={t.id}>

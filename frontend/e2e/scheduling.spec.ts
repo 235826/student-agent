@@ -28,8 +28,8 @@ test("排程预览、确认、版本保留及失效提示", async ({ page }, inf
   await page.getByLabel("排程开始").fill("2030-01-07T00:00");
   await page.getByLabel("排程结束").fill("2030-01-08T00:00");
   await page.getByRole("button", { name: "生成草稿" }).click();
-  await expect(page.getByText("待确认草稿", { exact: true })).toBeVisible();
-  await page.getByText("查看工作块变更明细", { exact: true }).click();
+  await expect(page.getByText("待确认计划草稿", { exact: true })).toBeVisible();
+  await page.getByText("查看计划块变更明细", { exact: true }).click();
   await expect(page.locator(".ant-collapse-content-active")).toContainText(
     title,
   );
@@ -51,7 +51,7 @@ test("排程预览、确认、版本保留及失效提示", async ({ page }, inf
   await page.getByLabel("排程开始").fill("2030-01-07T00:00");
   await page.getByLabel("排程结束").fill("2030-01-08T00:00");
   await page.getByRole("button", { name: "生成草稿" }).click();
-  await expect(page.getByText("待确认草稿", { exact: true })).toBeVisible();
+  await expect(page.getByText("待确认计划草稿", { exact: true })).toBeVisible();
   await page.getByRole("link", { name: "任务", exact: true }).click();
   await page.getByRole("button", { name: "新建任务", exact: true }).click();
   await page.getByLabel("任务标题").fill(`${title}-新增`);
@@ -63,7 +63,7 @@ test("排程预览、确认、版本保留及失效提示", async ({ page }, inf
   await page.getByRole("link", { name: "查看计划详情" }).first().click();
   await expect(page.getByRole("button", { name: "确认采用" })).toBeDisabled();
   await expect(
-    page.getByText(/任务、课表、规则或当前计划已变化/),
+    page.getByText(/任务、课表或规则已变化/),
   ).toBeVisible();
   expect(
     await page.evaluate(

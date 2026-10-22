@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { toInstant, toLocal, displayTime } from "./time";
 describe("时区转换", () => {
-  it("改变显示时区不改变真实时间", () => {
+  it("改变时区不改变真实时间", () => {
     const instant = toInstant("2026-10-21T09:00", "Asia/Shanghai")!;
     expect(toLocal(instant, "UTC")).toBe("2026-10-21T01:00");
     expect(displayTime(instant, "Asia/Shanghai")).toBe("10-21 09:00");

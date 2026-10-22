@@ -58,7 +58,7 @@ export default function SettingsPage({
         >
           <Form.Item
             name="timezone"
-            label="显示时区（IANA）"
+            label="显示与排程时区（IANA）"
             rules={[{ required: true }]}
           >
             <Input placeholder="Asia/Shanghai" />
@@ -75,17 +75,19 @@ export default function SettingsPage({
             使用浏览器时区
           </Button>
           <p className="muted">
-            更改时区只改变显示方式，已有事件对应的真实时间保持不变。
+            用于显示时间、新建任务和事件的本地时间，以及解释每周可用时间。更改后已有事件对应的真实时间不变，但之后生成的计划会按新时区解释每周窗口。
           </p>
           {(["available_windows", "rest_windows"] as const).map((field) => (
             <section key={field}>
               <h3>
                 {field === "available_windows"
                   ? "每周可用时间"
-                  : "通常休息时段"}
+                  : "休息时段（不排任务）"}
               </h3>
               <p className="muted">
-                可留空；跨午夜的窗口请拆为两天。星期一为一周起点。
+                {field === "available_windows"
+                  ? "可留空；跨午夜的窗口请拆为两天。星期一为一周起点。"
+                  : "这些时段始终不会安排任务；跨午夜的窗口请拆为两天。"}
               </p>
               <Form.List name={field}>
                 {(fields, { add, remove }) => (

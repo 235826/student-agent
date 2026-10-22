@@ -171,14 +171,6 @@ export default function App() {
           >
             设置
           </NavLink>
-          <NavLink
-            to="/settings/rules"
-            className={() =>
-              pathname.startsWith("/settings/rules") ? "active" : ""
-            }
-          >
-            并行规则
-          </NavLink>
         </div>
         <div className="account">
           <span>{profile.username}</span>

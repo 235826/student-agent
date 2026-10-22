@@ -290,7 +290,7 @@ export default function EventsPage({ profile }: { profile: Profile }) {
     modal.confirm({
       title: event.is_skipped ? "确认恢复参加本次课程" : "确认本次不参加",
       content:
-        "仅改变这一次课程的参加状态，原课表和其他周次保持不变。恢复参加后，该时段重新计为占用。",
+        "仅改变这一次课程的参加状态，每周课程和其他周次保持不变。恢复参加后，该时段重新计为占用。",
       onOk: () =>
         write.mutateAsync({
           path: `/events/${event.id}/skip`,
@@ -304,12 +304,12 @@ export default function EventsPage({ profile }: { profile: Profile }) {
         <div>
           <div className="eyebrow">MAKE ROOM</div>
           <h1>{id ? "事件详情" : "日历与课程"}</h1>
-          <p className="muted">固定课程保留原始安排，单次变更单独记录。</p>
+          <p className="muted">固定安排保留原始时间，单次变更单独记录。</p>
         </div>
         {!id && (
           <Space wrap>
             <Button onClick={() => openCourse(null)}>添加课程</Button>
-            <Button onClick={() => openNewSeries()}>建立重复课表</Button>
+            <Button onClick={() => openNewSeries()}>建立每周课程</Button>
             <Button
               type="primary"
               onClick={() =>
@@ -333,7 +333,7 @@ export default function EventsPage({ profile }: { profile: Profile }) {
       {!id && (
         <>
           <div className="calendar-layout">
-            <Card className="toolbar course-sidebar" title="课程与系列">
+            <Card className="toolbar course-sidebar" title="课程与每周课程">
               {courses.isPending ? (
                 <Spin />
               ) : courses.error ? null : courses.data?.length ? (
@@ -347,6 +347,9 @@ export default function EventsPage({ profile }: { profile: Profile }) {
                     >
                       {c.name}
                     </Link>
+                    {c.semester && (
+                      <span className="muted"> · {c.semester}</span>
+                    )}
                     {series.data
                       ?.filter((s) => s.course_id === c.id)
                       .map((s) => (
@@ -403,7 +406,7 @@ export default function EventsPage({ profile }: { profile: Profile }) {
         <Spin />
       ) : !visible.length ? (
         <Card>
-          <Empty description={id ? "事件不存在或已删除" : "本周没有固定事件"} />
+          <Empty description={id ? "事件不存在或已删除" : "本周没有事件"} />
         </Card>
       ) : (
         <div className="cards">
@@ -498,7 +501,7 @@ export default function EventsPage({ profile }: { profile: Profile }) {
                           )
                     }
                   >
-                    所属系列
+                    所属每周课程
                   </Link>
                 )}
                 <SourceButton objectId={event.id} />
@@ -510,8 +513,8 @@ export default function EventsPage({ profile }: { profile: Profile }) {
                       modal.confirm({
                         title: "删除这次事件？",
                         content: event.series_id
-                          ? "将永久删除本次课程和对应单次覆盖。系列与其他周次保留，但该周次永久缺失，后续编辑系列不会补回；导入来源与历史计划保留，当前计划会标记过期。"
-                          : "将永久删除本次事件和对应单次覆盖；导入来源与历史计划保留，当前计划会标记过期。",
+                          ? "将永久删除本次课程和对应的本次调整。其他周次与每周课程保留，但该周次永久缺失，后续编辑每周课程不会补回；导入来源与历史计划保留，当前计划将标记为依据已变化。"
+                          : "将永久删除本次事件和对应的本次调整；导入来源与历史计划保留，当前计划会标记过期。",
                         onOk: () =>
                           remove.mutateAsync(event.id).then(() => undefined),
                       })
@@ -563,7 +566,6 @@ export default function EventsPage({ profile }: { profile: Profile }) {
                 start_at: start,
                 end_at: end,
                 timezone: profile.timezone,
-                locked: editing?.locked ?? true,
                 course_id: values.course_id ?? null,
               };
               await write.mutateAsync({
@@ -581,7 +583,7 @@ export default function EventsPage({ profile }: { profile: Profile }) {
           {editing?.series_id && (
             <Alert
               type="info"
-              message="备注和详情可分别选择仅本次或整个系列；系列值会与单次值同时展示。"
+              message="备注和详情可分别选择仅本次或全部周次；每周课程默认值会与单次值同时展示。"
             />
           )}
           <Form.Item
@@ -651,13 +653,13 @@ export default function EventsPage({ profile }: { profile: Profile }) {
             <Form.Item
               name="note_scope"
               label="备注应用范围"
-              extra="整个系列会更新系列默认值；已有单次值仍会保留并与系列值同时展示。"
+              extra="全部周次会更新每周课程默认值；已有单次值仍会保留并与每周课程默认值同时展示。"
             >
               <Radio.Group
                 onChange={(e) => switchScope("note", e.target.value)}
                 options={[
                   { value: "single", label: "仅本次" },
-                  { value: "series", label: "整个系列" },
+                  { value: "series", label: "全部周次" },
                 ]}
               />
             </Form.Item>
@@ -673,13 +675,13 @@ export default function EventsPage({ profile }: { profile: Profile }) {
             <Form.Item
               name="details_scope"
               label="详情应用范围"
-              extra="详情只在事件详情显示；系列值会与单次值拼接。"
+              extra="详情只在事件详情显示；每周课程默认值会与单次值拼接。"
             >
               <Radio.Group
                 onChange={(e) => switchScope("details", e.target.value)}
                 options={[
                   { value: "single", label: "仅本次" },
-                  { value: "series", label: "整个系列" },
+                  { value: "series", label: "全部周次" },
                 ]}
               />
             </Form.Item>
@@ -694,7 +696,7 @@ export default function EventsPage({ profile }: { profile: Profile }) {
           {editing?.series_id &&
             (editing.series_note || editing.series_details) && (
               <details>
-                <summary>查看系列默认备注和详情</summary>
+                <summary>查看每周课程默认备注和详情</summary>
                 {editing.series_note && <p>备注：{editing.series_note}</p>}
                 {editing.series_details && (
                   <p className="event-details">{editing.series_details}</p>
@@ -731,7 +733,7 @@ export default function EventsPage({ profile }: { profile: Profile }) {
         </Form>
       </Modal>
       <Modal
-        title="建立每周重复课表"
+        title="建立每周课程"
         open={seriesOpen}
         onCancel={closeSeries}
         onOk={() => seriesForm.submit()}
@@ -818,7 +820,7 @@ export default function EventsPage({ profile }: { profile: Profile }) {
           </div>
           <Form.Item
             name="timezone"
-            label="课表时区"
+            label="每周课程时区"
             rules={[{ required: true }]}
           >
             <Input />
@@ -828,14 +830,14 @@ export default function EventsPage({ profile }: { profile: Profile }) {
           </Form.Item>
           <Form.Item
             name="note"
-            label="系列备注（短，显示在卡片和日历）"
+            label="每周课程默认备注（短，显示在卡片和日历）"
             rules={[{ max: 120 }]}
           >
             <Input maxLength={120} showCount />
           </Form.Item>
           <Form.Item
             name="details"
-            label="系列详情（仅在事件详情显示）"
+            label="每周课程默认详情（仅在事件详情显示）"
             rules={[{ max: 5000 }]}
           >
             <Input.TextArea rows={4} maxLength={5000} showCount />

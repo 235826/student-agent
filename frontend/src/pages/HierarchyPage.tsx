@@ -121,8 +121,11 @@ export default function HierarchyPage({
       <header>
         <div>
           <h1>
-            {course.name} · {kind === "course" ? "课程详情" : "系列详情"}
+            {course.name} · {kind === "course" ? "课程详情" : "每周课程详情"}
           </h1>
+          {kind === "course" && course.semester && (
+            <p className="muted">{course.semester}</p>
+          )}
           <Space wrap>
             <Link to={back.to}>{back.label}</Link>
             {kind === "series" && (
@@ -187,9 +190,9 @@ export default function HierarchyPage({
                 })
               }
             />
-            <p>仅应用于没有单次覆盖的课程实例。</p>
+            <p>仅应用于没有单次调整的课程实例。</p>
           </Card>
-          <Card title="重复系列" className="toolbar">
+          <Card title="每周课程" className="toolbar">
             <Button
               className="toolbar"
               onClick={() =>
@@ -198,7 +201,7 @@ export default function HierarchyPage({
                 )
               }
             >
-              建立重复系列
+              建立每周课程
             </Button>
             {courseSeries.map((s) => (
               <p key={s.id}>
@@ -213,10 +216,10 @@ export default function HierarchyPage({
               </p>
             ))}
             {!courseSeries.length && (
-              <Empty description="尚未建立重复课表" />
+              <Empty description="尚未建立每周课程" />
             )}
           </Card>
-          <Card title="独立课程事件">
+          <Card title="单次课程事件">
             <Button
               className="toolbar"
               onClick={() =>
@@ -241,7 +244,7 @@ export default function HierarchyPage({
                 </Link>
               </p>
             ))}
-            {!courseEvents.length && <p className="muted">暂无独立课程事件。</p>}
+            {!courseEvents.length && <p className="muted">暂无单次课程事件。</p>}
           </Card>
         </>
       ) : (
@@ -249,7 +252,7 @@ export default function HierarchyPage({
           <Card title="批量修改时间与地点" className="toolbar">
             <Alert
               type="info"
-              message="修改整个系列的原始时间和地点；已有单次时间、地点、参加状态和并行覆盖保留。日期范围与星期不变。"
+              message="修改整门每周课程的原始时间和地点；已有单次时间、地点、参加状态和并行覆盖保留。日期范围与星期不变。"
             />
             <Form
               key={id}
@@ -265,8 +268,8 @@ export default function HierarchyPage({
               }}
               onFinish={(values) =>
                 modal.confirm({
-                  title: "修改整个系列？",
-                  content: `将修改 ${instances.length} 次课程的原始安排，保留单次覆盖；当前计划会标记过期。`,
+                  title: "修改整门每周课程？",
+                  content: `将修改 ${instances.length} 次课程的原始安排，保留已有的本次调整；当前计划将标记为依据已变化。`,
                   onOk: () =>
                     save
                       .mutateAsync({
@@ -297,14 +300,14 @@ export default function HierarchyPage({
               </Form.Item>
               <Form.Item
                 name="note"
-                label="系列备注（短，显示在卡片和日历）"
+                label="每周课程默认备注（短，显示在卡片和日历）"
                 rules={[{ max: 120 }]}
               >
                 <Input maxLength={120} showCount />
               </Form.Item>
               <Form.Item
                 name="details"
-                label="系列详情（仅在事件详情显示）"
+                label="每周课程默认详情（仅在事件详情显示）"
                 rules={[{ max: 5000 }]}
               >
                 <Input.TextArea rows={4} maxLength={5000} showCount />
@@ -323,14 +326,14 @@ export default function HierarchyPage({
                 }
                 onClick={() =>
                   modal.confirm({
-                    title: skipped ? "停用整个系列？" : "恢复整个系列参加？",
-                    content: `将把全部 ${instances.length} 次课程设为${skipped ? "不参加" : "参加"}，覆盖单次参加状态；时间、地点与来源记录保留，计划会标记过期。`,
+                    title: skipped ? "将整门每周课程设为不参加？" : "恢复整门每周课程参加？",
+                    content: `将把全部 ${instances.length} 次课程设为${skipped ? "不参加" : "参加"}，覆盖已有的单次参加状态；时间、地点与来源记录保留，计划将标记为依据已变化。`,
                     onOk: () =>
                       attendance.mutateAsync(skipped).then(() => undefined),
                   })
                 }
               >
-                {skipped ? "停用系列" : "恢复系列"}
+                {skipped ? "全部不参加" : "全部恢复参加"}
               </Button>
             ))}
             <SourceButton objectId={id!} />
@@ -356,7 +359,7 @@ export default function HierarchyPage({
         <Alert
           className="toolbar"
           type="info"
-          message={`删除课程前需要先清理 ${courseSeries.length} 个系列和 ${courseEvents.length} 个独立事件。`}
+          message={`删除课程前需要先清理 ${courseSeries.length} 门每周课程和 ${courseEvents.length} 个独立事件。`}
           description={
             <Space wrap>
               {courseSeries[0] && (
@@ -366,7 +369,7 @@ export default function HierarchyPage({
                     here,
                   )}
                 >
-                  查看重复系列
+                  查看每周课程
                 </Link>
               )}
               {courseEvents[0] && (
@@ -390,16 +393,16 @@ export default function HierarchyPage({
         loading={remove.isPending}
         onClick={() =>
           modal.confirm({
-            title: kind === "course" ? "删除空课程？" : "删除整个系列？",
+            title: kind === "course" ? "删除空课程？" : "删除整门每周课程？",
             content:
               kind === "course"
-                ? "仅允许删除没有系列和事件的空课程。请先逐项清理；不会级联删除其他数据。"
-                : `将永久删除本系列 ${instances.length} 次事件及其单次覆盖，保留所属课程、导入来源与历史计划。当前计划会标记过期。`,
+                ? "仅允许删除没有每周课程和事件的空课程。请先逐项清理；不会级联删除其他数据。"
+                : `将永久删除本每周课程 ${instances.length} 次事件及其本次调整，保留所属课程、导入来源与历史计划。当前计划将标记为依据已变化。`,
             onOk: () => remove.mutateAsync().then(() => undefined),
           })
         }
       >
-        {kind === "course" ? "删除课程" : "删除系列"}
+        {kind === "course" ? "删除课程" : "删除每周课程"}
       </Button>
     </>
   );

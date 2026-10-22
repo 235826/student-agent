@@ -9,8 +9,8 @@ export const importLabels: Record<string, string> = {
   running: "正在解析",
   succeeded: "待校对",
   failed: "解析失败",
-  cancelled: "手动整理",
-  published: "已入库",
+  cancelled: "已取消解析",
+  published: "已创建",
 };
 export default function ImportRecords({
   timezone,

@@ -28,6 +28,7 @@ import {
 import { api } from "../api";
 import type { Draft, Profile, Task, TaskInput } from "../api";
 import { displayTime, toInstant, toLocal } from "../time";
+import { priorities, priorityLabel } from "../semantics";
 
 const states = [
   { value: "todo", label: "待开始" },
@@ -35,10 +36,6 @@ const states = [
   { value: "done", label: "已完成" },
   { value: "cancelled", label: "已取消" },
 ];
-const priorities = [1, 2, 3, 4].map((value) => ({
-  value,
-  label: ["低", "普通", "高", "紧急"][value - 1],
-}));
 const policies = [
   { value: "inherit", label: "沿用任务类型设置（未设置则禁止）" },
   { value: "none", label: "明确禁止并行" },
@@ -61,9 +58,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
   const [sort, setSort] = useState("status");
   const client = useQueryClient();
   const { message, modal } = App.useApp();
-  const [tab, setTab] = useState<"tasks" | "trash" | "drafts">(
-    location.pathname === "/inbox" ? "drafts" : "tasks",
-  );
+  const [tab, setTab] = useState<"tasks" | "trash">("tasks");
   const [editor, setEditor] = useState<Editor | null>(
     isNew || params.has("new") ? { kind: "task" } : null,
   );
@@ -236,8 +231,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
           },
         }),
     });
-  const activeTab = inbox ? "drafts" : tab === "drafts" ? "tasks" : tab;
-  const current = activeTab === "trash" ? trash : tasks;
+  const current = tab === "trash" ? trash : tasks;
   const visible = (
     id ? catalog.filter((t) => t.id === id) : (current.data ?? [])
   )
@@ -292,12 +286,16 @@ export default function TasksPage({ profile }: { profile: Profile }) {
       <header>
         <div>
           <div className="eyebrow">ONE STEP AT A TIME</div>
-          <h1>{inbox ? "待确认" : id ? "任务详情" : "任务"}</h1>
-          <p className="muted">从草稿开始，明确每一步的先后关系。</p>
+          <h1>{inbox ? "收件箱" : id ? "任务详情" : "任务"}</h1>
+          <p className="muted">
+            {inbox
+              ? "集中处理导入材料与任务草稿。"
+              : "从草稿开始，明确每一步的先后关系。"}
+          </p>
         </div>
         {inbox ? (
           <Button type="primary" onClick={() => open({ kind: "draft" })}>
-            新建草稿
+            新建任务草稿
           </Button>
         ) : !id ? (
           <Button type="primary" onClick={() => open({ kind: "task" })}>
@@ -315,7 +313,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
           ).map(([key, label]) => (
             <Button
               key={key}
-              type={activeTab === key ? "primary" : "default"}
+              type={tab === key ? "primary" : "default"}
               onClick={() => setTab(key)}
             >
               {label}
@@ -372,21 +370,21 @@ export default function TasksPage({ profile }: { profile: Profile }) {
             <Spin />
           ) : !drafts.data?.length ? (
             <Card>
-              <Empty description="没有待发布草稿" />
+              <Empty description="没有待发布的任务草稿" />
             </Card>
           ) : (
             <div className="cards">
               {drafts.data.map((draft) => (
                 <Card key={draft.id}>
                   <h3>{draft.payload.title || "未命名草稿"}</h3>
-                  <Tag>草稿 · 版本 {draft.revision}</Tag>
+                  <Tag>任务草稿 · 版本 {draft.revision}</Tag>
                   <p className="description">
                     {draft.payload.description ||
                       "可以继续补充内容，草稿不会参与排程。"}
                   </p>
                   <Space wrap>
                     <Button onClick={() => open({ kind: "draft", draft })}>
-                      编辑草稿
+                      编辑任务草稿
                     </Button>
                     <Button
                       type="primary"
@@ -402,8 +400,8 @@ export default function TasksPage({ profile }: { profile: Profile }) {
                       danger
                       onClick={() =>
                         modal.confirm({
-                          title: "删除草稿？",
-                          content: "草稿将被删除，不会影响正式任务。",
+                          title: "删除任务草稿？",
+                          content: "任务草稿将被删除，不会影响正式任务。",
                           onOk: () =>
                             draftDelete.mutateAsync({
                               path: `/drafts/${draft.id}?revision=${draft.revision}`,
@@ -412,7 +410,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
                         })
                       }
                     >
-                      删除草稿
+                      删除任务草稿
                     </Button>
                   </Space>
                 </Card>
@@ -437,7 +435,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
                 description={
                   id
                     ? "任务不存在或已删除"
-                    : activeTab === "trash"
+                    : tab === "trash"
                       ? "垃圾箱为空"
                       : "还没有任务，先添加一件想完成的事"
                 }
@@ -506,7 +504,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
                     <div className="meta">
                       截止：{displayTime(task.deadline_at, profile.timezone)} ·
                       预计 {task.estimate_minutes ?? "—"} 分钟 ·{" "}
-                      {priorities[task.priority - 1].label}
+                      {priorityLabel(task.priority)}
                     </div>
                     <Space wrap>
                       {task.trashed_at ? (

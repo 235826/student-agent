@@ -1,6 +1,6 @@
 # Student Agent 信息架构与交互重构
 
-主导航：今日 → 收件箱 → 任务 → 日历与课程 → 学习计划。桌面为侧栏，设置与并行规则位于侧栏底部；移动端为五项固定底部导航。导入不再是顶层入口，统一收进收件箱。
+主导航：今日 → 收件箱 → 任务 → 日历与课程 → 学习计划。桌面为侧栏，设置位于侧栏底部；移动端为五项固定底部导航。导入不再是顶层入口，统一收进收件箱。
 
 ## 信息架构原则
 
@@ -14,16 +14,16 @@
 
 | 路由 | 职责 |
 | --- | --- |
-| `/` | 今日工作台：固定事件与计划块统一时间线、下一项、临期任务、上下文快速创建 |
+| `/` | 今日工作台：事件与计划块统一时间线、下一项、临期任务、上下文快速创建 |
 | `/inbox` | 收件箱：材料待处理与手动任务草稿 |
 | `/inbox/imports` | 新建导入材料、状态筛选与最近 100 批记录 |
-| `/inbox/imports/:id` | 来源、解析进度、逐项校对、确认入库 |
+| `/inbox/imports/:id` | 来源、解析进度、逐项校对、确认创建 |
 | `/tasks` | 正式任务、搜索、状态筛选/分组、排序；垃圾箱切换 |
 | `/tasks/new` | 新建任务抽屉；可创建正式任务或保存到收件箱 |
 | `/tasks/:id` | 任务详情、编辑、恢复、来源、父子/前置/阻塞关系导航 |
 | `/calendar` | 周日历、课程/系列侧栏、选中周事件；周次与视图写入 URL |
 | `/calendar/events/new` | 新事件，支持 `date`、`course` 预填及 `from` 返回来源 |
-| `/calendar/events/:id` | 单次事件编辑、参加状态、并行单次覆盖、删除与层级导航 |
+| `/calendar/events/:id` | 单次事件编辑、参加状态、并行单次调整、删除与层级导航 |
 | `/calendar/courses/:id` | 课程资料、默认并行设置、创建独立事件/重复系列、清理关联后删除 |
 | `/calendar/series/new` | 建立重复系列，支持 `course` 预填 |
 | `/calendar/series/:id` | 周次实例、批量时间/地点编辑、停用/恢复、删除、来源 |
@@ -32,13 +32,13 @@
 | `/plans/:id` | 单份计划日历、差异、未排报告、二次确认采用、返回列表与重新生成 |
 | `/settings` | 账号与时区、可用时间、休息窗口 |
 | `/settings/schedule` | 设置页可用时间锚点，供计划页深链 |
-| `/settings/rules` | 任务类型偏好、课程默认设置、组合允许规则、兼容性检查；`?tab=types/courses/rules/check` 直达 |
+| `/settings/rules` | 任务类型设置、课程默认设置、组合规则、兼容性检查；`?tab=types/courses/rules/check` 直达 |
 
 旧路径重定向：`/imports` → `/inbox/imports`，`/imports/:id` → `/inbox/imports/:id`，`/events` → `/calendar`，`/events/:id` → `/calendar/events/:id`，`/courses/:id` → `/calendar/courses/:id`，`/series/:id` → `/calendar/series/:id`，`/compatibility` → `/settings/rules`。
 
 ## 关键交互与业务边界
 
-- 今日不再只从计划块判断“下一项”；固定事件和计划块合并后取最早未结束项。只有没有任何安排且没有计划时才提示生成计划。
+- 今日不再只从计划块判断“下一项”；事件和计划块合并后取最早未结束项。只有没有任何安排且没有计划时才提示生成计划。
 - 任务页保存草稿后自动进入收件箱并提示结果，避免草稿在任务列表不可见。
 - 日历支持点击或拖选空白时段直接创建事件，日期、开始结束时间和当前周自动带入。事件和系列表单可内联新建课程并保持原表单内容。
 - 课程详情可直接建立系列、添加独立事件；有关联系列或事件时删除按钮禁用并展示阻塞数量与清理入口。
@@ -46,19 +46,19 @@
 - 计划详情固定提供返回列表和生成新草稿。未排报告中的任务返回时定位到计划报告区域。
 - 计划页在未配置可用时间时深链到 `/settings/schedule#availability`。
 - 导入校对从任务/事件打开时保留来源返回；未配置模型时禁用“保存并解析”，只允许仅保存材料。
-- 收件箱使用“材料待处理”而不是笼统的“导入待确认”，解析中、失败、手动整理和已入库均有明确状态。
+- 收件箱使用“材料待处理”而不是笼统的“导入待确认”，解析中、失败、已取消解析和已创建均有明确状态。
 - 页面不存在、对象已删除时提供返回入口；设置、收件箱和日历子路由保持对应导航选中态。
 
 ## API 变更
 
-所有路径以下列 `/api/v1` 为前缀。本次新增迁移 `0005_event_notes_and_details`，为事件、单次覆盖和系列增加备注/详情字段。
+所有路径以下列 `/api/v1` 为前缀。本次新增迁移 `0005_event_notes_and_details`，为事件、单次调整和系列增加备注/详情字段。
 
 | 接口 | 语义 |
 | --- | --- |
-| `PUT /courses/{id}` | 修改课程名称、学期；同步该课程下事件和单次覆盖的标题，备注/详情不变 |
+| `PUT /courses/{id}` | 修改课程名称、学期；同步该课程下事件和单次调整的标题，备注/详情不变 |
 | `DELETE /courses/{id}` | `confirmed=true`；拒绝删除仍有关联系列/事件的课程 |
 | `DELETE /events/{id}` | `confirmed=true`；删除单次及其覆盖，其他周次保留 |
-| `PUT /event-series/{id}` | `confirmed=true`、`start_time`、`end_time`、`location`、`note`、`details`；批量更新原始安排，保留单次覆盖 |
+| `PUT /event-series/{id}` | `confirmed=true`、`start_time`、`end_time`、`location`、`note`、`details`；批量更新原始安排，保留单次调整 |
 | `POST /event-series/{id}/attendance` | `confirmed=true`、`is_skipped`；设置全系列参加状态 |
 | `DELETE /event-series/{id}` | `confirmed=true`；删除系列、实例与覆盖，来源关联保留 |
 | `POST /imports/text` | 新增 `parse`，默认 true；`parse=false` 无需模型发送同意 |

@@ -63,12 +63,12 @@ test("账号、任务、事件、设置和手机布局闭环", async ({ page }, 
   await page.getByRole("button", { name: "确 定" }).click();
   await expect(page.getByText("教学楼 B202").first()).toBeVisible();
   await page.getByRole("link", { name: "设置", exact: true }).click();
-  await page.getByLabel("显示时区").fill("Asia/Shanghai");
+  await page.getByLabel("显示与排程时区").fill("Asia/Shanghai");
   await page.getByRole("button", { name: "添加时段" }).first().click();
   await page.getByRole("button", { name: "保存设置" }).click();
   await expect(page.getByText("设置已保存", { exact: true })).toBeVisible();
   await page.reload();
-  await expect(page.getByLabel("显示时区")).toHaveValue("Asia/Shanghai");
+  await expect(page.getByLabel("显示与排程时区")).toHaveValue("Asia/Shanghai");
   await expect(page.getByLabel("窗口开始").first()).toHaveValue(/09:00/);
   expect(
     await page.evaluate(

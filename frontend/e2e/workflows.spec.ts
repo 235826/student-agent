@@ -26,7 +26,7 @@ test("空标题草稿、正式任务校验与关系跳转", async ({ page }) => 
   await expect(
     page.getByRole("heading", { name: "未命名草稿", exact: true }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "编辑草稿", exact: true }).click();
+  await page.getByRole("button", { name: "编辑任务草稿", exact: true }).click();
   await page.getByLabel("任务标题").fill("父任务");
   await page.getByRole("button", { name: "保存草稿", exact: true }).click();
   await page.getByRole("button", { name: "发布任务", exact: true }).click();
@@ -121,7 +121,7 @@ test("系列批量修改、事件删除与空课程清理", async ({ page }) => 
   await expect(page).toHaveURL(/\/calendar\/series\//);
   await page.getByRole("link", { name: "所属课程", exact: true }).click();
   await page.getByRole("link", { name: /起 · 1 次课程/ }).click();
-  await page.getByRole("button", { name: "删除系列", exact: true }).click();
+  await page.getByRole("button", { name: "删除每周课程", exact: true }).click();
   await page
     .getByRole("dialog")
     .getByRole("button", { name: /^确\s*定$/ })

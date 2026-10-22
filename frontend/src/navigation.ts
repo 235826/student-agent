@@ -1,6 +1,6 @@
 const labels: Array<[RegExp, string]> = [
   [/^\/plans(?:\/|$)/, "返回计划"],
-  [/^\/calendar\/series\//, "返回系列"],
+  [/^\/calendar\/series\//, "返回每周课程"],
   [/^\/calendar\/courses\//, "返回课程"],
   [/^\/calendar\/events\//, "返回事件"],
   [/^\/calendar(?:\/|$)/, "返回日历"],

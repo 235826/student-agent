@@ -32,7 +32,7 @@ import type {
 import { displayTime } from "../time";
 const scopes = [
   { value: "course", label: "课程" },
-  { value: "event", label: "单次事件" },
+  { value: "event", label: "具体事件" },
   { value: "task", label: "具体任务" },
   { value: "task_type", label: "任务类型" },
   { value: "all", label: "所有活动" },
@@ -172,22 +172,22 @@ export default function CompatibilityPage({ profile }: { profile: Profile }) {
         <Space wrap>
           <Link to="/settings">返回设置</Link>
           <Button type="primary" onClick={() => open(null)}>
-            添加组合允许规则
+            添加组合规则
           </Button>
         </Space>
       </header>
       <Alert
         type="info"
-        message="默认禁止重叠。通常需要双方均接受并行，再设置组合允许规则。此处配置与检查并行规则，生成计划请到学习计划。"
+        message="默认禁止重叠。通常需要双方均接受并行，再设置组合规则。此处配置与检查并行规则，生成计划请到学习计划。"
       />
       {queryError && <Alert type="error" message={errorText(queryError)} />}
       <Tabs
         activeKey={tab}
         onChange={setTab}
         items={[
-          { key: "types", label: "任务类型偏好" },
+          { key: "types", label: "任务类型设置" },
           { key: "courses", label: "课程默认设置" },
-          { key: "rules", label: "组合允许规则" },
+          { key: "rules", label: "组合规则" },
           { key: "check", label: "兼容性检查" },
         ]}
       />
@@ -198,7 +198,7 @@ export default function CompatibilityPage({ profile }: { profile: Profile }) {
       ) : (
         <>
           {tab === "types" && (
-            <Card title="任务类型偏好" className="toolbar">
+            <Card title="任务类型设置" className="toolbar">
               <Form
                 form={typeForm}
                 layout="vertical"
@@ -219,7 +219,7 @@ export default function CompatibilityPage({ profile }: { profile: Profile }) {
                   >
                     <Input placeholder="例如 reading" />
                   </Form.Item>
-                  <Form.Item name="parallel_policy" label="类型默认设置">
+                  <Form.Item name="parallel_policy" label="类型默认策略">
                     <Select
                       options={[
                         { value: "none", label: "禁止并行" },
@@ -249,14 +249,14 @@ export default function CompatibilityPage({ profile }: { profile: Profile }) {
                 ))}
               </Space>
               <p className="muted">
-                具体任务的单项设置优先于类型偏好；单次覆盖在事件详情管理。
+                具体任务的单项设置优先于任务类型设置；单次调整在事件详情管理。
               </p>
             </Card>
           )}
           {tab === "courses" && (
             <Card title="课程默认设置">
               <p className="muted">
-                应用于没有单次覆盖的课程实例；任务与课程都接受并行后，仍需组合允许规则。
+                应用于没有单次调整的课程实例；任务与课程都接受并行后，仍需组合规则。
               </p>
               {courses.data?.length ? (
                 courses.data.map((course) => (
@@ -412,7 +412,7 @@ export default function CompatibilityPage({ profile }: { profile: Profile }) {
         </>
       )}
       <Modal
-        title={editing ? "编辑组合允许规则" : "添加组合允许规则"}
+        title={editing ? "编辑组合规则" : "添加组合规则"}
         open={editing !== undefined}
         onCancel={() => setEditing(undefined)}
         onOk={() => form.submit()}

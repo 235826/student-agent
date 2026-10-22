@@ -26,6 +26,7 @@ import { api } from "../api";
 import type { Plan, Profile, Event } from "../api";
 import { displayTime, toInstant } from "../time";
 import { withFrom } from "../navigation";
+import { staleInfo } from "../semantics";
 
 export default function PlansPage({ profile }: { profile: Profile }) {
   const client = useQueryClient();
@@ -73,6 +74,7 @@ export default function PlansPage({ profile }: { profile: Profile }) {
     .setZone(profile.timezone)
     .plus({ days: 1 })
     .startOf("day");
+  const stale = active ? staleInfo(active) : null;
   const missing = active?.reports.some(
     (r) => r.unscheduled_minutes === null || r.unscheduled_minutes > 0,
   );
@@ -163,14 +165,14 @@ export default function PlansPage({ profile }: { profile: Profile }) {
             <div className="form-grid">
               <Form.Item
                 name="min_block_minutes"
-                label="最小工作块（分钟）"
+                label="最小计划块（分钟）"
                 rules={[{ required: true }]}
               >
                 <InputNumber min={1} max={90} />
               </Form.Item>
               <Form.Item
                 name="max_block_minutes"
-                label="最大工作块（分钟）"
+                label="最大计划块（分钟）"
                 rules={[{ required: true }]}
               >
                 <InputNumber min={1} max={180} />
@@ -185,7 +187,7 @@ export default function PlansPage({ profile }: { profile: Profile }) {
             </Button>
             <p className="muted">
               最多安排未来 31
-              天范围内的任务；最后一个工作块可短于最小值。休息窗口不会安排任务。
+              天范围内的任务；最后一个计划块可短于最小值。休息窗口不会安排任务。
             </p>
           </Form>
         </Card>
@@ -213,8 +215,10 @@ export default function PlansPage({ profile }: { profile: Profile }) {
             >
               <p>{displayTime(p.created_at, profile.timezone)}</p>
               <p>
-                {p.blocks.length} 个工作块{" "}
-                {p.stale && <Tag color="orange">依据已变化</Tag>}
+                {p.blocks.length} 个计划块{" "}
+                {staleInfo(p) && (
+                  <Tag color="orange">{staleInfo(p)!.short}</Tag>
+                )}
               </p>
               <Link to={`/plans/${p.id}`}>查看计划详情</Link>
             </Card>
@@ -237,7 +241,7 @@ export default function PlansPage({ profile }: { profile: Profile }) {
               value={active.id}
               options={plans.data?.map((p, i) => ({
                 value: p.id,
-                label: `${plans.data.length - i} · ${displayTime(p.created_at, profile.timezone)} · ${p.status === "adopted" ? "当前计划" : p.status === "draft" ? "草稿" : "历史计划"}`,
+                label: `${plans.data.length - i} · ${displayTime(p.created_at, profile.timezone)} · ${p.status === "adopted" ? "当前计划" : p.status === "draft" ? "计划草稿" : "历史计划"}`,
               }))}
               onChange={setSelected}
             />
@@ -246,7 +250,7 @@ export default function PlansPage({ profile }: { profile: Profile }) {
                 {active.status === "adopted"
                   ? "当前计划"
                   : active.status === "draft"
-                    ? "待确认草稿"
+                    ? "待确认计划草稿"
                     : "历史计划"}
               </Tag>
               <span>
@@ -256,7 +260,7 @@ export default function PlansPage({ profile }: { profile: Profile }) {
               </span>
             </Space>
             <p className="muted">
-              调整时间的工作块计为移除旧块并新增新块。范围：
+              调整时间的计划块计为移除旧块并新增新块。范围：
               {displayTime(active.start_at, profile.timezone)} —{" "}
               {displayTime(active.end_at, profile.timezone)}
             </p>
@@ -264,7 +268,7 @@ export default function PlansPage({ profile }: { profile: Profile }) {
               items={[
                 {
                   key: "changes",
-                  label: "查看工作块变更明细",
+                  label: "查看计划块变更明细",
                   children: (
                     <>
                       {active.differences.added_blocks.map((b, i) => (
@@ -285,17 +289,17 @@ export default function PlansPage({ profile }: { profile: Profile }) {
                       ))}
                       {!active.differences.added &&
                         !active.differences.removed && (
-                          <p>工作块时间与当前计划一致。</p>
+                          <p>计划块时间与当前计划一致。</p>
                         )}
                     </>
                   ),
                 },
               ]}
             />
-            {active.stale && (
+            {stale && (
               <Alert
                 type="warning"
-                message="任务、课表、规则或当前计划已变化，或草稿时间已过期；请重新生成，历史计划仍保留。"
+                message={`${stale.detail} 历史计划仍保留。`}
                 action={<Link to="/plans/new">重新生成</Link>}
               />
             )}

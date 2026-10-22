@@ -7,6 +7,7 @@ import {
 } from "react-router-dom";
 import { useRef, useState } from "react";
 import { backTarget } from "../navigation";
+import { priorities } from "../semantics";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Alert,
@@ -287,7 +288,7 @@ function DraftEditor({
   const reason = busy
     ? "请等待解析结束，或取消解析后手动整理。"
     : dirty
-      ? "请先保存校对结果，再确认入库。"
+      ? "请先保存校对结果，再确认创建。"
       : !selected.length
         ? "请至少选中一个条目。"
         : blockers.length
@@ -327,8 +328,8 @@ function DraftEditor({
     <Card
       title={
         job.published_revision
-          ? "已确认入库"
-          : `草稿 · ${importLabels[job.status]}`
+          ? "已创建任务和日程"
+          : `导入草稿 · ${importLabels[job.status]}`
       }
     >
       <p>
@@ -428,7 +429,7 @@ function DraftEditor({
               disabled={readOnly}
               onChange={(e) => change(index, { selected: e.target.checked })}
             >
-              纳入本次入库
+              纳入本次创建
             </Checkbox>
             <Select
               aria-label={`条目 ${index + 1} 类型`}
@@ -436,7 +437,7 @@ function DraftEditor({
               disabled={readOnly}
               options={[
                 { value: "task", label: "任务" },
-                { value: "event", label: "固定事件" },
+                { value: "event", label: "单次事件" },
                 { value: "course", label: "每周课程" },
               ]}
               onChange={(kind) =>
@@ -504,12 +505,12 @@ function DraftEditor({
                 />
               </label>
               <label>
-                优先级（1 最高）
-                <InputNumber
-                  min={1}
-                  max={4}
+                优先级
+                <Select
+                  style={{ width: "100%" }}
                   value={item.priority}
                   disabled={readOnly}
+                  options={priorities}
                   onChange={(v) => change(index, { priority: v ?? 2 })}
                 />
               </label>
@@ -712,7 +713,7 @@ function DraftEditor({
                 action.isPending
               }
             >
-              确认入库
+              确认创建
             </Button>
           </Popconfirm>
         </Space>
@@ -720,11 +721,11 @@ function DraftEditor({
       {job.published_revision && (
         <Alert
           type="success"
-          message={`已入库 ${job.published_records.length} 项；重复确认不会再次创建。`}
+          message={`已创建 ${job.published_records.length} 项；重复导入不会再次创建。`}
           description={
             <Space>
               <Link to="/tasks">查看任务</Link>
-              <Link to="/calendar">查看课表</Link>
+              <Link to="/calendar">查看日历</Link>
             </Space>
           }
         />
@@ -732,7 +733,7 @@ function DraftEditor({
       {!job.source.deleted_at && (
         <div className="toolbar">
           <Popconfirm
-            title="删除原始材料及草稿依据？已创建的任务和课程会保留。"
+            title="删除原始材料及导入草稿？已创建的任务和课程会保留。"
             onConfirm={() => act("source", undefined, "DELETE")}
           >
             <Button danger disabled={action.isPending}>

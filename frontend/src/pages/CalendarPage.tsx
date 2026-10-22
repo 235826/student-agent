@@ -11,6 +11,7 @@ import zhLocale from "@fullcalendar/core/locales/zh-cn";
 import { DateTime } from "luxon";
 import { api, type Plan, type Event, type Profile } from "../api";
 import { withFrom } from "../navigation";
+import { staleInfo } from "../semantics";
 const errorText = (e: unknown) => (e instanceof Error ? e.message : "操作失败");
 export default function CalendarPage({
   profile,
@@ -33,6 +34,7 @@ export default function CalendarPage({
     queryKey: ["events"],
     queryFn: () => api<Event[]>("/events"),
   });
+  const stale = plan.data ? staleInfo(plan.data) : null;
   useEffect(() => {
     if (!week) return;
     const view = calendar.current?.getApi();
@@ -47,10 +49,10 @@ export default function CalendarPage({
       {(events.error || plan.error) && (
         <Alert type="error" message={errorText(events.error ?? plan.error)} />
       )}
-      {plan.data?.stale && (
+      {stale && (
         <Alert
           type="warning"
-          message="当前计划已过期，灰色工作块仅作历史展示；请重新生成并确认采用。"
+          message={`${stale.detail} 日历中的灰色计划块仅作历史展示。`}
           action={<Link to="/plans">查看计划</Link>}
         />
       )}

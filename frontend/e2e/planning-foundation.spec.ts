@@ -59,7 +59,7 @@ test("草稿发布、重复课程单次变更与规则检查", async ({ page }, 
     .getByRole("link", { name: "日历与课程", exact: true })
     .first()
     .click();
-  await page.getByRole("button", { name: "建立重复课表" }).click();
+  await page.getByRole("button", { name: "建立每周课程" }).click();
   await choose(page, "选择课程", course);
   await page.getByLabel("起始日期").fill("2026-11-02");
   await page.getByLabel("结束日期").fill("2026-11-09");
@@ -83,13 +83,13 @@ test("草稿发布、重复课程单次变更与规则检查", async ({ page }, 
   await expect(
     page.getByRole("button", { name: "恢复参加", exact: true }),
   ).toBeVisible();
-  await page.getByRole("link", { name: "所属系列", exact: true }).click();
+  await page.getByRole("link", { name: "所属每周课程", exact: true }).click();
   await expect(page).toHaveURL(seriesUrl);
   await page.locator(".instance-list a").last().click();
   await expect(
     page.getByRole("button", { name: "本次不参加", exact: true }),
   ).toBeVisible();
-  await page.getByRole("link", { name: "所属系列", exact: true }).click();
+  await page.getByRole("link", { name: "所属每周课程", exact: true }).click();
   await page.locator(".instance-list a").first().click();
   await page.getByRole("button", { name: "恢复参加", exact: true }).click();
   await page
@@ -99,18 +99,19 @@ test("草稿发布、重复课程单次变更与规则检查", async ({ page }, 
   await expect(
     page.getByRole("button", { name: "本次不参加", exact: true }),
   ).toBeVisible();
-  await page.getByRole("link", { name: "并行规则", exact: true }).click();
+  await page.getByRole("link", { name: "查看相关并行规则" }).click();
+  await page.getByRole("tab", { name: "任务类型设置", exact: true }).click();
   await page
     .getByLabel("任务类型", { exact: true })
     .fill(`reading-${info.project.name}`);
-  await choose(page, "类型默认设置", "接受已允许的组合");
+  await choose(page, "类型默认策略", "接受已允许的组合");
   await page.getByRole("button", { name: "保存类型设置" }).click();
   await expect(
     page.getByRole("button", {
       name: `reading-${info.project.name}：接受选定组合`,
     }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "添加组合允许规则" }).click();
+  await page.getByRole("button", { name: "添加组合规则" }).click();
   await choose(page, "活动一对象", course);
   await page.getByLabel("活动二对象").fill(`reading-${info.project.name}`);
   await page
@@ -139,7 +140,7 @@ test("草稿发布、重复课程单次变更与规则检查", async ({ page }, 
     fullPage: true,
   });
   await page.reload();
-  await page.getByRole("tab", { name: "组合允许规则", exact: true }).click();
+  await page.getByRole("tab", { name: "组合规则", exact: true }).click();
   await expect(
     page.getByRole("heading", {
       name: `${course} ＋ 类型：reading-${info.project.name}`,

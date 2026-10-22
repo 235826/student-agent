@@ -19,15 +19,15 @@ async function reviewAndPublish(page: Page, count: number) {
   for (let i = 0; i < count; i++) await checks.nth(i).check();
   await page.getByRole("button", { name: "保存校对", exact: true }).click();
   await expect(
-    page.getByRole("button", { name: "确认入库", exact: true }),
+    page.getByRole("button", { name: "确认创建", exact: true }),
   ).toBeEnabled();
-  await page.getByRole("button", { name: "确认入库", exact: true }).click();
+  await page.getByRole("button", { name: "确认创建", exact: true }).click();
   await page
     .locator(".ant-popconfirm")
     .getByRole("button", { name: /确\s*定/ })
     .click();
   await expect(
-    page.getByText(`已入库 ${count} 项；重复确认不会再次创建。`),
+    page.getByText(`已创建 ${count} 项；重复导入不会再次创建。`),
   ).toBeVisible();
 }
 
@@ -53,7 +53,7 @@ test("文本解析、校对、确认、来源与重复导入", async ({ page }, 
   await page.getByRole("checkbox", { name: /我同意/ }).check();
   await page.getByRole("button", { name: "保存并解析" }).click();
   await expect(
-    page.getByText("已入库 1 项；重复确认不会再次创建。"),
+    page.getByText("已创建 1 项；重复导入不会再次创建。"),
   ).toBeVisible();
   const tasks = await (await page.request.get("/api/v1/tasks")).json();
   expect(
@@ -136,7 +136,7 @@ test("仅保存、批次深链和未校对定位", async ({ page }) => {
   ).toBeVisible();
   await page.getByRole("button", { name: "添加条目", exact: true }).click();
   await expect(
-    page.getByRole("button", { name: "确认入库", exact: true }),
+    page.getByRole("button", { name: "确认创建", exact: true }),
   ).toBeDisabled();
   await page.getByRole("button", { name: "定位待补全条目" }).click();
   await page.getByLabel("条目 1 标题").fill("本地手动任务");
@@ -144,6 +144,6 @@ test("仅保存、批次深链和未校对定位", async ({ page }) => {
   await page.goto(`/imports?job=${url.split("/").pop()}`);
   await expect(page).toHaveURL(url);
   await expect(
-    page.getByText("已入库 1 项；重复确认不会再次创建。"),
+    page.getByText("已创建 1 项；重复导入不会再次创建。"),
   ).toBeVisible();
 });
