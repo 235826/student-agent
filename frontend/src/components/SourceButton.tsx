@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Alert, Button, Modal, Spin } from "antd";
@@ -33,7 +34,9 @@ export default function SourceButton({ objectId }: { objectId: string }) {
               <p>原始材料已删除，来源关联仍保留。</p>
             ) : (
               <>
-                <a href={`/imports?job=${job.id}`}>打开导入记录与字段依据</a>
+                <Link to={`/imports/${job.id}`} onClick={() => setOpen(false)}>
+                  打开导入记录与字段依据
+                </Link>
                 {job.source.kind === "text" ? (
                   <pre style={{ whiteSpace: "pre-wrap" }}>
                     {job.source.text}

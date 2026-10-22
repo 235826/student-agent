@@ -1,4 +1,5 @@
-import { useRef, useState } from "react";
+import { useParams, useNavigate } from "react-router-dom";
+import { useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Alert,
@@ -28,7 +29,9 @@ export default function PlansPage({ profile }: { profile: Profile }) {
   const client = useQueryClient();
   const { message, modal } = App.useApp();
   const [form] = Form.useForm();
-  const [selected, setSelected] = useState<string>();
+  const { id: selected } = useParams();
+  const navigate = useNavigate();
+  const setSelected = (id: string) => navigate(`/plans/${id}`);
   const request = useRef<{ payload: string; key: string } | null>(null);
   const plans = useQuery({
     queryKey: ["plans"],
@@ -38,7 +41,9 @@ export default function PlansPage({ profile }: { profile: Profile }) {
     queryKey: ["events"],
     queryFn: () => api<Event[]>("/events"),
   });
-  const active = plans.data?.find((p) => p.id === selected) ?? plans.data?.[0];
+  const active = selected
+    ? plans.data?.find((p) => p.id === selected)
+    : plans.data?.[0];
   const generate = useMutation({
     mutationFn: (body: unknown) => api<Plan>("/plans", "POST", body),
     onSuccess: (plan) => {

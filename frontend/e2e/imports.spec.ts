@@ -35,6 +35,7 @@ test("文本解析、校对、确认、来源与重复导入", async ({ page }, 
   page.on("pageerror", (e) => errors.push(e.message));
   await login(page);
   const title = `导入报告-${info.project.name}`;
+  await expect(page).toHaveURL(/\/imports$/);
   await page.getByLabel("导入原文").fill(title);
   await page.getByRole("checkbox", { name: /我同意/ }).check();
   await page.getByRole("button", { name: "保存并解析" }).click();
@@ -45,6 +46,10 @@ test("文本解析、校对、确认、来源与重复导入", async ({ page }, 
   );
   await page.getByLabel("条目 1 标题").fill(title + "-校对");
   await reviewAndPublish(page, 1);
+  await page.getByRole("link", { name: "导入整理", exact: true }).click();
+  await expect(page).toHaveURL(/\/imports$/);
+  await page.getByLabel("导入原文").fill(title);
+  await page.getByRole("checkbox", { name: /我同意/ }).check();
   await page.getByRole("button", { name: "保存并解析" }).click();
   await expect(
     page.getByText("已入库 1 项；重复确认不会再次创建。"),

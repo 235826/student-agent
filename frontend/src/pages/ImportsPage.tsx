@@ -1,3 +1,4 @@
+import { Link, useParams, useNavigate } from "react-router-dom";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -50,9 +51,9 @@ export default function ImportsPage({ profile }: { profile: Profile }) {
   const [reference, setReference] = useState(
     DateTime.now().setZone(profile.timezone).toFormat("yyyy-MM-dd'T'HH:mm"),
   );
-  const [jobId, setJobId] = useState<string | null>(() =>
-    new URLSearchParams(window.location.search).get("job"),
-  );
+  const { id: jobId } = useParams();
+  const navigate = useNavigate();
+  const setJobId = (id: string) => navigate(`/imports/${id}`);
   const [consent, setConsent] = useState(false);
   const capabilities = useQuery({
     queryKey: ["import-capabilities"],
@@ -645,8 +646,8 @@ function DraftEditor({
           message={`已入库 ${job.published_records.length} 项；重复确认不会再次创建。`}
           description={
             <Space>
-              <a href="/tasks">查看任务</a>
-              <a href="/events">查看课表</a>
+              <Link to="/tasks">查看任务</Link>
+              <Link to="/calendar">查看课表</Link>
             </Space>
           }
         />

@@ -1,3 +1,4 @@
+import { Link, useParams, useLocation } from "react-router-dom";
 import SourceButton from "../components/SourceButton";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -41,9 +42,13 @@ const errorText = (e: unknown) =>
   e instanceof Error ? e.message : "操作失败，请重试";
 
 export default function TasksPage({ profile }: { profile: Profile }) {
+  const { id } = useParams();
+  const location = useLocation();
   const client = useQueryClient();
   const { message, modal } = App.useApp();
-  const [tab, setTab] = useState<"tasks" | "trash" | "drafts">("tasks");
+  const [tab, setTab] = useState<"tasks" | "trash" | "drafts">(
+    location.pathname === "/inbox" ? "drafts" : "tasks",
+  );
   const [editor, setEditor] = useState<Editor | null>(null);
   const [form] = Form.useForm();
   const tasks = useQuery({
@@ -289,69 +294,75 @@ export default function TasksPage({ profile }: { profile: Profile }) {
             </Card>
           ) : (
             <div className="cards">
-              {current.data.map((task) => (
-                <Card key={task.id} className="task-card">
-                  <div className="card-heading">
-                    <h3>{task.title}</h3>
-                    <Tag color={task.status === "done" ? "green" : "default"}>
-                      {states.find((s) => s.value === task.status)?.label}
-                    </Tag>
-                  </div>
-                  <p className="description">
-                    {task.description || "暂无描述"}
-                  </p>
-                  {task.parent_id && (
-                    <p className="muted">父任务：{titleOf(task.parent_id)}</p>
-                  )}
-                  {task.predecessor_ids.length > 0 && (
-                    <p className="muted">
-                      前置：{task.predecessor_ids.map(titleOf).join(" → ")}
+              {current.data
+                .filter((task) => !id || task.id === id)
+                .map((task) => (
+                  <Card key={task.id} className="task-card">
+                    <div className="card-heading">
+                      <h3>
+                        <Link to={`/tasks/${task.id}`}>{task.title}</Link>
+                      </h3>
+                      <Tag color={task.status === "done" ? "green" : "default"}>
+                        {states.find((s) => s.value === task.status)?.label}
+                      </Tag>
+                    </div>
+                    <p className="description">
+                      {task.description || "暂无描述"}
                     </p>
-                  )}
-                  {task.child_ids.length > 0 && (
-                    <p className="muted">
-                      子任务：{task.child_ids.map(titleOf).join("、")}
-                    </p>
-                  )}
-                  {task.blocked_by.length > 0 && task.status !== "done" && (
-                    <Alert
-                      type="warning"
-                      message={"等待前置：" + task.blocked_by.join("、")}
-                    />
-                  )}
-                  <div className="meta">
-                    截止：{displayTime(task.deadline_at, profile.timezone)} ·
-                    预计 {task.estimate_minutes ?? "—"} 分钟 ·{" "}
-                    {priorities[task.priority - 1].label}
-                  </div>
-                  <Space wrap>
-                    {tab === "trash" ? (
-                      <Button
-                        onClick={() =>
-                          mutation.mutate({ path: `/tasks/${task.id}/restore` })
-                        }
-                        disabled={mutation.isPending}
-                      >
-                        恢复任务
-                      </Button>
-                    ) : (
-                      <>
-                        <SourceButton objectId={task.id} />
-                        <Button onClick={() => open({ kind: "task", task })}>
-                          编辑
-                        </Button>
-                        <Button
-                          danger
-                          disabled={mutation.isPending}
-                          onClick={() => remove(task)}
-                        >
-                          移入垃圾箱
-                        </Button>
-                      </>
+                    {task.parent_id && (
+                      <p className="muted">父任务：{titleOf(task.parent_id)}</p>
                     )}
-                  </Space>
-                </Card>
-              ))}
+                    {task.predecessor_ids.length > 0 && (
+                      <p className="muted">
+                        前置：{task.predecessor_ids.map(titleOf).join(" → ")}
+                      </p>
+                    )}
+                    {task.child_ids.length > 0 && (
+                      <p className="muted">
+                        子任务：{task.child_ids.map(titleOf).join("、")}
+                      </p>
+                    )}
+                    {task.blocked_by.length > 0 && task.status !== "done" && (
+                      <Alert
+                        type="warning"
+                        message={"等待前置：" + task.blocked_by.join("、")}
+                      />
+                    )}
+                    <div className="meta">
+                      截止：{displayTime(task.deadline_at, profile.timezone)} ·
+                      预计 {task.estimate_minutes ?? "—"} 分钟 ·{" "}
+                      {priorities[task.priority - 1].label}
+                    </div>
+                    <Space wrap>
+                      {tab === "trash" ? (
+                        <Button
+                          onClick={() =>
+                            mutation.mutate({
+                              path: `/tasks/${task.id}/restore`,
+                            })
+                          }
+                          disabled={mutation.isPending}
+                        >
+                          恢复任务
+                        </Button>
+                      ) : (
+                        <>
+                          <SourceButton objectId={task.id} />
+                          <Button onClick={() => open({ kind: "task", task })}>
+                            编辑
+                          </Button>
+                          <Button
+                            danger
+                            disabled={mutation.isPending}
+                            onClick={() => remove(task)}
+                          >
+                            移入垃圾箱
+                          </Button>
+                        </>
+                      )}
+                    </Space>
+                  </Card>
+                ))}
             </div>
           )}
         </>

@@ -1,3 +1,4 @@
+import { Link, useParams, useLocation } from "react-router-dom";
 import SourceButton from "../components/SourceButton";
 import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -27,6 +28,8 @@ const policyOptions = [
 const errorText = (e: unknown) => (e instanceof Error ? e.message : "操作失败");
 type Write = { path: string; method?: string; body?: unknown };
 export default function EventsPage({ profile }: { profile: Profile }) {
+  const { id } = useParams();
+  const { pathname } = useLocation();
   const client = useQueryClient();
   const { message, modal } = App.useApp();
   const [editing, setEditing] = useState<Event | null | undefined>(undefined);
@@ -163,62 +166,75 @@ export default function EventsPage({ profile }: { profile: Profile }) {
         </Card>
       ) : (
         <div className="cards">
-          {events.data.map((event) => (
-            <Card key={event.id}>
-              <div className="card-heading">
-                <h3>{event.title}</h3>
-                <Tag color={event.is_skipped ? "orange" : "default"}>
-                  {event.is_skipped
-                    ? "本次不参加"
-                    : event.kind === "exam"
-                      ? "考试"
-                      : "固定时间"}
-                </Tag>
-              </div>
-              <p>
-                {displayTime(event.start_at, profile.timezone)} —{" "}
-                {displayTime(event.end_at, profile.timezone)}
-              </p>
-              <p className="muted">
-                {event.location || "未设置地点"}
-                {event.series_id && " · 每周课程实例"}
-              </p>
-              {event.start_at !== event.original_start_at && (
-                <p className="muted">
-                  原定：{displayTime(event.original_start_at, profile.timezone)}{" "}
-                  — {displayTime(event.original_end_at, profile.timezone)}
+          {events.data
+            .filter(
+              (event) =>
+                !id ||
+                (pathname.startsWith("/courses/")
+                  ? event.course_id === id
+                  : pathname.startsWith("/series/")
+                    ? event.series_id === id
+                    : event.id === id),
+            )
+            .map((event) => (
+              <Card key={event.id}>
+                <div className="card-heading">
+                  <h3>
+                    <Link to={`/events/${event.id}`}>{event.title}</Link>
+                  </h3>
+                  <Tag color={event.is_skipped ? "orange" : "default"}>
+                    {event.is_skipped
+                      ? "本次不参加"
+                      : event.kind === "exam"
+                        ? "考试"
+                        : "固定时间"}
+                  </Tag>
+                </div>
+                <p>
+                  {displayTime(event.start_at, profile.timezone)} —{" "}
+                  {displayTime(event.end_at, profile.timezone)}
                 </p>
-              )}
-              <Select
-                className="policy-select"
-                aria-label={`${event.title}本次并行设置`}
-                value={event.parallel_policy_override ?? "inherit"}
-                options={policyOptions}
-                disabled={write.isPending}
-                onChange={(value) =>
-                  write.mutate({
-                    path: `/events/${event.id}/parallel-policy`,
-                    method: "PATCH",
-                    body: {
-                      parallel_policy: value === "inherit" ? null : value,
-                    },
-                  })
-                }
-              />
-              <Space wrap>
-                <SourceButton objectId={event.id} />
-                <Button onClick={() => edit(event)}>编辑事件</Button>
-                {event.kind === "course" && (
-                  <Button
-                    disabled={write.isPending}
-                    onClick={() => skip(event)}
-                  >
-                    {event.is_skipped ? "恢复参加" : "本次不参加"}
-                  </Button>
+                <p className="muted">
+                  {event.location || "未设置地点"}
+                  {event.series_id && " · 每周课程实例"}
+                </p>
+                {event.start_at !== event.original_start_at && (
+                  <p className="muted">
+                    原定：
+                    {displayTime(event.original_start_at, profile.timezone)} —{" "}
+                    {displayTime(event.original_end_at, profile.timezone)}
+                  </p>
                 )}
-              </Space>
-            </Card>
-          ))}
+                <Select
+                  className="policy-select"
+                  aria-label={`${event.title}本次并行设置`}
+                  value={event.parallel_policy_override ?? "inherit"}
+                  options={policyOptions}
+                  disabled={write.isPending}
+                  onChange={(value) =>
+                    write.mutate({
+                      path: `/events/${event.id}/parallel-policy`,
+                      method: "PATCH",
+                      body: {
+                        parallel_policy: value === "inherit" ? null : value,
+                      },
+                    })
+                  }
+                />
+                <Space wrap>
+                  <SourceButton objectId={event.id} />
+                  <Button onClick={() => edit(event)}>编辑事件</Button>
+                  {event.kind === "course" && (
+                    <Button
+                      disabled={write.isPending}
+                      onClick={() => skip(event)}
+                    >
+                      {event.is_skipped ? "恢复参加" : "本次不参加"}
+                    </Button>
+                  )}
+                </Space>
+              </Card>
+            ))}
         </div>
       )}
       <Modal

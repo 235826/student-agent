@@ -206,9 +206,8 @@ header {
     white-space: nowrap;
   }
   .account {
-    position: absolute;
-    right: 12px;
-    top: 12px;
+    position: static;
+    margin-top: 12px;
   }
   .content {
     padding: 26px 16px;
@@ -317,4 +316,41 @@ header {
 }
 .imports-page pre {
   overflow-wrap: anywhere;
+}
+
+.sidebar-bottom {
+  margin-top: auto;
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 24px 0;
+}
+.account {
+  margin-top: 0;
+}
+@media (max-width: 700px) {
+  aside nav {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 100;
+    background: white;
+    border-top: 1px solid #ddd;
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    margin: 0;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  aside nav a {
+    padding: 14px 2px;
+    text-align: center;
+    font-size: 12px;
+  }
+  .content {
+    padding-bottom: 90px;
+  }
+  .sidebar-bottom {
+    padding: 12px 0 0;
+  }
 }
