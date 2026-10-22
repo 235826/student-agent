@@ -1,4 +1,6 @@
+from datetime import date, datetime
 from typing import Literal
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, HTTPException
 from pydantic import ValidationError
@@ -7,6 +9,8 @@ from sqlalchemy import select
 from app.api.schemas import (
     CompatibilityInput,
     CompatibilityOut,
+    ConfirmInput,
+    CourseInput,
     CourseOut,
     DraftInput,
     DraftOut,
@@ -17,6 +21,7 @@ from app.api.schemas import (
     PublishInput,
     RuleInput,
     RuleOut,
+    SeriesEdit,
     SeriesInput,
     SeriesOut,
     SkipInput,
@@ -30,6 +35,7 @@ from app.db.models import (
     Course,
     Draft,
     Event,
+    EventOverride,
     EventSeries,
     Task,
     TaskTypePolicy,
@@ -40,10 +46,11 @@ from app.modules.calendar_management import (
     event_view,
     instance_override,
     series_view,
+    unambiguous_instant,
 )
 from app.modules.compatibility import check_compatibility, prepare_rule, rule_view
 from app.modules.idempotency import remember, replay
-from app.modules.records import owned, record_change
+from app.modules.records import owned, record_change, remove_record
 from app.modules.security import DB, UserDep
 from app.modules.task_management import (
     apply_task,
@@ -289,3 +296,75 @@ def disable_rule(rule_id: str, db: DB, user: UserDep) -> None:
 @router.post("/compatibility/check", response_model=CompatibilityOut)
 def compatibility(body: CompatibilityInput, db: DB, user: UserDep) -> CompatibilityOut:
     return check_compatibility(db, user, body.activities)
+
+
+@router.put("/courses/{course_id}", response_model=CourseOut)
+def edit_course(course_id: str, body: CourseInput, db: DB, user: UserDep) -> Course:
+    course = owned(db, Course, course_id, user)
+    course.name, course.semester = body.name, body.semester
+    record_change(db, user, "course.update", course)
+    return course
+
+
+@router.delete("/courses/{course_id}", status_code=204)
+def delete_course(course_id: str, body: ConfirmInput, db: DB, user: UserDep) -> None:
+    course = owned(db, Course, course_id, user)
+    if db.scalar(select(Event.id).where(Event.course_id == course.id)) or db.scalar(
+        select(EventSeries.id).where(EventSeries.course_id == course.id)
+    ):
+        raise HTTPException(409, "请先明确删除课程下的系列和单次事件，再删除空课程")
+    remove_record(db, user, "course.delete", course)
+
+
+@router.delete("/events/{event_id}", status_code=204)
+def delete_event(event_id: str, body: ConfirmInput, db: DB, user: UserDep) -> None:
+    event = owned(db, Event, event_id, user)
+    override = instance_override(db, event)
+    if override:
+        db.delete(override)
+    remove_record(db, user, "event.delete", event)
+
+
+@router.put("/event-series/{series_id}", response_model=SeriesOut)
+def edit_series(series_id: str, body: SeriesEdit, db: DB, user: UserDep) -> SeriesOut:
+    series = owned(db, EventSeries, series_id, user)
+    zone = ZoneInfo(series.timezone)
+    events = list(db.scalars(select(Event).where(Event.series_id == series.id)))
+    for event in events:
+        day = date.fromisoformat(event.occurrence_local_date or "")
+        start = unambiguous_instant(datetime.combine(day, body.start_time), zone)
+        end = unambiguous_instant(datetime.combine(day, body.end_time), zone)
+        event.start_at, event.end_at = int(start.timestamp() * 1000), int(end.timestamp() * 1000)
+        event.location = body.location
+    first = datetime.fromisoformat(series.dtstart_local).date()
+    series.dtstart_local = datetime.combine(first, body.start_time).isoformat()
+    series.duration_minutes = int(
+        (
+            datetime.combine(first, body.end_time) - datetime.combine(first, body.start_time)
+        ).total_seconds()
+        / 60
+    )
+    record_change(db, user, "series.update", series)
+    return series_view(db, series)
+
+
+@router.post("/event-series/{series_id}/attendance", response_model=SeriesOut)
+def series_attendance(series_id: str, body: SkipInput, db: DB, user: UserDep) -> SeriesOut:
+    series = owned(db, EventSeries, series_id, user)
+    for event in db.scalars(select(Event).where(Event.series_id == series.id)):
+        override = instance_override(db, event, create=True)
+        assert override is not None
+        override.is_skipped = body.is_skipped
+    record_change(db, user, "series.attendance", series)
+    return series_view(db, series)
+
+
+@router.delete("/event-series/{series_id}", status_code=204)
+def delete_series(series_id: str, body: ConfirmInput, db: DB, user: UserDep) -> None:
+    series = owned(db, EventSeries, series_id, user)
+    for override in db.scalars(select(EventOverride).where(EventOverride.series_id == series.id)):
+        db.delete(override)
+    for event in db.scalars(select(Event).where(Event.series_id == series.id)):
+        db.delete(event)
+    db.flush()
+    remove_record(db, user, "series.delete", series)

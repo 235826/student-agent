@@ -1,4 +1,11 @@
-import { Link, useParams, useLocation } from "react-router-dom";
+import CalendarPage from "./CalendarPage";
+import { DateTime } from "luxon";
+import {
+  Link,
+  useParams,
+  useSearchParams,
+  useNavigate,
+} from "react-router-dom";
 import SourceButton from "../components/SourceButton";
 import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -29,10 +36,16 @@ const errorText = (e: unknown) => (e instanceof Error ? e.message : "操作失�
 type Write = { path: string; method?: string; body?: unknown };
 export default function EventsPage({ profile }: { profile: Profile }) {
   const { id } = useParams();
-  const { pathname } = useLocation();
+  const [params] = useSearchParams();
+  const navigate = useNavigate();
+  const [week, setWeek] = useState(
+    DateTime.now().setZone(profile.timezone).startOf("week").toISODate()!,
+  );
   const client = useQueryClient();
   const { message, modal } = App.useApp();
-  const [editing, setEditing] = useState<Event | null | undefined>(undefined);
+  const [editing, setEditing] = useState<Event | null | undefined>(
+    params.has("new") ? null : undefined,
+  );
   const [seriesOpen, setSeriesOpen] = useState(false);
   const [courseOpen, setCourseOpen] = useState(false);
   const [form] = Form.useForm();
@@ -55,10 +68,33 @@ export default function EventsPage({ profile }: { profile: Profile }) {
       void client.invalidateQueries({ queryKey: ["events"] });
       void client.invalidateQueries({ queryKey: ["courses"] });
       void client.invalidateQueries({ queryKey: ["rules"] });
+      void client.invalidateQueries({ queryKey: ["series"] });
+      void client.invalidateQueries({ queryKey: ["plans"] });
       void message.success("已保存");
     },
     onError: (e) => void message.error(errorText(e)),
   });
+  const remove = useMutation({
+    mutationFn: (eventId: string) =>
+      api(`/events/${eventId}`, "DELETE", { confirmed: true }),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ["events"] });
+      void client.invalidateQueries({ queryKey: ["series"] });
+      void client.invalidateQueries({ queryKey: ["plans"] });
+      navigate("/calendar");
+    },
+    onError: (e) => void message.error(e.message),
+  });
+  const visible = (events.data ?? []).filter((e) =>
+    id
+      ? e.id === id
+      : DateTime.fromISO(e.start_at) <
+          DateTime.fromISO(week, { zone: profile.timezone }).plus({
+            days: 7,
+          }) &&
+        DateTime.fromISO(e.end_at) >
+          DateTime.fromISO(week, { zone: profile.timezone }),
+  );
   const edit = (event: Event | null) => {
     form.resetFields();
     form.setFieldsValue(
@@ -92,7 +128,7 @@ export default function EventsPage({ profile }: { profile: Profile }) {
       <header>
         <div>
           <div className="eyebrow">MAKE ROOM</div>
-          <h1>课表 / 事件</h1>
+          <h1>{id ? "事件详情" : "日历与课程"}</h1>
           <p className="muted">固定课程保留原始安排，单次变更单独记录。</p>
         </div>
         <Space wrap>
@@ -128,83 +164,71 @@ export default function EventsPage({ profile }: { profile: Profile }) {
         <Alert type="error" message={errorText(courses.error)} />
       )}
       {events.error && <Alert type="error" message={errorText(events.error)} />}
-      {courses.data?.length ? (
-        <Card className="toolbar" title="课程默认并行设置">
-          <div className="course-settings">
-            {courses.data.map((course) => (
-              <div key={course.id}>
-                <strong>{course.name}</strong>
-                <Select
-                  aria-label={`${course.name}默认并行设置`}
-                  value={course.parallel_policy}
-                  disabled={write.isPending}
-                  options={[
-                    { value: "none", label: "禁止并行" },
-                    { value: "allow_selected", label: "接受已允许的组合" },
-                  ]}
-                  onChange={(value) =>
-                    write.mutate({
-                      path: `/courses/${course.id}/parallel-policy`,
-                      method: "PATCH",
-                      body: { parallel_policy: value },
-                    })
-                  }
-                />
-              </div>
-            ))}
-          </div>
+      {!id && (
+        <>
+          <Card className="toolbar" title="课程与系列">
+            {courses.data?.length ? (
+              courses.data.map((c) => (
+                <p key={c.id}>
+                  <Link to={`/courses/${c.id}`}>{c.name}</Link>
+                </p>
+              ))
+            ) : (
+              <Empty description="尚未添加课程" />
+            )}
+          </Card>
+          <CalendarPage profile={profile} onWeekChange={setWeek} />
           <p className="muted">
-            此设置应用于没有单次覆盖的课程实例；组合规则在“并行规则”页面设置。
+            选中周：{week}（仅显示本周事件，点击日历或下方事件进入详情）
           </p>
-        </Card>
-      ) : null}
+        </>
+      )}
+      {id && (
+        <Space className="toolbar">
+          <Link to="/calendar">返回日历</Link>
+          <Link to="/settings/rules">查看相关并行规则</Link>
+        </Space>
+      )}
       {events.isPending ? (
         <Spin />
-      ) : !events.data?.length ? (
+      ) : !visible.length ? (
         <Card>
           <Empty description="还没有固定事件" />
         </Card>
       ) : (
         <div className="cards">
-          {events.data
-            .filter(
-              (event) =>
-                !id ||
-                (pathname.startsWith("/courses/")
-                  ? event.course_id === id
-                  : pathname.startsWith("/series/")
-                    ? event.series_id === id
-                    : event.id === id),
-            )
-            .map((event) => (
-              <Card key={event.id}>
-                <div className="card-heading">
-                  <h3>
-                    <Link to={`/events/${event.id}`}>{event.title}</Link>
-                  </h3>
-                  <Tag color={event.is_skipped ? "orange" : "default"}>
-                    {event.is_skipped
-                      ? "本次不参加"
-                      : event.kind === "exam"
-                        ? "考试"
-                        : "固定时间"}
-                  </Tag>
-                </div>
-                <p>
-                  {displayTime(event.start_at, profile.timezone)} —{" "}
-                  {displayTime(event.end_at, profile.timezone)}
-                </p>
+          {visible.map((event) => (
+            <Card key={event.id}>
+              <div className="card-heading">
+                <h3>
+                  <Link to={`/events/${event.id}`}>{event.title}</Link>
+                </h3>
+                <Tag color={event.is_skipped ? "orange" : "default"}>
+                  {event.is_skipped
+                    ? "本次不参加"
+                    : event.kind === "exam"
+                      ? "考试"
+                      : "固定时间"}
+                </Tag>
+              </div>
+              <p>
+                {displayTime(event.start_at, profile.timezone)} —{" "}
+                {displayTime(event.end_at, profile.timezone)}
+              </p>
+              <p className="muted">
+                {event.location || "未设置地点"}
+                {event.series_id && " · 每周课程实例"}
+              </p>
+              {event.start_at !== event.original_start_at && (
                 <p className="muted">
-                  {event.location || "未设置地点"}
-                  {event.series_id && " · 每周课程实例"}
+                  原定：
+                  {displayTime(
+                    event.original_start_at,
+                    profile.timezone,
+                  )} — {displayTime(event.original_end_at, profile.timezone)}
                 </p>
-                {event.start_at !== event.original_start_at && (
-                  <p className="muted">
-                    原定：
-                    {displayTime(event.original_start_at, profile.timezone)} —{" "}
-                    {displayTime(event.original_end_at, profile.timezone)}
-                  </p>
-                )}
+              )}
+              {id && (
                 <Select
                   className="policy-select"
                   aria-label={`${event.title}本次并行设置`}
@@ -221,20 +245,44 @@ export default function EventsPage({ profile }: { profile: Profile }) {
                     })
                   }
                 />
-                <Space wrap>
-                  <SourceButton objectId={event.id} />
-                  <Button onClick={() => edit(event)}>编辑事件</Button>
-                  {event.kind === "course" && (
-                    <Button
-                      disabled={write.isPending}
-                      onClick={() => skip(event)}
-                    >
-                      {event.is_skipped ? "恢复参加" : "本次不参加"}
-                    </Button>
-                  )}
-                </Space>
-              </Card>
-            ))}
+              )}
+              <Space wrap>
+                {event.course_id && (
+                  <Link to={`/courses/${event.course_id}`}>所属课程</Link>
+                )}
+                {event.series_id && (
+                  <Link to={`/series/${event.series_id}`}>所属系列</Link>
+                )}
+                <SourceButton objectId={event.id} />
+                {id && (
+                  <Button
+                    danger
+                    loading={remove.isPending}
+                    onClick={() =>
+                      modal.confirm({
+                        title: "删除这次事件？",
+                        content:
+                          "将永久删除本次事件和对应单次覆盖；其他周次、导入来源与历史计划保留，当前计划会标记过期。",
+                        onOk: () =>
+                          remove.mutateAsync(event.id).then(() => undefined),
+                      })
+                    }
+                  >
+                    删除事件
+                  </Button>
+                )}
+                <Button onClick={() => edit(event)}>编辑事件</Button>
+                {event.kind === "course" && (
+                  <Button
+                    disabled={write.isPending}
+                    onClick={() => skip(event)}
+                  >
+                    {event.is_skipped ? "恢复参加" : "本次不参加"}
+                  </Button>
+                )}
+              </Space>
+            </Card>
+          ))}
         </div>
       )}
       <Modal
@@ -247,6 +295,7 @@ export default function EventsPage({ profile }: { profile: Profile }) {
       >
         <Form
           form={form}
+          initialValues={{ location: "", kind: "other" }}
           layout="vertical"
           onFinish={async (values) => {
             try {

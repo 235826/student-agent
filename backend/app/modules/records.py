@@ -29,3 +29,14 @@ def record_change(
         )
     db.commit()
     db.refresh(obj)
+
+
+def remove_record(db: Session, user: User, action: str, obj: Owned) -> None:
+    db.add(Audit(workspace_id=user.workspace_id, action=action, object_id=obj.id))
+    db.delete(obj)
+    db.execute(
+        update(Workspace)
+        .where(Workspace.id == user.workspace_id)
+        .values(scheduling_revision=Workspace.scheduling_revision + 1)
+    )
+    db.commit()

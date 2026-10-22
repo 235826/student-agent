@@ -1,3 +1,4 @@
+import HierarchyPage from "./pages/HierarchyPage";
 import {
   NavLink,
   Navigate,
@@ -154,11 +155,11 @@ export default function App() {
           />
           <Route
             path="/courses/:id"
-            element={<EventsPage profile={profile} />}
+            element={<HierarchyPage kind="course" profile={profile} />}
           />
           <Route
             path="/series/:id"
-            element={<EventsPage profile={profile} />}
+            element={<HierarchyPage kind="series" profile={profile} />}
           />
           <Route
             path="/compatibility"

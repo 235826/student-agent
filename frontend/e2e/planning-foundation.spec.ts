@@ -52,7 +52,13 @@ test("草稿发布、重复课程单次变更与规则检查", async ({ page }, 
     .getByRole("button", { name: /^确\s*定$/ })
     .click();
   await expect(page.getByText(course, { exact: true })).toBeVisible();
+  await page.getByRole("link", { name: course, exact: true }).click();
+  await expect(page).toHaveURL(/\/courses\//);
   await choose(page, `${course}默认并行设置`, "接受已允许的组合");
+  await page
+    .getByRole("link", { name: "日历与课程", exact: true })
+    .first()
+    .click();
   await page.getByRole("button", { name: "建立重复课表" }).click();
   await choose(page, "选择课程", course);
   await page.getByLabel("起始日期").fill("2026-11-02");
@@ -61,28 +67,37 @@ test("草稿发布、重复课程单次变更与规则检查", async ({ page }, 
     .getByRole("dialog")
     .getByRole("button", { name: /^确\s*定$/ })
     .click();
-  const events = page
-    .locator(".ant-card")
-    .filter({ has: page.getByRole("heading", { name: course, exact: true }) });
-  await expect(events).toHaveCount(2);
-  await events.first().getByRole("button", { name: "本次不参加" }).click();
+  await page.getByRole("link", { name: course, exact: true }).click();
+  await page.getByRole("link", { name: /起 · 2 次课程/ }).click();
+  await expect(page).toHaveURL(/\/series\//);
+  const seriesUrl = page.url();
+  await expect(page.locator(".instance-list a")).toHaveCount(2);
+  await page.locator(".instance-list a").first().click();
+  await expect(page).toHaveURL(/\/events\//);
+  await page.reload();
+  await page.getByRole("button", { name: "本次不参加", exact: true }).click();
   await page
     .getByRole("dialog")
     .getByRole("button", { name: /^确\s*定$/ })
     .click();
   await expect(
-    events.first().getByRole("button", { name: "恢复参加" }),
+    page.getByRole("button", { name: "恢复参加", exact: true }),
   ).toBeVisible();
+  await page.getByRole("link", { name: "所属系列", exact: true }).click();
+  await expect(page).toHaveURL(seriesUrl);
+  await page.locator(".instance-list a").last().click();
   await expect(
-    events.last().getByRole("button", { name: "本次不参加" }),
+    page.getByRole("button", { name: "本次不参加", exact: true }),
   ).toBeVisible();
-  await events.first().getByRole("button", { name: "恢复参加" }).click();
+  await page.getByRole("link", { name: "所属系列", exact: true }).click();
+  await page.locator(".instance-list a").first().click();
+  await page.getByRole("button", { name: "恢复参加", exact: true }).click();
   await page
     .getByRole("dialog")
     .getByRole("button", { name: /^确\s*定$/ })
     .click();
   await expect(
-    events.first().getByRole("button", { name: "本次不参加" }),
+    page.getByRole("button", { name: "本次不参加", exact: true }),
   ).toBeVisible();
   await page.getByRole("link", { name: "并行规则", exact: true }).click();
   await page.getByLabel("任务类型").fill(`reading-${info.project.name}`);

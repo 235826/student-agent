@@ -58,3 +58,5 @@ export type Plan = components["schemas"]["PlanOut"];
 
 export type ImportJob = components["schemas"]["ImportOut"];
 export type ImportCandidate = components["schemas"]["ImportCandidate"];
+
+export type Series = components["schemas"]["SeriesOut"];

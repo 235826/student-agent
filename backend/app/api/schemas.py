@@ -383,3 +383,19 @@ class PlanOut(Schema):
 
 class AdoptPlan(Schema):
     confirmed: Literal[True]
+
+
+class ConfirmInput(Schema):
+    confirmed: Literal[True]
+
+
+class SeriesEdit(ConfirmInput):
+    start_time: time
+    end_time: time
+    location: str = Field(default="", max_length=500)
+
+    @model_validator(mode="after")
+    def valid_times(self) -> Self:
+        if self.start_time.tzinfo or self.end_time.tzinfo or self.end_time <= self.start_time:
+            raise ValueError("结束时间必须晚于开始时间，使用同一天的本地时间")
+        return self
