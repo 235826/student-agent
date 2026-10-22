@@ -18,7 +18,7 @@ test("排程预览、确认、版本保留及失效提示", async ({ page }, inf
   const title = `排程作业-${info.project.name}`;
   await page.getByLabel("任务标题").fill(title);
   await page.getByLabel("预计用时").fill("60");
-  await page.getByRole("button", { name: /^确\s*定$/ }).click();
+  await page.getByRole("button", { name: "创建任务", exact: true }).click();
   await expect(page.getByRole("heading", { name: title })).toBeVisible();
   await page.getByRole("link", { name: "学习计划", exact: true }).click();
   await page.getByRole("link", { name: "学习计划", exact: true }).click();
@@ -52,7 +52,7 @@ test("排程预览、确认、版本保留及失效提示", async ({ page }, inf
   await page.getByRole("link", { name: "任务", exact: true }).click();
   await page.getByRole("button", { name: "新建任务", exact: true }).click();
   await page.getByLabel("任务标题").fill(`${title}-新增`);
-  await page.getByRole("button", { name: /^确\s*定$/ }).click();
+  await page.getByRole("button", { name: "创建任务", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: `${title}-新增` }),
   ).toBeVisible();

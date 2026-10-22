@@ -146,7 +146,7 @@ export default function App() {
           <Route path="/plans/:id" element={<PlansPage profile={profile} />} />
           <Route
             path="/imports/:id"
-            element={<ImportsPage profile={profile} />}
+            element={<ImportEntry profile={profile} />}
           />
           <Route
             path="/events/:id"

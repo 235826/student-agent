@@ -15,18 +15,22 @@ test("账号、任务、事件、设置和手机布局闭环", async ({ page }, 
   await page.getByLabel("任务标题").fill(title);
   await page.getByLabel("任务描述").fill("实现、验证并整理算法笔记");
   await page.getByLabel("预计用时").fill("120");
-  await page.getByRole("button", { name: "确 定" }).click();
+  await page.getByRole("button", { name: "创建任务", exact: true }).click();
   await expect(page.getByRole("heading", { name: title })).toBeVisible();
   const card = page
     .locator(".ant-card")
     .filter({ has: page.getByRole("heading", { name: title }) });
   await card.getByRole("button", { name: /^编\s*辑$/ }).click();
   await page.getByLabel("任务标题").fill(`${title}-已编辑`);
-  await page.getByRole("button", { name: "确 定" }).click();
+  await page.getByRole("button", { name: "保存修改", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: `${title}-已编辑` }),
   ).toBeVisible();
   await card.getByRole("button", { name: "移入垃圾箱" }).click();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: /^确\s*定$/ })
+    .click();
   await expect(
     page.getByRole("heading", { name: `${title}-已编辑` }),
   ).not.toBeVisible();

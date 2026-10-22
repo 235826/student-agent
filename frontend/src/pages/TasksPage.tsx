@@ -1,6 +1,11 @@
-import { Link, useParams, useLocation } from "react-router-dom";
+import {
+  Link,
+  useParams,
+  useLocation,
+  useSearchParams,
+} from "react-router-dom";
 import SourceButton from "../components/SourceButton";
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Alert,
@@ -44,12 +49,19 @@ const errorText = (e: unknown) =>
 export default function TasksPage({ profile }: { profile: Profile }) {
   const { id } = useParams();
   const location = useLocation();
+  const [params] = useSearchParams();
+  const inbox = location.pathname === "/inbox";
+  const [search, setSearch] = useState("");
+  const [status, setStatus] = useState("all");
+  const [sort, setSort] = useState("status");
   const client = useQueryClient();
   const { message, modal } = App.useApp();
   const [tab, setTab] = useState<"tasks" | "trash" | "drafts">(
     location.pathname === "/inbox" ? "drafts" : "tasks",
   );
-  const [editor, setEditor] = useState<Editor | null>(null);
+  const [editor, setEditor] = useState<Editor | null>(
+    params.has("new") ? { kind: "task" } : null,
+  );
   const [form] = Form.useForm();
   const tasks = useQuery({
     queryKey: ["tasks", false],
@@ -63,17 +75,24 @@ export default function TasksPage({ profile }: { profile: Profile }) {
     queryKey: ["drafts"],
     queryFn: () => api<Draft[]>("/drafts"),
   });
-  const mutation = useMutation({
+  const writeOptions = {
     mutationFn: ({ path, method = "POST", body }: Write) =>
       api(path, method, body),
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: ["tasks"] });
       void client.invalidateQueries({ queryKey: ["drafts"] });
+      void client.invalidateQueries({ queryKey: ["plans"] });
       setEditor(null);
       void message.success("已保存");
     },
-    onError: (e) => void message.error(errorText(e)),
-  });
+    onError: (e: unknown) => void message.error(errorText(e)),
+  };
+  const mutation = useMutation(writeOptions);
+  const draftSave = useMutation(writeOptions);
+  const trashWrite = useMutation(writeOptions);
+  const publishWrite = useMutation(writeOptions);
+  const draftDelete = useMutation(writeOptions);
+  const restoreWrite = useMutation(writeOptions);
   const catalog = [...(tasks.data ?? []), ...(trash.data ?? [])];
   const titleOf = (id: string) =>
     catalog.find((t) => t.id === id)?.title ?? "不可用任务";
@@ -95,6 +114,11 @@ export default function TasksPage({ profile }: { profile: Profile }) {
   };
   const save = async (asDraft: boolean) => {
     try {
+      if (!asDraft && !form.getFieldValue("title")?.trim()) {
+        form.setFields([{ name: "title", errors: ["创建任务必须填写标题"] }]);
+        return;
+      }
+      if (asDraft) form.setFields([{ name: "title", errors: [] }]);
       const values = await form.validateFields();
       const body: TaskInput = {
         ...values,
@@ -109,7 +133,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
       };
       if (asDraft) {
         const draft = editor?.kind === "draft" ? editor.draft : undefined;
-        mutation.mutate({
+        draftSave.mutate({
           path: draft ? `/drafts/${draft.id}` : "/drafts",
           method: draft ? "PUT" : "POST",
           body: {
@@ -157,16 +181,21 @@ export default function TasksPage({ profile }: { profile: Profile }) {
           "子任务和依赖不会被删除。后续任务会标记前置任务不可用：" +
           [...task.dependent_ids, ...task.child_ids].map(titleOf).join("、"),
         onOk: () =>
-          mutation.mutateAsync({ path: path + "?confirm_impact=true" }),
+          trashWrite.mutateAsync({ path: path + "?confirm_impact=true" }),
       });
-    else mutation.mutate({ path });
+    else
+      modal.confirm({
+        title: "确认移入垃圾箱",
+        content: "任务将停止参与排程，可从垃圾箱恢复。",
+        onOk: () => trashWrite.mutateAsync({ path }),
+      });
   };
   const publish = (draft: Draft) =>
     modal.confirm({
       title: "确认发布任务草稿",
       content: `将“${draft.payload.title || "未命名草稿"}”（版本 ${draft.revision}）发布为正式任务。发布前会再次检查字段和依赖。`,
       onOk: () =>
-        mutation.mutateAsync({
+        publishWrite.mutateAsync({
           path: `/drafts/${draft.id}/publish`,
           body: {
             revision: draft.revision,
@@ -175,6 +204,34 @@ export default function TasksPage({ profile }: { profile: Profile }) {
         }),
     });
   const current = tab === "trash" ? trash : tasks;
+  const visible = (
+    id ? catalog.filter((t) => t.id === id) : (current.data ?? [])
+  )
+    .filter(
+      (t) =>
+        (id || status === "all" || t.status === status) &&
+        (id ||
+          `${t.title} ${t.description}`
+            .toLowerCase()
+            .includes(search.toLowerCase())),
+    )
+    .sort((a, b) =>
+      sort === "deadline"
+        ? (a.deadline_at ?? "9999").localeCompare(b.deadline_at ?? "9999")
+        : sort === "priority"
+          ? b.priority - a.priority
+          : a.status.localeCompare(b.status),
+    );
+  const relations = (ids: string[]) =>
+    ids.map((relationId) => (
+      <Link
+        key={relationId}
+        to={`/tasks/${relationId}`}
+        style={{ marginRight: 8 }}
+      >
+        {titleOf(relationId)}
+      </Link>
+    ));
   const currentTask = editor?.kind === "task" ? editor.task : undefined;
   const options = catalog
     .filter((t) => t.id !== currentTask?.id)
@@ -194,34 +251,66 @@ export default function TasksPage({ profile }: { profile: Profile }) {
       <header>
         <div>
           <div className="eyebrow">ONE STEP AT A TIME</div>
-          <h1>任务</h1>
+          <h1>{inbox ? "待确认" : id ? "任务详情" : "任务"}</h1>
           <p className="muted">从草稿开始，明确每一步的先后关系。</p>
         </div>
         <Space wrap>
-          <Button onClick={() => open({ kind: "draft" })}>新建草稿</Button>
           <Button type="primary" onClick={() => open({ kind: "task" })}>
             新建任务
           </Button>
         </Space>
       </header>
-      <Space className="toolbar" wrap>
-        {(
-          [
-            ["tasks", "我的任务"],
-            ["drafts", "草稿"],
-            ["trash", "垃圾箱"],
-          ] as const
-        ).map(([key, label]) => (
-          <Button
-            key={key}
-            type={tab === key ? "primary" : "default"}
-            onClick={() => setTab(key)}
-          >
-            {label}
-          </Button>
-        ))}
-      </Space>
-      {tab === "drafts" ? (
+      {!inbox && !id && (
+        <Space className="toolbar" wrap>
+          {(
+            [
+              ["tasks", "我的任务"],
+              ["trash", "垃圾箱"],
+            ] as const
+          ).map(([key, label]) => (
+            <Button
+              key={key}
+              type={tab === key ? "primary" : "default"}
+              onClick={() => setTab(key)}
+            >
+              {label}
+            </Button>
+          ))}
+        </Space>
+      )}
+      {id && (
+        <Space className="toolbar">
+          <Link to="/tasks">返回任务列表</Link>
+          <Link to="/settings/rules">查看相关并行规则</Link>
+        </Space>
+      )}
+      {!inbox && !id && (
+        <Space wrap className="toolbar">
+          <Input.Search
+            aria-label="搜索任务"
+            placeholder="搜索标题或描述"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+          <Select
+            aria-label="筛选状态"
+            value={status}
+            onChange={setStatus}
+            options={[{ value: "all", label: "全部状态" }, ...states]}
+          />
+          <Select
+            aria-label="任务排序"
+            value={sort}
+            onChange={setSort}
+            options={[
+              { value: "status", label: "按状态分组" },
+              { value: "deadline", label: "截止时间" },
+              { value: "priority", label: "优先级" },
+            ]}
+          />
+        </Space>
+      )}
+      {inbox ? (
         <>
           {drafts.error && (
             <Alert type="error" message={errorText(drafts.error)} />
@@ -248,7 +337,10 @@ export default function TasksPage({ profile }: { profile: Profile }) {
                     </Button>
                     <Button
                       type="primary"
-                      disabled={mutation.isPending}
+                      disabled={
+                        publishWrite.isPending &&
+                        publishWrite.variables?.path.includes(draft.id)
+                      }
                       onClick={() => publish(draft)}
                     >
                       发布任务
@@ -260,7 +352,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
                           title: "删除草稿？",
                           content: "草稿将被删除，不会影响正式任务。",
                           onOk: () =>
-                            mutation.mutateAsync({
+                            draftDelete.mutateAsync({
                               path: `/drafts/${draft.id}?revision=${draft.revision}`,
                               method: "DELETE",
                             }),
@@ -282,22 +374,30 @@ export default function TasksPage({ profile }: { profile: Profile }) {
           )}{" "}
           {current.isPending ? (
             <Spin />
-          ) : !current.data?.length ? (
+          ) : !visible.length ? (
             <Card>
               <Empty
                 description={
-                  tab === "trash"
-                    ? "垃圾箱为空"
-                    : "还没有任务，先添加一件想完成的事"
+                  id
+                    ? "任务不存在或已删除"
+                    : tab === "trash"
+                      ? "垃圾箱为空"
+                      : "还没有任务，先添加一件想完成的事"
                 }
               />
             </Card>
           ) : (
             <div className="cards">
-              {current.data
-                .filter((task) => !id || task.id === id)
-                .map((task) => (
-                  <Card key={task.id} className="task-card">
+              {visible.map((task, index) => (
+                <Fragment key={task.id}>
+                  {!id &&
+                    sort === "status" &&
+                    visible[index - 1]?.status !== task.status && (
+                      <h2 style={{ gridColumn: "1 / -1", margin: 0 }}>
+                        {states.find((s) => s.value === task.status)?.label}
+                      </h2>
+                    )}
+                  <Card className="task-card">
                     <div className="card-heading">
                       <h3>
                         <Link to={`/tasks/${task.id}`}>{task.title}</Link>
@@ -310,22 +410,40 @@ export default function TasksPage({ profile }: { profile: Profile }) {
                       {task.description || "暂无描述"}
                     </p>
                     {task.parent_id && (
-                      <p className="muted">父任务：{titleOf(task.parent_id)}</p>
+                      <p className="muted">
+                        父任务：{relations([task.parent_id])}
+                      </p>
                     )}
                     {task.predecessor_ids.length > 0 && (
                       <p className="muted">
-                        前置：{task.predecessor_ids.map(titleOf).join(" → ")}
+                        前置：{relations(task.predecessor_ids)}
                       </p>
                     )}
                     {task.child_ids.length > 0 && (
                       <p className="muted">
-                        子任务：{task.child_ids.map(titleOf).join("、")}
+                        子任务：{relations(task.child_ids)}
                       </p>
                     )}
                     {task.blocked_by.length > 0 && task.status !== "done" && (
                       <Alert
                         type="warning"
-                        message={"等待前置：" + task.blocked_by.join("、")}
+                        message={
+                          <span>
+                            等待前置：
+                            {relations(
+                              task.predecessor_ids.filter((predecessorId) => {
+                                const predecessor = catalog.find(
+                                  (t) => t.id === predecessorId,
+                                );
+                                return (
+                                  predecessor &&
+                                  (predecessor.trashed_at ||
+                                    predecessor.status !== "done")
+                                );
+                              }),
+                            )}
+                          </span>
+                        }
                       />
                     )}
                     <div className="meta">
@@ -334,14 +452,17 @@ export default function TasksPage({ profile }: { profile: Profile }) {
                       {priorities[task.priority - 1].label}
                     </div>
                     <Space wrap>
-                      {tab === "trash" ? (
+                      {task.trashed_at ? (
                         <Button
                           onClick={() =>
-                            mutation.mutate({
+                            restoreWrite.mutate({
                               path: `/tasks/${task.id}/restore`,
                             })
                           }
-                          disabled={mutation.isPending}
+                          disabled={
+                            trashWrite.isPending &&
+                            trashWrite.variables?.path.includes(task.id)
+                          }
                         >
                           恢复任务
                         </Button>
@@ -353,7 +474,10 @@ export default function TasksPage({ profile }: { profile: Profile }) {
                           </Button>
                           <Button
                             danger
-                            disabled={mutation.isPending}
+                            disabled={
+                              trashWrite.isPending &&
+                              trashWrite.variables?.path.includes(task.id)
+                            }
                             onClick={() => remove(task)}
                           >
                             移入垃圾箱
@@ -362,7 +486,8 @@ export default function TasksPage({ profile }: { profile: Profile }) {
                       )}
                     </Space>
                   </Card>
-                ))}
+                </Fragment>
+              ))}
             </div>
           )}
         </>
@@ -381,25 +506,42 @@ export default function TasksPage({ profile }: { profile: Profile }) {
         footer={
           <Space>
             <Button onClick={() => setEditor(null)}>取消</Button>
-            {editor?.kind === "task" && (
+            {editor?.kind === "task" && !currentTask && (
               <Button
-                disabled={mutation.isPending}
+                disabled={draftSave.isPending}
                 onClick={() => void save(true)}
               >
-                另存为草稿
+                保存草稿
               </Button>
             )}
             <Button
               type="primary"
-              loading={mutation.isPending}
+              loading={
+                editor?.kind === "draft"
+                  ? draftSave.isPending
+                  : mutation.isPending
+              }
               onClick={() => void save(editor?.kind === "draft")}
             >
-              {editor?.kind === "draft" ? "保存草稿" : "确定"}
+              {editor?.kind === "draft"
+                ? "保存草稿"
+                : currentTask
+                  ? "保存修改"
+                  : "创建任务"}
             </Button>
           </Space>
         }
       >
-        <Form form={form} layout="vertical">
+        <Form
+          form={form}
+          layout="vertical"
+          initialValues={{
+            title: "",
+            status: "todo",
+            priority: 2,
+            parallel_policy: "inherit",
+          }}
+        >
           <Form.Item name="title" label="任务标题" rules={[{ max: 200 }]}>
             <Input />
           </Form.Item>

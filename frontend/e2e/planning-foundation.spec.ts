@@ -25,13 +25,13 @@ test("草稿发布、重复课程单次变更与规则检查", async ({ page }, 
     .getByRole("button", { name: /^(创建账号并进入|登\s*录)$/ })
     .click();
   await page.getByRole("link", { name: "任务", exact: true }).click();
-  await page.getByRole("button", { name: "新建草稿", exact: true }).click();
+  await page.getByRole("button", { name: "新建任务", exact: true }).click();
   await page.getByLabel("任务标题").fill(title);
   await page
     .getByLabel("任务类型（可选）", { exact: true })
     .fill(`reading-${info.project.name}`);
   await page.getByRole("button", { name: "保存草稿" }).click();
-  await page.getByRole("button", { name: /^草\s*稿$/ }).click();
+  await page.getByRole("link", { name: "待确认", exact: true }).click();
   const draft = page
     .locator(".ant-card")
     .filter({ has: page.getByRole("heading", { name: title, exact: true }) });
@@ -40,7 +40,7 @@ test("草稿发布、重复课程单次变更与规则检查", async ({ page }, 
     .getByRole("dialog")
     .getByRole("button", { name: /^确\s*定$/ })
     .click();
-  await page.getByRole("button", { name: "我的任务" }).click();
+  await page.getByRole("link", { name: "任务", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: title, exact: true }),
   ).toBeVisible();
