@@ -19,6 +19,7 @@ import {
   Form,
   Input,
   Modal,
+  Radio,
   Select,
   Space,
   Spin,
@@ -43,11 +44,24 @@ const errorText = (e: unknown) => (e instanceof Error ? e.message : "操作失�
 type Write = { path: string; method?: string; body?: unknown };
 export default function EventsPage({ profile }: { profile: Profile }) {
   const { id } = useParams();
-  const [params] = useSearchParams();
+  const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
-  const [week, setWeek] = useState(
-    DateTime.now().setZone(profile.timezone).startOf("week").toISODate()!,
-  );
+  const fallbackWeek = DateTime.now()
+    .setZone(profile.timezone)
+    .startOf("week")
+    .toISODate()!;
+  const weekParam = params.get("week");
+  const week =
+    weekParam &&
+    /^\d{4}-\d{2}-\d{2}$/.test(weekParam) &&
+    DateTime.fromISO(weekParam, { zone: profile.timezone }).isValid
+      ? weekParam
+      : fallbackWeek;
+  const setWeek = (day: string) => {
+    const next = new URLSearchParams(params);
+    next.set("week", day);
+    setParams(next, { replace: true });
+  };
   const client = useQueryClient();
   const { message, modal } = App.useApp();
   const [editing, setEditing] = useState<Event | null | undefined>(
@@ -60,6 +74,14 @@ export default function EventsPage({ profile }: { profile: Profile }) {
   const [courseForm] = Form.useForm();
   const seriesKey = useRef("");
   const kind = Form.useWatch("kind", form);
+  const closeEditor = () => {
+    setEditing(undefined);
+    if (params.has("new")) {
+      const next = new URLSearchParams(params);
+      next.delete("new");
+      setParams(next, { replace: true });
+    }
+  };
   const events = useQuery({
     queryKey: ["events"],
     queryFn: () => api<Event[]>("/events"),
@@ -92,7 +114,9 @@ export default function EventsPage({ profile }: { profile: Profile }) {
       void client.invalidateQueries({ queryKey: ["events"] });
       void client.invalidateQueries({ queryKey: ["series"] });
       void client.invalidateQueries({ queryKey: ["plans"] });
-      navigate("/calendar");
+      navigate(
+        weekParam ? `/calendar?week=${encodeURIComponent(week)}` : "/calendar",
+      );
     },
     onError: (e) => void message.error(e.message),
   });
@@ -108,6 +132,18 @@ export default function EventsPage({ profile }: { profile: Profile }) {
   );
   const edit = (event: Event | null) => {
     form.resetFields();
+    const noteScope =
+      event?.series_id && event.single_note != null
+        ? "single"
+        : event?.series_id
+          ? "series"
+          : "single";
+    const detailsScope =
+      event?.series_id && event.single_details != null
+        ? "single"
+        : event?.series_id
+          ? "series"
+          : "single";
     form.setFieldsValue(
       event
         ? {
@@ -117,10 +153,41 @@ export default function EventsPage({ profile }: { profile: Profile }) {
             end_at: toLocal(event.end_at, profile.timezone),
             kind: event.kind,
             course_id: event.course_id,
+            note: event.series_id
+              ? noteScope === "single"
+                ? (event.single_note ?? "")
+                : (event.series_note ?? "")
+              : event.note,
+            details: event.series_id
+              ? detailsScope === "single"
+                ? (event.single_details ?? "")
+                : (event.series_details ?? "")
+              : event.details,
+            note_scope: noteScope,
+            details_scope: detailsScope,
           }
-        : { location: "", kind: "other" },
+        : {
+            location: "",
+            kind: "other",
+            note: "",
+            details: "",
+            note_scope: "single",
+            details_scope: "single",
+          },
     );
     setEditing(event);
+  };
+  const switchScope = (field: "note" | "details", value: string) => {
+    if (!editing?.series_id) return;
+    const source =
+      field === "note"
+        ? value === "single"
+          ? editing.single_note
+          : editing.series_note
+        : value === "single"
+          ? editing.single_details
+          : editing.series_details;
+    form.setFieldValue(field, source ?? "");
   };
   const skip = (event: Event) =>
     modal.confirm({
@@ -142,34 +209,38 @@ export default function EventsPage({ profile }: { profile: Profile }) {
           <h1>{id ? "事件详情" : "日历与课程"}</h1>
           <p className="muted">固定课程保留原始安排，单次变更单独记录。</p>
         </div>
-        <Space wrap>
-          <Button
-            onClick={() => {
-              courseForm.resetFields();
-              setCourseOpen(true);
-            }}
-          >
-            添加课程
-          </Button>
-          <Button
-            onClick={() => {
-              seriesForm.resetFields();
-              seriesForm.setFieldsValue({
-                timezone: profile.timezone,
-                weekdays: [0],
-                start_time: "09:00",
-                end_time: "10:00",
-              });
-              seriesKey.current = crypto.randomUUID();
-              setSeriesOpen(true);
-            }}
-          >
-            建立重复课表
-          </Button>
-          <Button type="primary" onClick={() => edit(null)}>
-            添加事件
-          </Button>
-        </Space>
+        {!id && (
+          <Space wrap>
+            <Button
+              onClick={() => {
+                courseForm.resetFields();
+                setCourseOpen(true);
+              }}
+            >
+              添加课程
+            </Button>
+            <Button
+              onClick={() => {
+                seriesForm.resetFields();
+                seriesForm.setFieldsValue({
+                  timezone: profile.timezone,
+                  weekdays: [0],
+                  start_time: "09:00",
+                  end_time: "10:00",
+                  note: "",
+                  details: "",
+                });
+                seriesKey.current = crypto.randomUUID();
+                setSeriesOpen(true);
+              }}
+            >
+              建立重复课表
+            </Button>
+            <Button type="primary" onClick={() => edit(null)}>
+              添加事件
+            </Button>
+          </Space>
+        )}
       </header>
       {(courses.error || events.error || series.error) && (
         <Alert
@@ -205,7 +276,11 @@ export default function EventsPage({ profile }: { profile: Profile }) {
             </Card>
             <div>
               {events.data && !events.error && (
-                <CalendarPage profile={profile} onWeekChange={setWeek} />
+                <CalendarPage
+                  profile={profile}
+                  week={week}
+                  onWeekChange={setWeek}
+                />
               )}
               <p className="muted">
                 选中周：{week}（仅显示本周事件，点击日历或下方事件进入详情）
@@ -216,7 +291,15 @@ export default function EventsPage({ profile }: { profile: Profile }) {
       )}
       {id && (
         <Space className="toolbar">
-          <Link to="/calendar">返回日历</Link>
+          <Link
+            to={
+              weekParam
+                ? `/calendar?week=${encodeURIComponent(week)}`
+                : "/calendar"
+            }
+          >
+            返回日历
+          </Link>
           <Link to="/settings/rules?tab=courses">查看相关并行规则</Link>
         </Space>
       )}
@@ -232,7 +315,15 @@ export default function EventsPage({ profile }: { profile: Profile }) {
             <Card key={event.id}>
               <div className="card-heading">
                 <h3>
-                  <Link to={`/events/${event.id}`}>{event.title}</Link>
+                  <Link
+                    to={
+                      weekParam
+                        ? `/events/${event.id}?week=${encodeURIComponent(week)}`
+                        : `/events/${event.id}`
+                    }
+                  >
+                    {event.title}
+                  </Link>
                 </h3>
                 <Tag color={event.is_skipped ? "orange" : "default"}>
                   {event.is_skipped
@@ -250,6 +341,10 @@ export default function EventsPage({ profile }: { profile: Profile }) {
                 {event.location || "未设置地点"}
                 {event.series_id && " · 每周课程实例"}
               </p>
+              {event.note && <p className="event-note">{event.note}</p>}
+              {id && event.details && (
+                <p className="event-details">{event.details}</p>
+              )}
               {event.start_at !== event.original_start_at && (
                 <p className="muted">
                   原定：
@@ -292,8 +387,9 @@ export default function EventsPage({ profile }: { profile: Profile }) {
                     onClick={() =>
                       modal.confirm({
                         title: "删除这次事件？",
-                        content:
-                          "将永久删除本次事件和对应单次覆盖；其他周次、导入来源与历史计划保留，当前计划会标记过期。",
+                        content: event.series_id
+                          ? "将永久删除本次课程和对应单次覆盖。系列与其他周次保留，但该周次永久缺失，后续编辑系列不会补回；导入来源与历史计划保留，当前计划会标记过期。"
+                          : "将永久删除本次事件和对应单次覆盖；导入来源与历史计划保留，当前计划会标记过期。",
                         onOk: () =>
                           remove.mutateAsync(event.id).then(() => undefined),
                       })
@@ -319,14 +415,21 @@ export default function EventsPage({ profile }: { profile: Profile }) {
       <Modal
         title={editing ? "编辑事件" : "添加事件"}
         open={editing !== undefined}
-        onCancel={() => setEditing(undefined)}
+        onCancel={closeEditor}
         onOk={() => form.submit()}
         confirmLoading={write.isPending}
         destroyOnHidden
       >
         <Form
           form={form}
-          initialValues={{ location: "", kind: "other" }}
+          initialValues={{
+            location: "",
+            kind: "other",
+            note: "",
+            details: "",
+            note_scope: "single",
+            details_scope: "single",
+          }}
           layout="vertical"
           onFinish={async (values) => {
             try {
@@ -346,7 +449,7 @@ export default function EventsPage({ profile }: { profile: Profile }) {
                 method: editing ? "PUT" : "POST",
                 body,
               });
-              setEditing(undefined);
+              closeEditor();
             } catch (e) {
               if (e instanceof Error && !(e instanceof ApiError))
                 void message.error(e.message);
@@ -356,7 +459,7 @@ export default function EventsPage({ profile }: { profile: Profile }) {
           {editing?.series_id && (
             <Alert
               type="info"
-              message="此处只编辑当前课程实例，不改变其他周次及原始排课。"
+              message="备注和详情可分别选择仅本次或整个系列；系列值会与单次值同时展示。"
             />
           )}
           <Form.Item
@@ -413,6 +516,60 @@ export default function EventsPage({ profile }: { profile: Profile }) {
           <Form.Item name="location" label="地点">
             <Input maxLength={500} />
           </Form.Item>
+          {editing?.series_id && (
+            <Form.Item
+              name="note_scope"
+              label="备注应用范围"
+              extra="整个系列会更新系列默认值；已有单次值仍会保留并与系列值同时展示。"
+            >
+              <Radio.Group
+                onChange={(e) => switchScope("note", e.target.value)}
+                options={[
+                  { value: "single", label: "仅本次" },
+                  { value: "series", label: "整个系列" },
+                ]}
+              />
+            </Form.Item>
+          )}
+          <Form.Item
+            name="note"
+            label="备注（短，显示在卡片和日历）"
+            rules={[{ max: 120 }]}
+          >
+            <Input maxLength={120} showCount />
+          </Form.Item>
+          {editing?.series_id && (
+            <Form.Item
+              name="details_scope"
+              label="详情应用范围"
+              extra="详情只在事件详情显示；系列值会与单次值拼接。"
+            >
+              <Radio.Group
+                onChange={(e) => switchScope("details", e.target.value)}
+                options={[
+                  { value: "single", label: "仅本次" },
+                  { value: "series", label: "整个系列" },
+                ]}
+              />
+            </Form.Item>
+          )}
+          <Form.Item
+            name="details"
+            label="详情（仅在事件详情显示）"
+            rules={[{ max: 5000 }]}
+          >
+            <Input.TextArea rows={5} maxLength={5000} showCount />
+          </Form.Item>
+          {editing?.series_id &&
+            (editing.series_note || editing.series_details) && (
+              <details>
+                <summary>查看系列默认备注和详情</summary>
+                {editing.series_note && <p>备注：{editing.series_note}</p>}
+                {editing.series_details && (
+                  <p className="event-details">{editing.series_details}</p>
+                )}
+              </details>
+            )}
         </Form>
       </Modal>
       <Modal
@@ -534,6 +691,20 @@ export default function EventsPage({ profile }: { profile: Profile }) {
           </Form.Item>
           <Form.Item name="location" label="上课地点">
             <Input maxLength={500} />
+          </Form.Item>
+          <Form.Item
+            name="note"
+            label="系列备注（短，显示在卡片和日历）"
+            rules={[{ max: 120 }]}
+          >
+            <Input maxLength={120} showCount />
+          </Form.Item>
+          <Form.Item
+            name="details"
+            label="系列详情（仅在事件详情显示）"
+            rules={[{ max: 5000 }]}
+          >
+            <Input.TextArea rows={4} maxLength={5000} showCount />
           </Form.Item>
           <p className="muted">
             日期范围包含首尾两天，最多 366

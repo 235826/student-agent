@@ -158,3 +158,59 @@ test("兼容性检查默认隐藏过去事件", async ({ page }) => {
     page.locator(".ant-select-item-option").filter({ hasText: "过去事件" }),
   ).toBeVisible();
 });
+
+test("事件备注范围、课程重命名与周次 URL", async ({ page }) => {
+  const headers = await login(page);
+  const course = await (
+    await page.request.post("/api/v1/courses", {
+      headers,
+      data: { name: "备注课程" },
+    })
+  ).json();
+  const response = await page.request.post("/api/v1/event-series", {
+    headers,
+    data: {
+      course_id: course.id,
+      start_date: "2030-01-07",
+      end_date: "2030-01-14",
+      weekdays: [0],
+      start_time: "09:00",
+      end_time: "10:00",
+      timezone: "Asia/Shanghai",
+      note: "系列备注",
+      details: "系列详情",
+      idempotency_key: crypto.randomUUID(),
+    },
+  });
+  expect(response.status()).toBe(201);
+  const series = await response.json();
+  const first = series.event_ids[0];
+
+  await page.goto(`/calendar?week=2030-01-07`);
+  await expect(page.getByText("系列备注").first()).toBeVisible();
+
+  await page.goto(`/events/${first}?week=2030-01-07`);
+  await expect(page.getByText("系列备注").first()).toBeVisible();
+  await expect(page.getByText("系列详情").first()).toBeVisible();
+  await page.getByRole("button", { name: "编辑事件", exact: true }).click();
+  const noteScope = page
+    .locator(".ant-form-item")
+    .filter({ hasText: "备注应用范围" });
+  await noteScope.getByText("仅本次").click();
+  await page.getByLabel("备注（短，显示在卡片和日历）").fill("单次备注");
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: /^确\s*定$/ })
+    .click();
+  await expect(page.getByText("系列备注；单次备注").first()).toBeVisible();
+  await page.getByRole("link", { name: "返回日历", exact: true }).click();
+  await expect(page).toHaveURL(/\/calendar\?week=2030-01-07$/);
+
+  await page.request.put(`/api/v1/courses/${course.id}`, {
+    headers,
+    data: { name: "改名课程" },
+  });
+  await page.goto(`/events/${first}?week=2030-01-07`);
+  await expect(page.getByText("改名课程").first()).toBeVisible();
+  await expect(page.getByText("系列备注；单次备注").first()).toBeVisible();
+});

@@ -199,7 +199,9 @@ export default function HierarchyPage({
                 end_time: DateTime.fromISO(currentSeries!.dtstart_local)
                   .plus({ minutes: currentSeries!.duration_minutes })
                   .toFormat("HH:mm"),
-                location: instances[0]?.location ?? "",
+                location: currentSeries!.location,
+                note: currentSeries!.note,
+                details: currentSeries!.details,
               }}
               onFinish={(values) =>
                 modal.confirm({
@@ -232,6 +234,20 @@ export default function HierarchyPage({
               </Form.Item>
               <Form.Item name="location" label="上课地点">
                 <Input maxLength={500} />
+              </Form.Item>
+              <Form.Item
+                name="note"
+                label="系列备注（短，显示在卡片和日历）"
+                rules={[{ max: 120 }]}
+              >
+                <Input maxLength={120} showCount />
+              </Form.Item>
+              <Form.Item
+                name="details"
+                label="系列详情（仅在事件详情显示）"
+                rules={[{ max: 5000 }]}
+              >
+                <Input.TextArea rows={4} maxLength={5000} showCount />
               </Form.Item>
               <Button htmlType="submit" loading={save.isPending}>
                 批量保存

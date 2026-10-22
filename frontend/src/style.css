@@ -422,3 +422,28 @@ header {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+.fc-event-body {
+  min-width: 0;
+  overflow: hidden;
+}
+.fc-event-note {
+  overflow: hidden;
+  font-size: 11px;
+  opacity: 0.78;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.event-note {
+  margin: 6px 0;
+  color: #77837c;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.event-details {
+  margin: 8px 0;
+  color: #5b6961;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.7;
+}
