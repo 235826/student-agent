@@ -813,6 +813,11 @@ export interface components {
              * @default
              */
             context: string;
+            /**
+             * Parse
+             * @default true
+             */
+            parse: boolean;
         };
         /** CompatibilityInput */
         CompatibilityInput: {
@@ -1256,9 +1261,14 @@ export interface components {
             idempotency_key: string;
             /**
              * Confirmed
-             * @constant
+             * @default false
              */
-            confirmed: true;
+            confirmed: boolean;
+            /**
+             * Parse
+             * @default true
+             */
+            parse: boolean;
         };
         /** PairResult */
         PairResult: {

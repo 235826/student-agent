@@ -462,3 +462,61 @@ def test_weekly_timetable_preserves_model_times_and_publishes(
         occurrences = [event for event in events if event["series_id"] == record["id"]]
         assert len(occurrences) == 18
         assert all(event["location"] == row[5] for event in occurrences)
+
+
+def test_save_only_never_queues_or_requires_model_consent(authenticated: TestClient) -> None:
+    c = authenticated
+    response = c.post(
+        "/api/v1/imports/text",
+        json={
+            "text": "仅保存在本地",
+            "parse": False,
+            "confirmed": False,
+            "idempotency_key": "save-only-material",
+        },
+    )
+    assert response.status_code == 202
+    job = response.json()
+    assert job["status"] == "succeeded"
+    assert job["candidates"] == []
+    assert job["attempts"] == 0
+    assert c.get("/api/v1/tasks").json() == []
+    response = c.post(
+        "/api/v1/imports/text",
+        json={
+            "text": "需要模型同意",
+            "parse": True,
+            "confirmed": False,
+            "idempotency_key": "parse-no-consent",
+        },
+    )
+    assert response.status_code == 422
+    response = c.put(
+        f"/api/v1/imports/{job['id']}/draft",
+        json={
+            "revision": job["revision"],
+            "candidates": [
+                {"key": "manual", "kind": "task", "title": "手动整理", "reviewed": True}
+            ],
+        },
+    )
+    assert response.status_code == 200
+    assert response.json()["status"] == "succeeded"
+
+
+def test_image_save_only_requires_no_consent(authenticated: TestClient) -> None:
+    data = io.BytesIO()
+    Image.new("RGB", (4, 4)).save(data, format="PNG")
+    response = authenticated.post(
+        "/api/v1/imports/image",
+        files={"file": ("local.png", data.getvalue(), "image/png")},
+        data={
+            "parse": "false",
+            "confirmed": "false",
+            "reference_at": "2030-01-01T00:00:00Z",
+            "idempotency_key": "save-only-image",
+        },
+    )
+    assert response.status_code == 202
+    assert response.json()["status"] == "succeeded"
+    assert response.json()["attempts"] == 0

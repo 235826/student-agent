@@ -1,7 +1,7 @@
 from datetime import UTC, date, datetime, time
 from typing import Annotated, Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 
 from app.api.schemas import Schema, Timestamp
 
@@ -56,7 +56,14 @@ class ImportText(Schema):
     context: str = Field(default="", max_length=4000)
     reference_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     idempotency_key: str = Field(min_length=8, max_length=200)
-    confirmed: Literal[True]
+    confirmed: bool = False
+    parse: bool = True
+
+    @model_validator(mode="after")
+    def consent(self) -> "ImportText":
+        if self.parse and not self.confirmed:
+            raise ValueError("解析前需要明确同意发送给模型")
+        return self
 
     @field_validator("reference_at")
     @classmethod

@@ -1,3 +1,4 @@
+import ImportRecords from "../components/ImportRecords";
 import {
   Link,
   useParams,
@@ -312,6 +313,11 @@ export default function TasksPage({ profile }: { profile: Profile }) {
       )}
       {inbox ? (
         <>
+          <Card title="导入待确认" className="toolbar">
+            <Link to="/imports">提交新材料</Link>
+            <ImportRecords timezone={profile.timezone} pendingOnly />
+          </Card>
+          <h2>手动任务草稿</h2>
           {drafts.error && (
             <Alert type="error" message={errorText(drafts.error)} />
           )}

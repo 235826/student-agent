@@ -111,3 +111,31 @@ test("模型失败后可手动补全草稿", async ({ page }, info) => {
   await page.getByLabel("条目 1 标题").fill(`手动补全-${info.project.name}`);
   await reviewAndPublish(page, 1);
 });
+
+test("仅保存、批次深链和未校对定位", async ({ page }) => {
+  await login(page);
+  await page.getByLabel("导入原文").fill("仅保存的课程材料");
+  await expect(
+    page.getByRole("checkbox", { name: /我同意/ }),
+  ).not.toBeChecked();
+  await page.getByRole("button", { name: "仅保存材料", exact: true }).click();
+  await expect(page).toHaveURL(/\/imports\/[^/]+$/);
+  const url = page.url();
+  await page.reload();
+  await expect(page).toHaveURL(url);
+  await expect(
+    page.getByText("仅保存的课程材料", { exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "添加条目", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "确认入库", exact: true }),
+  ).toBeDisabled();
+  await page.getByRole("button", { name: "定位待补全条目" }).click();
+  await page.getByLabel("条目 1 标题").fill("本地手动任务");
+  await reviewAndPublish(page, 1);
+  await page.goto(`/imports?job=${url.split("/").pop()}`);
+  await expect(page).toHaveURL(url);
+  await expect(
+    page.getByText("已入库 1 项；重复确认不会再次创建。"),
+  ).toBeVisible();
+});

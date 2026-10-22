@@ -1,5 +1,6 @@
+import ImportRecords from "../components/ImportRecords";
 import { Link, useParams, useNavigate } from "react-router-dom";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Alert,
@@ -12,6 +13,7 @@ import {
   Select,
   Space,
   Tag,
+  Spin,
 } from "antd";
 import { DateTime } from "luxon";
 import {
@@ -48,6 +50,8 @@ export default function ImportsPage({ profile }: { profile: Profile }) {
   const [text, setText] = useState("");
   const [context, setContext] = useState("");
   const [file, setFile] = useState<File | null>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const request = useRef<{ payload: string; key: string } | null>(null);
   const [reference, setReference] = useState(
     DateTime.now().setZone(profile.timezone).toFormat("yyyy-MM-dd'T'HH:mm"),
   );
@@ -63,11 +67,6 @@ export default function ImportsPage({ profile }: { profile: Profile }) {
       ),
     refetchInterval: 10000,
   });
-  const list = useQuery({
-    queryKey: ["imports"],
-    queryFn: () => api<ImportJob[]>("/imports"),
-    refetchInterval: 5000,
-  });
   const job = useQuery({
     queryKey: ["import", jobId],
     queryFn: () => api<ImportJob>(`/imports/${jobId}`),
@@ -82,26 +81,39 @@ export default function ImportsPage({ profile }: { profile: Profile }) {
     await client.invalidateQueries({ queryKey: ["events"] });
   };
   const submit = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (parse: boolean) => {
       const referenceAt = DateTime.fromISO(reference, {
         zone: profile.timezone,
       });
       if (!referenceAt.isValid) throw new Error("请填写有效的参考时间");
+      if (parse && !consent) throw new Error("解析前请同意发送给模型");
+      const payload = JSON.stringify({
+        text,
+        context,
+        reference,
+        parse,
+        file: file ? [file.name, file.size, file.lastModified] : null,
+      });
+      if (request.current?.payload !== payload)
+        request.current = { payload, key: crypto.randomUUID() };
+      const key = request.current.key;
       if (file) {
         const form = new FormData();
         form.append("file", file);
         form.append("context", context);
         form.append("reference_at", referenceAt.toISO()!);
-        form.append("idempotency_key", crypto.randomUUID());
-        form.append("confirmed", "true");
+        form.append("idempotency_key", key);
+        form.append("confirmed", String(parse && consent));
+        form.append("parse", String(parse));
         return api<ImportJob>("/imports/image", "POST", form);
       }
       return api<ImportJob>("/imports/text", "POST", {
         text,
         context,
         reference_at: referenceAt.toISO(),
-        idempotency_key: crypto.randomUUID(),
-        confirmed: true,
+        idempotency_key: key,
+        confirmed: parse && consent,
+        parse,
       });
     },
     onSuccess: async (result) => {
@@ -120,105 +132,119 @@ export default function ImportsPage({ profile }: { profile: Profile }) {
           </p>
         </div>
       </header>
-      <Card title="提交材料">
-        {capabilities.data &&
-          (!capabilities.data.configured ||
-            !capabilities.data.worker_online) && (
+      {!jobId && (
+        <Card title="提交材料">
+          {capabilities.data &&
+            (!capabilities.data.configured ||
+              !capabilities.data.worker_online) && (
+              <Alert
+                type="warning"
+                showIcon
+                message={
+                  !capabilities.data.configured
+                    ? "模型尚未配置：可以仅保存材料，直接手动整理草稿。"
+                    : "解析服务暂未就绪，任务将等待后台处理。"
+                }
+              />
+            )}
+          <label>
+            原文
+            <Input.TextArea
+              aria-label="导入原文"
+              rows={5}
+              value={text}
+              maxLength={20000}
+              onChange={(e) => setText(e.target.value)}
+              disabled={!!file}
+              placeholder="粘贴作业通知、考试安排或课表文字"
+            />
+          </label>
+          <label>
+            或上传课表图片（PNG/JPEG/WebP，最大 8 MiB）
+            <input
+              ref={fileInput}
+              aria-label="课表图片"
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+            />
+          </label>
+          {file && (
+            <Button
+              onClick={() => {
+                setFile(null);
+                if (fileInput.current) fileInput.current.value = "";
+              }}
+            >
+              移除图片 / 切回文本输入
+            </Button>
+          )}
+          {file && !capabilities.data?.images && (
             <Alert
               type="warning"
-              showIcon
-              message={
-                !capabilities.data.configured
-                  ? "模型尚未配置：可保存材料后取消解析，手动整理草稿。"
-                  : "解析服务暂未就绪，任务将等待后台处理。"
-              }
+              message="当前模型未启用图片输入；可手动整理，或配置图片模型后重试。"
             />
           )}
-        <label>
-          原文
-          <Input.TextArea
-            aria-label="导入原文"
-            rows={5}
-            value={text}
-            maxLength={20000}
-            onChange={(e) => setText(e.target.value)}
-            disabled={!!file}
-            placeholder="粘贴作业通知、考试安排或课表文字"
-          />
-        </label>
-        <label>
-          或上传课表图片（PNG/JPEG/WebP，最大 8 MiB）
-          <input
-            aria-label="课表图片"
-            type="file"
-            accept="image/png,image/jpeg,image/webp"
-            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-          />
-        </label>
-        {file && !capabilities.data?.images && (
-          <Alert
-            type="warning"
-            message="当前模型未启用图片输入；可手动整理，或配置图片模型后重试。"
-          />
-        )}
-        <label>
-          补充说明
-          <Input.TextArea
-            aria-label="补充说明"
-            rows={2}
-            maxLength={4000}
-            value={context}
-            onChange={(e) => setContext(e.target.value)}
-            placeholder="学期起止日期、第 1 周星期一日期、每节课起止时间、单双周说明"
-          />
-        </label>
-        <label>
-          相对日期的参考时间（{profile.timezone}）
-          <Input
-            aria-label="参考时间"
-            type="datetime-local"
-            value={reference}
-            onChange={(e) => setReference(e.target.value)}
-          />
-        </label>
-        <Checkbox
-          checked={consent}
-          onChange={(e) => setConsent(e.target.checked)}
-        >
-          我同意将本次原文或图片及补充说明发送给已配置的模型服务
-        </Checkbox>
-        <div className="toolbar">
-          <Button
-            type="primary"
-            disabled={!consent || (!text.trim() && !file)}
-            loading={submit.isPending}
-            onClick={() => submit.mutate()}
+          <label>
+            补充说明
+            <Input.TextArea
+              aria-label="补充说明"
+              rows={2}
+              maxLength={4000}
+              value={context}
+              onChange={(e) => setContext(e.target.value)}
+              placeholder="学期起止日期、第 1 周星期一日期、每节课起止时间、单双周说明"
+            />
+          </label>
+          <label>
+            相对日期的参考时间（{profile.timezone}）
+            <Input
+              aria-label="参考时间"
+              type="datetime-local"
+              value={reference}
+              onChange={(e) => setReference(e.target.value)}
+            />
+          </label>
+          <Checkbox
+            checked={consent}
+            onChange={(e) => setConsent(e.target.checked)}
           >
-            保存并解析
-          </Button>
-        </div>
-        {submit.error && (
-          <Alert type="error" message={errorText(submit.error)} />
-        )}
-      </Card>
-      <Card title="导入记录（最近 100 批）">
-        {list.error && <Alert type="error" message={errorText(list.error)} />}
-        <Space wrap>
-          {list.data?.map((item) => (
+            我同意将本次原文或图片及补充说明发送给已配置的模型服务
+          </Checkbox>
+          <div className="toolbar">
             <Button
-              key={item.id}
-              type={jobId === item.id ? "primary" : "default"}
-              onClick={() => setJobId(item.id)}
+              disabled={!text.trim() && !file}
+              loading={submit.isPending && submit.variables === false}
+              onClick={() => submit.mutate(false)}
             >
-              {DateTime.fromISO(item.created_at)
-                .setZone(profile.timezone)
-                .toFormat("MM-dd HH:mm")}{" "}
-              · {item.source.kind === "image" ? "图片" : "文本"} ·{" "}
-              {item.published_revision ? "已入库" : labels[item.status]}
+              仅保存材料
             </Button>
-          ))}
+            <Button
+              type="primary"
+              disabled={!consent || (!text.trim() && !file)}
+              loading={submit.isPending && submit.variables === true}
+              onClick={() => submit.mutate(true)}
+            >
+              保存并解析
+            </Button>
+          </div>
+          {submit.error && (
+            <Alert type="error" message={errorText(submit.error)} />
+          )}
+        </Card>
+      )}
+      {!jobId && (
+        <Card title="导入记录（最近 100 批）">
+          <ImportRecords timezone={profile.timezone} />
+        </Card>
+      )}
+      {jobId && (
+        <Space className="toolbar">
+          <Link to="/imports">返回导入记录</Link>
+          <Link to="/inbox">返回待确认</Link>
         </Space>
-      </Card>
+      )}
+      {jobId && job.isPending && <Spin />}
       {job.error && <Alert type="error" message={errorText(job.error)} />}
       {job.data && (
         <DraftEditor
@@ -242,6 +268,18 @@ function DraftEditor({
   const [context, setContext] = useState(job.context);
   const [dirty, setDirty] = useState(false);
   const busy = ["queued", "running"].includes(job.status);
+  const selected = items.filter((i) => i.selected);
+  const blockers = selected.filter((i) => !i.reviewed || !i.title.trim());
+  const reviewed = selected.filter((i) => i.reviewed).length;
+  const reason = busy
+    ? "请等待解析结束，或取消解析后手动整理。"
+    : dirty
+      ? "请先保存校对结果，再确认入库。"
+      : !selected.length
+        ? "请至少选中一个条目。"
+        : blockers.length
+          ? "请补全标题并逐项校对。"
+          : "";
   const readOnly = busy || !!job.published_revision || !!job.source.deleted_at;
   const change = (index: number, patch: Partial<ImportCandidate>) => {
     setItems((prev) =>
@@ -339,9 +377,32 @@ function DraftEditor({
           </Popconfirm>
         </>
       )}
+      <p>
+        已校对 {reviewed}/{selected.length}
+      </p>
+      {!job.published_revision && reason && (
+        <Alert
+          type="info"
+          message={reason}
+          action={
+            blockers.length ? (
+              <Button
+                onClick={() =>
+                  document
+                    .getElementById(`candidate-${blockers[0].key}`)
+                    ?.scrollIntoView({ behavior: "smooth", block: "center" })
+                }
+              >
+                定位待补全条目
+              </Button>
+            ) : undefined
+          }
+        />
+      )}
       {items.map((item, index) => (
         <Card
           key={item.key}
+          id={`candidate-${item.key}`}
           size="small"
           style={{ marginTop: 16 }}
           title={`条目 ${index + 1}`}
@@ -630,14 +691,15 @@ function DraftEditor({
               disabled={
                 dirty ||
                 !items.some((c) => c.selected) ||
-                items.some((c) => c.selected && !c.reviewed) ||
+                items.some(
+                  (c) => c.selected && (!c.reviewed || !c.title.trim()),
+                ) ||
                 action.isPending
               }
             >
               确认入库
             </Button>
           </Popconfirm>
-          {dirty && <span>请先保存校对结果，再确认入库。</span>}
         </Space>
       )}
       {job.published_revision && (

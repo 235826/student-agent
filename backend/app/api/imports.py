@@ -116,6 +116,7 @@ def create_job(
         "digest": digest,
         "kind": "image" if image is not None else "text",
         "context": body.context,
+        "parse": body.parse,
         "reference_at": body.reference_at.isoformat(),
     }
     existing = replay(db, user, body.idempotency_key, payload)
@@ -160,6 +161,7 @@ def create_job(
         timezone=user.timezone,
         reference_at=int(body.reference_at.timestamp() * 1000),
         context=body.context,
+        status="queued" if body.parse else "succeeded",
     )
     db.add(job)
     db.flush()
@@ -183,8 +185,9 @@ def import_image(
     reference_at: Annotated[datetime, Form()],
     confirmed: Annotated[bool, Form()],
     context: Annotated[str, Form(max_length=4000)] = "",
+    parse: Annotated[bool, Form()] = True,
 ) -> ImportOut:
-    if not confirmed or reference_at.tzinfo is None:
+    if (parse and not confirmed) or reference_at.tzinfo is None:
         raise HTTPException(422, "需要确认发送图片并提供含时区的参考时间")
     data = file.file.read(MAX_IMAGE_BYTES + 1)
     if len(data) > MAX_IMAGE_BYTES:
@@ -214,7 +217,8 @@ def import_image(
         text="图片",
         context=context,
         reference_at=reference_at,
-        confirmed=True,
+        confirmed=confirmed,
+        parse=parse,
         idempotency_key=idempotency_key,
     )
     return create_job(db, user, request, body, data, media_type)

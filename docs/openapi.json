@@ -5998,6 +5998,11 @@
             "maxLength": 4000,
             "title": "Context",
             "default": ""
+          },
+          "parse": {
+            "type": "boolean",
+            "title": "Parse",
+            "default": true
           }
         },
         "type": "object",
@@ -7059,16 +7064,20 @@
           },
           "confirmed": {
             "type": "boolean",
-            "const": true,
-            "title": "Confirmed"
+            "title": "Confirmed",
+            "default": false
+          },
+          "parse": {
+            "type": "boolean",
+            "title": "Parse",
+            "default": true
           }
         },
         "additionalProperties": false,
         "type": "object",
         "required": [
           "text",
-          "idempotency_key",
-          "confirmed"
+          "idempotency_key"
         ],
         "title": "ImportText"
       },
