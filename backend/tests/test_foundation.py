@@ -127,7 +127,7 @@ def test_sqlite_constraints_and_workspace(authenticated: TestClient) -> None:
     with engine.connect() as conn:
         assert conn.scalar(text("PRAGMA foreign_keys")) == 1
         assert conn.scalar(text("PRAGMA journal_mode")) == "wal"
-        assert conn.scalar(text("SELECT version_num FROM alembic_version")) == "0007"
+        assert conn.scalar(text("SELECT version_num FROM alembic_version")) == "0008"
     with Session(engine) as db:
         workspace = Workspace()
         db.add(workspace)
@@ -289,3 +289,39 @@ def test_second_account_has_separate_workspace(authenticated: TestClient) -> Non
     c.headers["X-CSRF-Token"] = logged_in.json()["csrf_token"]
     titles = [task["title"] for task in c.get("/api/v1/tasks").json()]
     assert titles == ["第一个账号的任务"]
+
+
+def test_work_logs_and_completion(authenticated: TestClient) -> None:
+    c = authenticated
+    task = c.post(
+        "/api/v1/tasks",
+        json={"title": "阅读论文", "estimate_minutes": 120},
+    ).json()
+    created = c.post(
+        f"/api/v1/tasks/{task['id']}/worklogs",
+        json={
+            "actual_minutes": 60,
+            "cause": "interrupted",
+            "note": "被会议打断",
+            "reflection": "上午效率更高",
+        },
+    )
+    assert created.status_code == 201, created.text
+    log = created.json()
+    assert log["actual_minutes"] == 60
+    updated = c.put(
+        f"/api/v1/worklogs/{log['id']}",
+        json={"reflection": "下午容易分心"},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["reflection"] == "下午容易分心"
+    assert len(c.get(f"/api/v1/tasks/{task['id']}/worklogs").json()) == 1
+
+    completed = c.post(
+        f"/api/v1/tasks/{task['id']}/worklogs",
+        json={"actual_minutes": 60, "complete": True},
+    )
+    assert completed.status_code == 201
+    assert (
+        next(t for t in c.get("/api/v1/tasks").json() if t["id"] == task["id"])["status"] == "done"
+    )

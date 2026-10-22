@@ -285,12 +285,11 @@ export default function TasksPage({ profile }: { profile: Profile }) {
     <>
       <header>
         <div>
-          <div className="eyebrow">ONE STEP AT A TIME</div>
           <h1>{inbox ? "收件箱" : id ? "任务详情" : "任务"}</h1>
           <p className="muted">
             {inbox
               ? "集中处理导入材料与任务草稿。"
-              : "从草稿开始，明确每一步的先后关系。"}
+              : "记录、完成并推进你的任务。"}
           </p>
         </div>
         {inbox ? (

@@ -139,6 +139,45 @@ class EventTypeOut(EventTypeRef):
     usage_count: int = 0
 
 
+WorkCause = Literal[
+    "underestimated",
+    "scope_changed",
+    "interrupted",
+    "scheduling_issue",
+    "other",
+    "unknown",
+]
+
+
+class WorkLogInput(Schema):
+    actual_minutes: Annotated[int, Field(gt=0, le=100000)]
+    cause: WorkCause = "unknown"
+    note: Annotated[str, Field(max_length=2000)] = ""
+    reflection: Annotated[str, Field(max_length=5000)] = ""
+    started_at: datetime | None = None
+    ended_at: datetime | None = None
+    complete: bool = False
+
+
+class WorkLogUpdate(Schema):
+    cause: WorkCause | None = None
+    note: Annotated[str, Field(max_length=2000)] | None = None
+    reflection: Annotated[str, Field(max_length=5000)] | None = None
+
+
+class WorkLogOut(Schema):
+    id: str
+    task_id: str
+    actual_minutes: int
+    cause: WorkCause
+    note: str
+    reflection: str
+    started_at: Timestamp | None = None
+    ended_at: Timestamp | None = None
+    created_at: Timestamp
+    updated_at: Timestamp
+
+
 class EventInput(Schema):
     title: Title
     start_at: datetime
@@ -392,6 +431,7 @@ class PlanReport(Schema):
     task_id: str
     title: str
     estimated_minutes: int | None
+    logged_minutes: int = 0
     scheduled_minutes: int
     unscheduled_minutes: int | None
     reason: str

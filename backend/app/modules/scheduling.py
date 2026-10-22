@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.schemas import ActivityRef, PlanInput, PlanOut
-from app.db.models import Event, Plan, Task, TaskDependency, User, Workspace, now_ms
+from app.db.models import Event, Plan, Task, TaskDependency, User, WorkLog, Workspace, now_ms
 from app.modules.calendar_management import event_view
 from app.modules.compatibility import activity, evaluate_pair
 from app.modules.idempotency import remember, replay
@@ -128,6 +128,9 @@ def generate(db: Session, user: User, body: PlanInput) -> Plan:
         ]
     blocks: list[dict[str, Any]] = []
     reports: list[dict[str, Any]] = []
+    logged: dict[str, int] = {}
+    for log in db.scalars(select(WorkLog).where(WorkLog.workspace_id == user.workspace_id)):
+        logged[log.task_id] = logged.get(log.task_id, 0) + log.actual_minutes
     completed: dict[str, int] = {
         t.id: start for t in tasks if t.status == "done" and t.trashed_at is None
     }
@@ -146,10 +149,17 @@ def generate(db: Session, user: User, body: PlanInput) -> Plan:
             ),
         )
         del pending[task.id]
-        remaining = task.estimate_minutes
-        reason = "已安排全部预计工时"
+        logged_minutes = logged.get(task.id, 0)
+        remaining = (
+            max(task.estimate_minutes - logged_minutes, 0)
+            if task.estimate_minutes is not None
+            else None
+        )
+        reason = "已安排全部剩余工时"
         if remaining is None:
             reason = "缺少预计用时，请补充后重新生成"
+        elif remaining == 0:
+            reason = "实际耗时已达到预计用时，无需继续安排"
         elif any(p not in completed for p in predecessors[task.id]):
             reason = "前置任务未完整排入计划、已取消或已删除"
         else:
@@ -201,6 +211,7 @@ def generate(db: Session, user: User, body: PlanInput) -> Plan:
                 "task_id": task.id,
                 "title": task.title,
                 "estimated_minutes": task.estimate_minutes,
+                "logged_minutes": logged_minutes,
                 "scheduled_minutes": scheduled,
                 "unscheduled_minutes": remaining,
                 "reason": reason,

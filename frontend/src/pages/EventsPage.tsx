@@ -328,8 +328,7 @@ export default function EventsPage({ profile }: { profile: Profile }) {
     <>
       <header>
         <div>
-          <div className="eyebrow">MAKE ROOM</div>
-          <h1>{id ? "事件详情" : "日历与课程"}</h1>
+          <h1>{id ? "事件详情" : "日历"}</h1>
           <p className="muted">固定安排保留原始时间，单次变更单独记录。</p>
         </div>
         {!id && (

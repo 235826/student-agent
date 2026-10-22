@@ -178,7 +178,7 @@ export default function CompatibilityPage({ profile }: { profile: Profile }) {
       </header>
       <Alert
         type="info"
-        message="默认禁止重叠。通常需要双方均接受并行，再设置组合规则。此处配置与检查并行规则，生成计划请到学习计划。"
+        message="默认禁止重叠。通常需要双方均接受并行，再设置组合规则。此处配置与检查并行规则，从“今日”按需安排。"
       />
       {queryError && <Alert type="error" message={errorText(queryError)} />}
       <Tabs

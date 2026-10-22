@@ -20,7 +20,7 @@ test("自定义事件类型可创建并用于事件", async ({ page }) => {
     page.getByRole("heading", { name: "社团活动", exact: true }),
   ).toBeVisible();
 
-  await page.getByRole("link", { name: "日历与课程", exact: true }).click();
+  await page.getByRole("link", { name: "日历", exact: true }).click();
   await page.getByRole("button", { name: "添加事件", exact: true }).click();
   await page
     .locator(".ant-select")

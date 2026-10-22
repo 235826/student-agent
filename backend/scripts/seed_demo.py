@@ -22,6 +22,7 @@ from app.db.models import (
     ImportSource,
     TaskTypePolicy,
     User,
+    WorkLog,
     Workspace,
 )
 from app.db.session import build_engine
@@ -356,6 +357,16 @@ def seed_data(db: Session, user: User, now: datetime) -> None:
             estimate_minutes=30,
             task_type="career",
         ),
+    )
+    db.add(
+        WorkLog(
+            workspace_id=user.workspace_id,
+            task_id=review.id,
+            actual_minutes=30,
+            cause="interrupted",
+            note="先花了半小时整理旧笔记",
+            reflection="晚上注意力一般，明天换到上午继续",
+        )
     )
     db.add(
         Draft(

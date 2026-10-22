@@ -162,6 +162,17 @@ class TaskDependency(Owned, Base):
     successor_task_id: Mapped[str] = mapped_column(ForeignKey("tasks.id"), index=True)
 
 
+class WorkLog(Owned, Base):
+    __tablename__ = "work_logs"
+    task_id: Mapped[str] = mapped_column(ForeignKey("tasks.id"), index=True)
+    actual_minutes: Mapped[int]
+    cause: Mapped[str] = mapped_column(default="unknown")
+    note: Mapped[str] = mapped_column(default="")
+    reflection: Mapped[str] = mapped_column(default="")
+    started_at: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    ended_at: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+
+
 class Draft(Owned, Base):
     __tablename__ = "drafts"
     object_type: Mapped[str] = mapped_column(default="task")

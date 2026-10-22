@@ -44,7 +44,7 @@ test("草稿发布、重复课程单次变更与规则检查", async ({ page }, 
   await expect(
     page.getByRole("heading", { name: title, exact: true }),
   ).toBeVisible();
-  await page.getByRole("link", { name: "日历与课程" }).click();
+  await page.getByRole("link", { name: "日历", exact: true }).click();
   await page.getByRole("button", { name: "添加课程", exact: true }).click();
   await page.getByLabel("课程名称").fill(course);
   await page
@@ -56,7 +56,7 @@ test("草稿发布、重复课程单次变更与规则检查", async ({ page }, 
   await expect(page).toHaveURL(/\/calendar\/courses\//);
   await choose(page, `${course}默认并行设置`, "接受已允许的组合");
   await page
-    .getByRole("link", { name: "日历与课程", exact: true })
+    .getByRole("link", { name: "日历", exact: true })
     .first()
     .click();
   await page.getByRole("button", { name: "建立每周课程" }).click();

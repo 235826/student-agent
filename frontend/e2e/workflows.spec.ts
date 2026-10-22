@@ -7,7 +7,7 @@ async function login(page: Page) {
   await page
     .getByRole("button", { name: /^(创建账号并进入|登\s*录)$/ })
     .click();
-  await expect(page.getByRole("heading", { name: "今日工作台" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "今天", exact: true })).toBeVisible();
   const auth = await (await page.request.get("/api/v1/auth/me")).json();
   return { "X-CSRF-Token": auth.csrf_token, Origin: "http://127.0.0.1:5173" };
 }
@@ -246,8 +246,30 @@ test("今日新建事件继承日期并在表单内联新建课程", async ({ pa
     .getByRole("button", { name: /^确\s*定$/ })
     .click();
   await expect(page).toHaveURL(/\/$/);
-  await page.getByRole("link", { name: "日历与课程" }).click();
+  await page.getByRole("link", { name: "日历", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "内联课程事件", exact: true }),
   ).toBeVisible();
+});
+
+test("今日快速添加并完成任务", async ({ page }) => {
+  await login(page);
+  await page.getByLabel("快速添加任务").fill("买牛奶");
+  await page.getByLabel("快速添加任务").press("Enter");
+  await expect(page.getByRole("link", { name: "买牛奶", exact: true })).toBeVisible();
+  await page.getByLabel("完成 买牛奶").click();
+  await page.getByLabel("实际用了多少分钟").fill("15");
+  await page.getByRole("button", { name: "完成并记录" }).click();
+  await expect(page.getByText("任务已完成，实际耗时已记录")).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "买牛奶", exact: true }),
+  ).not.toBeVisible();
+  const tasks = await (await page.request.get("/api/v1/tasks")).json();
+  const task = tasks.find((item: { title: string }) => item.title === "买牛奶");
+  expect(task.status).toBe("done");
+  const logs = await (
+    await page.request.get(`/api/v1/tasks/${task.id}/worklogs`)
+  ).json();
+  expect(logs).toHaveLength(1);
+  expect(logs[0].actual_minutes).toBe(15);
 });

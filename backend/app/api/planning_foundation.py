@@ -5,6 +5,7 @@ from zoneinfo import ZoneInfo
 from fastapi import APIRouter, HTTPException
 from pydantic import ValidationError
 from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from app.api.schemas import (
     CompatibilityInput,
@@ -29,6 +30,9 @@ from app.api.schemas import (
     TaskOut,
     TypePolicyInput,
     TypePolicyOut,
+    WorkLogInput,
+    WorkLogOut,
+    WorkLogUpdate,
 )
 from app.db.models import (
     CompatibilityRule,
@@ -39,6 +43,8 @@ from app.db.models import (
     EventSeries,
     Task,
     TaskTypePolicy,
+    User,
+    WorkLog,
     now_ms,
 )
 from app.modules.calendar_management import (
@@ -115,6 +121,60 @@ def task_policy(task_id: str, body: EventPolicyInput, db: DB, user: UserDep) -> 
     task.policy_revision += 1
     record_change(db, user, "task.policy", task)
     return task_view(db, task)
+
+
+def owned_task(db: Session, user: User, task_id: str) -> Task:
+    task = owned(db, Task, task_id, user)
+    if task.trashed_at is not None:
+        raise HTTPException(409, "垃圾箱中的任务不能记录工作日志")
+    return task
+
+
+@router.get("/tasks/{task_id}/worklogs", response_model=list[WorkLogOut])
+def list_worklogs(task_id: str, db: DB, user: UserDep) -> list[WorkLogOut]:
+    owned_task(db, user, task_id)
+    return [
+        WorkLogOut.model_validate(log)
+        for log in db.scalars(
+            select(WorkLog)
+            .where(
+                WorkLog.workspace_id == user.workspace_id,
+                WorkLog.task_id == task_id,
+            )
+            .order_by(WorkLog.created_at.desc(), WorkLog.id)
+        )
+    ]
+
+
+@router.post("/tasks/{task_id}/worklogs", response_model=WorkLogOut, status_code=201)
+def add_worklog(task_id: str, body: WorkLogInput, db: DB, user: UserDep) -> WorkLogOut:
+    task = owned_task(db, user, task_id)
+    log = WorkLog(
+        workspace_id=user.workspace_id,
+        task_id=task.id,
+        actual_minutes=body.actual_minutes,
+        cause=body.cause,
+        note=body.note,
+        reflection=body.reflection,
+        started_at=int(body.started_at.timestamp() * 1000) if body.started_at else None,
+        ended_at=int(body.ended_at.timestamp() * 1000) if body.ended_at else None,
+    )
+    db.add(log)
+    db.flush()
+    record_change(db, user, "worklog.create", log)
+    if body.complete:
+        task.status = "done"
+        record_change(db, user, "task.complete", task)
+    return WorkLogOut.model_validate(log)
+
+
+@router.put("/worklogs/{worklog_id}", response_model=WorkLogOut)
+def update_worklog(worklog_id: str, body: WorkLogUpdate, db: DB, user: UserDep) -> WorkLogOut:
+    log = owned(db, WorkLog, worklog_id, user)
+    for key, value in body.model_dump(exclude_none=True).items():
+        setattr(log, key, value)
+    record_change(db, user, "worklog.update", log, scheduling=False)
+    return WorkLogOut.model_validate(log)
 
 
 @router.get("/drafts", response_model=list[DraftOut])

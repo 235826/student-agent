@@ -88,23 +88,24 @@ export default function PlansPage({ profile }: { profile: Profile }) {
     <>
       <header>
         <div>
-          <div className="eyebrow">MAKE A PLAN</div>
-          <h1>学习计划</h1>
+          <h1>安排</h1>
           <p className="muted">
             先预览，再确认采用。当前时区：{profile.timezone}
           </p>
         </div>
-        {selected && (
-          <Space wrap>
-            <Link to="/plans">返回计划列表</Link>
-            <Link to="/plans/new">生成新草稿</Link>
-          </Space>
-        )}
+        <Space wrap>
+          <Link to="/">返回今日</Link>
+          {selected ? (
+            <>
+              <Link to="/plans">历史版本</Link>
+              <Link to="/plans/new">重新安排</Link>
+            </>
+          ) : (
+            <Link to="/plans">历史版本</Link>
+          )}
+        </Space>
       </header>
-      <Alert
-        type="info"
-        message="采用新计划将替换整个当前计划，旧版本保留。未完成任务按完整预计用时安排；实际耗时扣减将在后续阶段加入。"
-      />
+      <Alert type="info" message="采用新安排会替换当前安排，旧版本保留。" />
       {!profile.available_windows?.length && (
         <Alert
           type="warning"
@@ -353,15 +354,13 @@ export default function PlansPage({ profile }: { profile: Profile }) {
               locale={zhLocale}
               timeZone={profile.timezone}
               initialDate={active.start_at}
-              initialView={
-                window.innerWidth < 700 ? "listWeek" : "timeGridWeek"
-              }
+              initialView="listWeek"
               height="auto"
               allDaySlot={false}
               headerToolbar={{
                 left: "prev,next",
                 center: "title",
-                right: "timeGridWeek,listWeek",
+                right: "listWeek,timeGridWeek",
               }}
               events={[
                 ...(events.data ?? []).map((e) => ({
@@ -393,6 +392,8 @@ export default function PlansPage({ profile }: { profile: Profile }) {
                   </Link>
                 </h3>
                 <p>
+                  {r.logged_minutes > 0 &&
+                    `已记录 ${r.logged_minutes} 分钟 · `}
                   已排 {r.scheduled_minutes} 分钟 ·{" "}
                   {r.unscheduled_minutes === null
                     ? "缺少估时"

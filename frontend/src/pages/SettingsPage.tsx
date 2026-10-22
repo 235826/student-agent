@@ -35,9 +35,8 @@ export default function SettingsPage({
     <>
       <header>
         <div>
-          <div className="eyebrow">YOUR OWN RHYTHM</div>
-          <h1>按自己的节奏</h1>
-          <p className="muted">可以先使用默认设置，之后随时调整。</p>
+          <h1>设置</h1>
+          <p className="muted">基础设置保持简单；高级规则按需展开。</p>
         </div>
       </header>
       <Space wrap className="toolbar">

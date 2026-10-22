@@ -113,7 +113,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         try:
             with app.state.engine.connect() as connection:
                 version = connection.scalar(text("SELECT version_num FROM alembic_version"))
-                if version != "0007":
+                if version != "0008":
                     raise HTTPException(503, "数据库版本不匹配，请执行迁移")
         except OperationalError:
             raise HTTPException(503, "数据库尚未就绪，请执行迁移") from None

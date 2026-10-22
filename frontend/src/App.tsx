@@ -135,10 +135,9 @@ export default function App() {
   const profile = me.data.user;
   const nav = [
     ["/", "今日"],
-    ["/inbox", "收件箱"],
     ["/tasks", "任务"],
-    ["/calendar", "日历与课程"],
-    ["/plans", "学习计划"],
+    ["/calendar", "日历"],
+    ["/inbox", "收件箱"],
   ];
   return (
     <div className="shell">

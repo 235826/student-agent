@@ -218,3 +218,30 @@ def test_replan_diff_preserves_current_and_fixed_event(authenticated):
     assert c.get("/api/v1/plans/current").json()["blocks"] == old["blocks"]
     assert new["blocks"][0]["start_at"] == event["end_at"]
     assert c.get("/api/v1/events").json()[0] == event
+
+
+def test_work_logs_reduce_remaining_scheduled_minutes(authenticated):
+    c = authenticated
+    profile(c)
+    task(c, "部分完成", estimate_minutes=60)
+    task(c, "已投入全部估时", estimate_minutes=30)
+    tasks = {t["title"]: t for t in c.get("/api/v1/tasks").json()}
+    c.post(
+        f"/api/v1/tasks/{tasks['部分完成']['id']}/worklogs",
+        json={"actual_minutes": 30},
+    )
+    c.post(
+        f"/api/v1/tasks/{tasks['已投入全部估时']['id']}/worklogs",
+        json={"actual_minutes": 30},
+    )
+    p = plan(c)
+    partial = next(r for r in p["reports"] if r["title"] == "部分完成")
+    assert partial["logged_minutes"] == 30
+    assert partial["unscheduled_minutes"] == 0
+    assert partial["scheduled_minutes"] == 60
+    done = next(r for r in p["reports"] if r["title"] == "已投入全部估时")
+    assert done["logged_minutes"] == 30
+    assert done["scheduled_minutes"] == 30
+    assert done["unscheduled_minutes"] == 0
+    assert "实际耗时" in done["reason"]
+    assert not any(b["title"] == "已投入全部估时" for b in p["blocks"])
