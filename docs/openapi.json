@@ -6421,6 +6421,36 @@
             "title": "Location",
             "default": ""
           },
+          "note": {
+            "type": "string",
+            "maxLength": 120,
+            "title": "Note",
+            "default": ""
+          },
+          "details": {
+            "type": "string",
+            "maxLength": 5000,
+            "title": "Details",
+            "default": ""
+          },
+          "note_scope": {
+            "type": "string",
+            "enum": [
+              "single",
+              "series"
+            ],
+            "title": "Note Scope",
+            "default": "single"
+          },
+          "details_scope": {
+            "type": "string",
+            "enum": [
+              "single",
+              "series"
+            ],
+            "title": "Details Scope",
+            "default": "single"
+          },
           "locked": {
             "type": "boolean",
             "title": "Locked",
@@ -6486,6 +6516,34 @@
             "maxLength": 500,
             "title": "Location",
             "default": ""
+          },
+          "note": {
+            "type": "string",
+            "title": "Note",
+            "default": ""
+          },
+          "details": {
+            "type": "string",
+            "title": "Details",
+            "default": ""
+          },
+          "note_scope": {
+            "type": "string",
+            "enum": [
+              "single",
+              "series"
+            ],
+            "title": "Note Scope",
+            "default": "single"
+          },
+          "details_scope": {
+            "type": "string",
+            "enum": [
+              "single",
+              "series"
+            ],
+            "title": "Details Scope",
+            "default": "single"
           },
           "locked": {
             "type": "boolean",
@@ -6559,6 +6617,50 @@
               }
             ],
             "title": "Parallel Policy Override"
+          },
+          "series_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Series Note"
+          },
+          "series_details": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Series Details"
+          },
+          "single_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Single Note"
+          },
+          "single_details": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Single Details"
           },
           "original_start_at": {
             "type": "string",
@@ -7682,6 +7784,18 @@
             "maxLength": 500,
             "title": "Location",
             "default": ""
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 120,
+            "title": "Note",
+            "default": ""
+          },
+          "details": {
+            "type": "string",
+            "maxLength": 5000,
+            "title": "Details",
+            "default": ""
           }
         },
         "additionalProperties": false,
@@ -7740,6 +7854,18 @@
             "title": "Location",
             "default": ""
           },
+          "note": {
+            "type": "string",
+            "maxLength": 120,
+            "title": "Note",
+            "default": ""
+          },
+          "details": {
+            "type": "string",
+            "maxLength": 5000,
+            "title": "Details",
+            "default": ""
+          },
           "idempotency_key": {
             "type": "string",
             "maxLength": 200,
@@ -7793,6 +7919,21 @@
           "recurrence_rule": {
             "type": "string",
             "title": "Recurrence Rule"
+          },
+          "location": {
+            "type": "string",
+            "title": "Location",
+            "default": ""
+          },
+          "note": {
+            "type": "string",
+            "title": "Note",
+            "default": ""
+          },
+          "details": {
+            "type": "string",
+            "title": "Details",
+            "default": ""
           },
           "event_ids": {
             "items": {

@@ -301,7 +301,19 @@ def compatibility(body: CompatibilityInput, db: DB, user: UserDep) -> Compatibil
 @router.put("/courses/{course_id}", response_model=CourseOut)
 def edit_course(course_id: str, body: CourseInput, db: DB, user: UserDep) -> Course:
     course = owned(db, Course, course_id, user)
+    old_name = course.name
     course.name, course.semester = body.name, body.semester
+    if body.name != old_name:
+        events = list(db.scalars(select(Event).where(Event.course_id == course.id)))
+        for event in events:
+            event.title = body.name
+        series_ids = {event.series_id for event in events if event.series_id}
+        if series_ids:
+            for override in db.scalars(
+                select(EventOverride).where(EventOverride.series_id.in_(series_ids))
+            ):
+                if override.title is not None:
+                    override.title = body.name
     record_change(db, user, "course.update", course)
     return course
 
@@ -338,6 +350,9 @@ def edit_series(series_id: str, body: SeriesEdit, db: DB, user: UserDep) -> Seri
         event.location = body.location
     first = datetime.fromisoformat(series.dtstart_local).date()
     series.dtstart_local = datetime.combine(first, body.start_time).isoformat()
+    series.location = body.location
+    series.note = body.note
+    series.details = body.details
     series.duration_minutes = int(
         (
             datetime.combine(first, body.end_time) - datetime.combine(first, body.start_time)

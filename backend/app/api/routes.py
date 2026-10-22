@@ -121,7 +121,7 @@ def update_profile(body: ProfileInput, db: DB, user: UserDep) -> User:
 
 
 def values(body: TaskInput | EventInput) -> dict[str, Any]:
-    data = body.model_dump()
+    data = body.model_dump(exclude={"note_scope", "details_scope"})
     for key, value in data.items():
         if isinstance(value, datetime):
             data[key] = int(value.timestamp() * 1000)

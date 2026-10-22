@@ -125,6 +125,10 @@ class EventInput(Schema):
     end_at: datetime
     timezone: str = "Asia/Shanghai"
     location: Annotated[str, Field(max_length=500)] = ""
+    note: Annotated[str, Field(max_length=120)] = ""
+    details: Annotated[str, Field(max_length=5000)] = ""
+    note_scope: Literal["single", "series"] = "single"
+    details_scope: Literal["single", "series"] = "single"
     locked: bool = True
     course_id: str | None = None
     kind: Literal["course", "meeting", "exam", "other"] = "other"
@@ -147,6 +151,12 @@ class EventOut(EventInput):
     occurrence_local_date: str | None = None
     is_skipped: bool = False
     parallel_policy_override: Policy | None = None
+    note: str = ""
+    details: str = ""
+    series_note: str | None = None
+    series_details: str | None = None
+    single_note: str | None = None
+    single_details: str | None = None
     original_start_at: Timestamp
     original_end_at: Timestamp
     start_at: Timestamp
@@ -212,6 +222,8 @@ class SeriesInput(Schema):
     end_time: time
     timezone: str
     location: Annotated[str, Field(max_length=500)] = ""
+    note: Annotated[str, Field(max_length=120)] = ""
+    details: Annotated[str, Field(max_length=5000)] = ""
     idempotency_key: Annotated[str, Field(min_length=8, max_length=200)]
 
     @model_validator(mode="after")
@@ -232,6 +244,9 @@ class SeriesOut(Schema):
     dtstart_local: str
     duration_minutes: int
     recurrence_rule: str
+    location: str = ""
+    note: str = ""
+    details: str = ""
     event_ids: list[str]
 
 
@@ -393,6 +408,8 @@ class SeriesEdit(ConfirmInput):
     start_time: time
     end_time: time
     location: str = Field(default="", max_length=500)
+    note: Annotated[str, Field(max_length=120)] = ""
+    details: Annotated[str, Field(max_length=5000)] = ""
 
     @model_validator(mode="after")
     def valid_times(self) -> Self:

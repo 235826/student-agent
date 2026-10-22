@@ -33,6 +33,14 @@ def instance_override(db: Session, event: Event, *, create: bool = False) -> Eve
     return override
 
 
+def merge_note(series_note: str | None, single_note: str | None) -> str:
+    return "；".join(value for value in (series_note, single_note) if value)
+
+
+def merge_details(series_details: str | None, single_details: str | None) -> str:
+    return "\n\n".join(value for value in (series_details, single_details) if value)
+
+
 def event_view(db: Session, event: Event) -> EventOut:
     data: dict[str, Any] = {
         c.name: getattr(event, c.name)
@@ -42,6 +50,7 @@ def event_view(db: Session, event: Event) -> EventOut:
     data["original_start_at"] = event.start_at
     data["original_end_at"] = event.end_at
     override = instance_override(db, event)
+    series = db.get(EventSeries, event.series_id) if event.series_id else None
     if override:
         data["updated_at"] = max(event.updated_at, override.updated_at)
         data["is_skipped"] = override.is_skipped
@@ -50,21 +59,40 @@ def event_view(db: Session, event: Event) -> EventOut:
             value = getattr(override, key)
             if value is not None:
                 data[key] = value
+        data["single_note"] = override.note
+        data["single_details"] = override.details
+    if series:
+        data["series_note"] = series.note
+        data["series_details"] = series.details
+        data["note"] = merge_note(series.note, override.note if override else None)
+        data["details"] = merge_details(series.details, override.details if override else None)
     return EventOut.model_validate(data)
 
 
 def update_event_record(db: Session, user: User, event: Event, body: EventInput) -> None:
     if body.course_id:
         owned(db, Course, body.course_id, user)
-    data = body.model_dump()
+    data = body.model_dump(exclude={"note_scope", "details_scope"})
     data["start_at"] = int(body.start_at.timestamp() * 1000)
     data["end_at"] = int(body.end_at.timestamp() * 1000)
     if event.series_id:
         if (body.course_id, body.kind, body.locked) != (event.course_id, event.kind, event.locked):
             raise HTTPException(409, "单次课程修改不能改变课程归属、类型或锁定设置")
         override = instance_override(db, event, create=True)
+        assert override is not None
         for key in ("title", "location", "start_at", "end_at", "timezone"):
-            setattr(override, key, data[key])
+            value = data[key]
+            setattr(override, key, value if value != getattr(event, key) else None)
+        series = db.get(EventSeries, event.series_id)
+        assert series is not None
+        if body.note_scope == "series":
+            series.note = body.note
+        else:
+            override.note = body.note or None
+        if body.details_scope == "series":
+            series.details = body.details
+        else:
+            override.details = body.details or None
     else:
         if body.kind != "course" and event.is_skipped:
             raise HTTPException(409, "请先恢复参加，再修改课程类型")
@@ -97,6 +125,9 @@ def series_view(db: Session, series: EventSeries) -> SeriesOut:
         dtstart_local=series.dtstart_local,
         duration_minutes=series.duration_minutes,
         recurrence_rule=series.recurrence_rule,
+        location=series.location,
+        note=series.note,
+        details=series.details,
         event_ids=list(
             db.scalars(
                 select(Event.id).where(Event.series_id == series.id).order_by(Event.start_at)
@@ -143,6 +174,9 @@ def create_series(
         dtstart_local=datetime.combine(dates[0][0], body.start_time).isoformat(),
         duration_minutes=duration,
         recurrence_rule=rule,
+        location=body.location,
+        note=body.note,
+        details=body.details,
     )
     db.add(series)
     db.flush()

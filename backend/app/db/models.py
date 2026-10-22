@@ -94,6 +94,9 @@ class EventSeries(Owned, Base):
     dtstart_local: Mapped[str]
     duration_minutes: Mapped[int]
     recurrence_rule: Mapped[str]
+    location: Mapped[str] = mapped_column(default="")
+    note: Mapped[str] = mapped_column(default="")
+    details: Mapped[str] = mapped_column(default="")
 
 
 class Event(Owned, Base):
@@ -107,6 +110,8 @@ class Event(Owned, Base):
     end_at: Mapped[int] = mapped_column(BigInteger, index=True)
     timezone: Mapped[str]
     location: Mapped[str] = mapped_column(default="")
+    note: Mapped[str] = mapped_column(default="")
+    details: Mapped[str] = mapped_column(default="")
     locked: Mapped[bool] = mapped_column(Boolean, default=True)
     course_id: Mapped[str | None] = mapped_column(ForeignKey("courses.id"))
     series_id: Mapped[str | None] = mapped_column(ForeignKey("event_series.id"))
@@ -127,6 +132,8 @@ class EventOverride(Owned, Base):
     policy_revision: Mapped[int] = mapped_column(default=0, server_default="0")
     title: Mapped[str | None]
     location: Mapped[str | None]
+    note: Mapped[str | None]
+    details: Mapped[str | None]
     start_at: Mapped[int | None] = mapped_column(BigInteger)
     end_at: Mapped[int | None] = mapped_column(BigInteger)
     timezone: Mapped[str | None]

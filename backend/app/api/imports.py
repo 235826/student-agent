@@ -372,7 +372,9 @@ def publish(job_id: str, body: ImportPublish, db: DB, user: UserDep) -> ImportOu
                     )
                     obj = Event(
                         workspace_id=user.workspace_id,
-                        **event.model_dump(exclude={"start_at", "end_at"}),
+                        **event.model_dump(
+                            exclude={"start_at", "end_at", "note_scope", "details_scope"}
+                        ),
                         start_at=int(event.start_at.timestamp() * 1000),
                         end_at=int(event.end_at.timestamp() * 1000),
                     )

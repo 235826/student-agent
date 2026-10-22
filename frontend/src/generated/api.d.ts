@@ -988,6 +988,28 @@ export interface components {
              */
             location: string;
             /**
+             * Note
+             * @default
+             */
+            note: string;
+            /**
+             * Details
+             * @default
+             */
+            details: string;
+            /**
+             * Note Scope
+             * @default single
+             * @enum {string}
+             */
+            note_scope: "single" | "series";
+            /**
+             * Details Scope
+             * @default single
+             * @enum {string}
+             */
+            details_scope: "single" | "series";
+            /**
              * Locked
              * @default true
              */
@@ -1026,6 +1048,28 @@ export interface components {
              */
             location: string;
             /**
+             * Note
+             * @default
+             */
+            note: string;
+            /**
+             * Details
+             * @default
+             */
+            details: string;
+            /**
+             * Note Scope
+             * @default single
+             * @enum {string}
+             */
+            note_scope: "single" | "series";
+            /**
+             * Details Scope
+             * @default single
+             * @enum {string}
+             */
+            details_scope: "single" | "series";
+            /**
              * Locked
              * @default true
              */
@@ -1051,6 +1095,14 @@ export interface components {
             is_skipped: boolean;
             /** Parallel Policy Override */
             parallel_policy_override?: ("none" | "allow_selected") | null;
+            /** Series Note */
+            series_note?: string | null;
+            /** Series Details */
+            series_details?: string | null;
+            /** Single Note */
+            single_note?: string | null;
+            /** Single Details */
+            single_details?: string | null;
             /**
              * Original Start At
              * Format: date-time
@@ -1519,6 +1571,16 @@ export interface components {
              * @default
              */
             location: string;
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+            /**
+             * Details
+             * @default
+             */
+            details: string;
         };
         /** SeriesInput */
         SeriesInput: {
@@ -1553,6 +1615,16 @@ export interface components {
              * @default
              */
             location: string;
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+            /**
+             * Details
+             * @default
+             */
+            details: string;
             /** Idempotency Key */
             idempotency_key: string;
         };
@@ -1570,6 +1642,21 @@ export interface components {
             duration_minutes: number;
             /** Recurrence Rule */
             recurrence_rule: string;
+            /**
+             * Location
+             * @default
+             */
+            location: string;
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+            /**
+             * Details
+             * @default
+             */
+            details: string;
             /** Event Ids */
             event_ids: string[];
         };
