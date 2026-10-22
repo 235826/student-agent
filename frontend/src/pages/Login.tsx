@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { Alert, Button, Card, Form, Input } from "antd";
 import { api, type Auth } from "../api";
@@ -9,12 +10,18 @@ export default function Login({
   initialized: boolean;
   onDone: (auth: Auth) => void;
 }) {
+  const [registering, setRegistering] = useState(false);
+  const endpoint = !initialized
+    ? "/auth/setup"
+    : registering
+      ? "/auth/register"
+      : "/auth/login";
   const mutation = useMutation({
     mutationFn: (values: { username: string; password: string }) =>
       api<Auth>(
-        initialized ? "/auth/login" : "/auth/setup",
+        endpoint,
         "POST",
-        initialized
+        initialized && !registering
           ? values
           : {
               ...values,
@@ -32,7 +39,15 @@ export default function Login({
         更有安排。
       </h1>
       <p className="muted">从一个任务开始，逐步找到适合自己的节奏。</p>
-      <Card title={initialized ? "欢迎回来" : "创建你的个人账号"}>
+      <Card
+        title={
+          !initialized
+            ? "创建你的个人账号"
+            : registering
+              ? "创建新账号"
+              : "欢迎回来"
+        }
+      >
         {mutation.error && (
           <Alert type="error" message={errorText(mutation.error)} showIcon />
         )}
@@ -57,7 +72,11 @@ export default function Login({
             ]}
           >
             <Input.Password
-              autoComplete={initialized ? "current-password" : "new-password"}
+              autoComplete={
+                initialized && !registering
+                  ? "current-password"
+                  : "new-password"
+              }
             />
           </Form.Item>
           <Button
@@ -66,9 +85,26 @@ export default function Login({
             htmlType="submit"
             loading={mutation.isPending}
           >
-            {initialized ? "登录" : "创建账号并进入"}
+            {!initialized
+              ? "创建账号并进入"
+              : registering
+                ? "创建账号并进入"
+                : "登录"}
           </Button>
         </Form>
+        {initialized && (
+          <Button
+            type="link"
+            block
+            className="toolbar"
+            onClick={() => {
+              mutation.reset();
+              setRegistering(!registering);
+            }}
+          >
+            {registering ? "已有账号？返回登录" : "创建新账号"}
+          </Button>
+        )}
       </Card>
     </main>
   );

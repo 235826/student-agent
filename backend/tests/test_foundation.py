@@ -127,7 +127,7 @@ def test_sqlite_constraints_and_workspace(authenticated: TestClient) -> None:
     with engine.connect() as conn:
         assert conn.scalar(text("PRAGMA foreign_keys")) == 1
         assert conn.scalar(text("PRAGMA journal_mode")) == "wal"
-        assert conn.scalar(text("SELECT version_num FROM alembic_version")) == "0006"
+        assert conn.scalar(text("SELECT version_num FROM alembic_version")) == "0007"
     with Session(engine) as db:
         workspace = Workspace()
         db.add(workspace)
@@ -251,3 +251,41 @@ def test_concurrent_tasks_are_committed_with_revision(authenticated: TestClient)
         workspace = db.scalar(select(Workspace))
         assert workspace is not None
         assert workspace.scheduling_revision == previous + 8
+
+
+def test_second_account_has_separate_workspace(authenticated: TestClient) -> None:
+    c = authenticated
+    first = c.post("/api/v1/tasks", json={"title": "第一个账号的任务"})
+    assert first.status_code == 201
+
+    registered = c.post(
+        "/api/v1/auth/register",
+        json={
+            "username": "second",
+            "password": "second-password-123",
+            "timezone": "Asia/Shanghai",
+        },
+    )
+    assert registered.status_code == 201, registered.text
+    assert registered.json()["user"]["username"] == "second"
+    c.headers["X-CSRF-Token"] = registered.json()["csrf_token"]
+    assert c.get("/api/v1/tasks").json() == []
+    assert c.get("/api/v1/event-types").json()
+    assert c.post("/api/v1/tasks", json={"title": "第二个账号的任务"}).status_code == 201
+
+    assert (
+        c.post(
+            "/api/v1/auth/register",
+            json={"username": "second", "password": "another-password-123"},
+        ).status_code
+        == 409
+    )
+
+    logged_in = c.post(
+        "/api/v1/auth/login",
+        json={"username": "student", "password": "test-password-123"},
+    )
+    assert logged_in.status_code == 200
+    c.headers["X-CSRF-Token"] = logged_in.json()["csrf_token"]
+    titles = [task["title"] for task in c.get("/api/v1/tasks").json()]
+    assert titles == ["第一个账号的任务"]

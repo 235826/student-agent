@@ -5,6 +5,7 @@ COPY backend/pyproject.toml backend/uv.lock ./
 RUN uv sync --frozen --no-dev
 COPY backend/app ./app
 COPY backend/migrations ./migrations
+COPY backend/scripts ./scripts
 COPY backend/alembic.ini ./
 RUN useradd --uid 10001 --create-home student && mkdir -p /app/data && chown student:student /app/data
 USER student

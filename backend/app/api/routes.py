@@ -63,12 +63,9 @@ def setup_status(db: DB) -> SetupStatus:
     return SetupStatus(initialized=db.scalar(select(User.id)) is not None)
 
 
-@router.post("/auth/setup", response_model=AuthOut, status_code=201)
-def setup(body: SetupInput, request: Request, response: Response, db: DB) -> AuthOut:
-    request.app.state.limiter.check(request.client.host if request.client else "unknown")
-    # Serialize first-account creation; the unique singleton also enforces this in the schema.
-    if db.scalar(select(User.id)):
-        raise HTTPException(409, "账号已初始化，请登录")
+def create_account(db: DB, body: SetupInput) -> User:
+    if db.scalar(select(User.id).where(User.username == body.username)):
+        raise HTTPException(409, "用户名已存在")
     workspace = Workspace()
     db.add(workspace)
     db.flush()
@@ -82,6 +79,22 @@ def setup(body: SetupInput, request: Request, response: Response, db: DB) -> Aut
     db.flush()
     ensure_system_types(db, user)
     db.flush()
+    return user
+
+
+@router.post("/auth/setup", response_model=AuthOut, status_code=201)
+def setup(body: SetupInput, request: Request, response: Response, db: DB) -> AuthOut:
+    request.app.state.limiter.check(request.client.host if request.client else "unknown")
+    if db.scalar(select(User.id)):
+        raise HTTPException(409, "账号已初始化，请登录")
+    user = create_account(db, body)
+    return login_response(user, request, response, db)
+
+
+@router.post("/auth/register", response_model=AuthOut, status_code=201)
+def register(body: SetupInput, request: Request, response: Response, db: DB) -> AuthOut:
+    request.app.state.limiter.check(request.client.host if request.client else "unknown")
+    user = create_account(db, body)
     return login_response(user, request, response, db)
 
 

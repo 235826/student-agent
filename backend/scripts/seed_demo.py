@@ -92,15 +92,16 @@ def add_event(
     return event
 
 
-def seed(db: Session, path: Path) -> None:
-    now = datetime.now(ZONE)
+def create_demo_user(
+    db: Session, username: str = "demo", password: str = "demo-password-123"
+) -> User:
     workspace = Workspace()
     db.add(workspace)
     db.flush()
     user = User(
         workspace_id=workspace.id,
-        username="demo",
-        password_hash=hasher.hash("demo-password-123"),
+        username=username,
+        password_hash=hasher.hash(password),
         timezone="Asia/Shanghai",
         available_windows=[{"weekday": day, "start": "08:30", "end": "21:30"} for day in range(5)]
         + [{"weekday": 5, "start": "09:00", "end": "12:00"}],
@@ -108,6 +109,11 @@ def seed(db: Session, path: Path) -> None:
     )
     db.add(user)
     db.flush()
+    ensure_system_types(db, user)
+    return user
+
+
+def seed_data(db: Session, user: User, now: datetime) -> None:
     system = ensure_system_types(db, user)
 
     custom_specs = [
@@ -425,6 +431,12 @@ def seed(db: Session, path: Path) -> None:
     )
     db.flush()
     db.commit()
+
+
+def seed(db: Session, path: Path) -> None:
+    now = datetime.now(ZONE)
+    user = create_demo_user(db)
+    seed_data(db, user, now)
     print("演示数据已创建")
     print("数据库：", path)
     print("账号：demo")

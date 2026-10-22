@@ -37,8 +37,6 @@ class Workspace(Record, Base):
 
 class User(Record, Base):
     __tablename__ = "users"
-    __table_args__ = (CheckConstraint("singleton = 1"),)
-    singleton: Mapped[int] = mapped_column(default=1, unique=True)
     workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id"), unique=True)
     username: Mapped[str] = mapped_column(String(64), unique=True)
     password_hash: Mapped[str]
