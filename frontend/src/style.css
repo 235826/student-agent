@@ -142,6 +142,20 @@ header {
 .card-heading-main h3 {
   margin: 0;
 }
+.drag-handle {
+  cursor: grab;
+  color: #9aa79f;
+  font-size: 16px;
+  line-height: 1.2;
+  padding: 0 4px;
+  user-select: none;
+}
+.drag-handle:active {
+  cursor: grabbing;
+}
+.task-card.dragging {
+  opacity: 0.5;
+}
 .task-list-manager {
   margin-top: 20px;
 }

@@ -3925,6 +3925,108 @@
         }
       }
     },
+    "/api/v1/tasks/reorder": {
+      "post": {
+        "summary": "Reorder Tasks",
+        "operationId": "reorder_tasks_api_v1_tasks_reorder_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskOrderInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TaskOut"
+                  },
+                  "type": "array",
+                  "title": "Response Reorder Tasks Api V1 Tasks Reorder Post"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Content",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/tasks/{task_id}": {
       "put": {
         "summary": "Update Task",
@@ -10180,6 +10282,25 @@
         ],
         "title": "TaskListOut"
       },
+      "TaskOrderInput": {
+        "properties": {
+          "task_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 1000,
+            "minItems": 1,
+            "title": "Task Ids"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "task_ids"
+        ],
+        "title": "TaskOrderInput"
+      },
       "TaskOut": {
         "properties": {
           "title": {
@@ -10336,6 +10457,10 @@
             "type": "array",
             "title": "Blocked By"
           },
+          "sort_order": {
+            "type": "integer",
+            "title": "Sort Order"
+          },
           "completed_at": {
             "anyOf": [
               {
@@ -10382,6 +10507,7 @@
           "dependent_ids",
           "child_ids",
           "blocked_by",
+          "sort_order",
           "completed_at",
           "trashed_at",
           "created_at",

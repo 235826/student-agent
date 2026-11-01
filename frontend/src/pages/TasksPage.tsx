@@ -89,6 +89,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
   const [listFilter, setListFilter] = useState("all");
   const [tagFilter, setTagFilter] = useState("all");
   const [listManager, setListManager] = useState(false);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
   const [editor, setEditor] = useState<Editor | null>(
     isNew || params.has("new") ? { kind: "task" } : null,
   );
@@ -230,6 +231,12 @@ export default function TasksPage({ profile }: { profile: Profile }) {
       refresh();
       void message.success("截止时间已更新");
     },
+    onError: (e: unknown) => void message.error(errorText(e)),
+  });
+  const reorder = useMutation({
+    mutationFn: (task_ids: string[]) =>
+      api("/tasks/reorder", "POST", { task_ids }),
+    onSuccess: () => refresh(),
     onError: (e: unknown) => void message.error(errorText(e)),
   });
   const restoreTask = useMutation({
@@ -431,7 +438,10 @@ export default function TasksPage({ profile }: { profile: Profile }) {
           ? b.priority - a.priority
           : sort === "completed"
             ? (b.completed_at ?? "").localeCompare(a.completed_at ?? "")
-            : a.status.localeCompare(b.status),
+            : sort === "manual"
+              ? a.sort_order - b.sort_order ||
+                b.created_at.localeCompare(a.created_at)
+              : a.status.localeCompare(b.status),
     );
   const groupOf = (task: Task) =>
     view === "done" && task.completed_at
@@ -449,6 +459,33 @@ export default function TasksPage({ profile }: { profile: Profile }) {
             .toFormat("yyyy年M月d日")
         : "完成时间未知";
     return states.find((state) => state.value === task.status)?.label ?? task.status;
+  };
+  const canReorder =
+    sort === "manual" &&
+    !id &&
+    view === "all" &&
+    status === "all" &&
+    !search.trim() &&
+    tagFilter === "all";
+  const dropTask = (target: Task) => {
+    if (!canReorder || !draggingId || draggingId === target.id) return;
+    const from = visible.findIndex((task) => task.id === draggingId);
+    const to = visible.findIndex((task) => task.id === target.id);
+    if (from < 0 || to < 0) return;
+    const next = [...visible];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    reorder.mutate(next.map((task) => task.id));
+    setDraggingId(null);
+  };
+  const moveTask = (task: Task, delta: number) => {
+    if (!canReorder) return;
+    const from = visible.findIndex((item) => item.id === task.id);
+    const to = from + delta;
+    if (from < 0 || to < 0 || to >= visible.length) return;
+    const next = [...visible];
+    [next[from], next[to]] = [next[to], next[from]];
+    reorder.mutate(next.map((item) => item.id));
   };
   const here = currentLocation(
     location.pathname,
@@ -570,8 +607,14 @@ export default function TasksPage({ profile }: { profile: Profile }) {
               { value: "deadline", label: "截止时间" },
               { value: "priority", label: "优先级" },
               { value: "completed", label: "完成时间" },
+              { value: "manual", label: "手动排序" },
             ]}
           />
+          {sort === "manual" && !canReorder && (
+            <span className="muted">
+              清除搜索、状态或标签筛选后可拖动排序
+            </span>
+          )}
         </Space>
       )}
       {inbox ? (
@@ -682,9 +725,60 @@ export default function TasksPage({ profile }: { profile: Profile }) {
                         {groupLabel(task)}
                       </h2>
                     )}
-                  <Card className="task-card">
+                  <Card
+                    className={
+                      draggingId === task.id ? "task-card dragging" : "task-card"
+                    }
+                    onDragOver={(e) => {
+                      if (canReorder) e.preventDefault();
+                    }}
+                    onDrop={(e) => {
+                      if (!canReorder) return;
+                      e.preventDefault();
+                      dropTask(task);
+                    }}
+                  >
                     <div className="card-heading">
                       <div className="card-heading-main">
+                        {canReorder && (
+                          <>
+                            <span
+                              className="drag-handle"
+                              draggable
+                              aria-label={`拖动 ${task.title}`}
+                              title="拖动排序"
+                              onDragStart={(e) => {
+                                setDraggingId(task.id);
+                                e.dataTransfer.effectAllowed = "move";
+                                e.dataTransfer.setData("text/plain", task.id);
+                              }}
+                              onDragEnd={() => setDraggingId(null)}
+                            >
+                              ⋮⋮
+                            </span>
+                            <Button
+                              type="text"
+                              size="small"
+                              aria-label={`上移 ${task.title}`}
+                              disabled={index === 0 || reorder.isPending}
+                              onClick={() => moveTask(task, -1)}
+                            >
+                              ↑
+                            </Button>
+                            <Button
+                              type="text"
+                              size="small"
+                              aria-label={`下移 ${task.title}`}
+                              disabled={
+                                index === visible.length - 1 ||
+                                reorder.isPending
+                              }
+                              onClick={() => moveTask(task, 1)}
+                            >
+                              ↓
+                            </Button>
+                          </>
+                        )}
                         {!task.trashed_at && (
                           <Checkbox
                             aria-label={

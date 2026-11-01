@@ -39,8 +39,8 @@ def main() -> None:
     engine = build_engine(database_url)
     with Session(engine) as db:
         version = db.scalar(text("SELECT version_num FROM alembic_version"))
-        if version != "0011":
-            raise SystemExit("数据库尚未迁移到 0011，请先执行 alembic upgrade head")
+        if version != "0012":
+            raise SystemExit("数据库尚未迁移到 0012，请先执行 alembic upgrade head")
         add_demo_account(db, args.username, args.password)
     engine.dispose()
     print("演示账号已追加")

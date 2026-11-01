@@ -118,11 +118,16 @@ class TaskOut(TaskInput):
     child_ids: list[str]
     blocked_by: list[str]
     tags: list[str]
+    sort_order: int
     deadline_at: Timestamp | None
     completed_at: Timestamp | None
     trashed_at: Timestamp | None
     created_at: Timestamp
     updated_at: Timestamp
+
+
+class TaskOrderInput(Schema):
+    task_ids: list[str] = Field(min_length=1, max_length=1000)
 
 
 class DeadlineInput(Schema):

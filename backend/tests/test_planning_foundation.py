@@ -232,6 +232,32 @@ def test_task_lists_assign_and_delete(authenticated):
     )
 
 
+def test_task_reorder_and_new_task_appends(authenticated):
+    c = authenticated
+    records = [task(c, f"任务{index}") for index in range(3)]
+    ids = [record["id"] for record in records]
+    assert [record["sort_order"] for record in records] == [1, 2, 3]
+    assert [item["id"] for item in c.get("/api/v1/tasks").json()] == ids
+
+    reordered = c.post("/api/v1/tasks/reorder", json={"task_ids": [ids[2], ids[0], ids[1]]})
+    assert reordered.status_code == 200, reordered.text
+    assert [item["id"] for item in reordered.json()] == [ids[2], ids[0], ids[1]]
+    assert [item["id"] for item in c.get("/api/v1/tasks").json()] == [
+        ids[2],
+        ids[0],
+        ids[1],
+    ]
+
+    appended = task(c, "新任务")
+    assert appended["sort_order"] == 4
+    assert c.post("/api/v1/tasks/reorder", json={"task_ids": [ids[0], ids[0]]}).status_code == 422
+    assert (
+        c.post("/api/v1/tasks/reorder", json={"task_ids": [ids[0], "missing"]}).status_code == 404
+    )
+    c.post(f"/api/v1/tasks/{ids[0]}/trash")
+    assert c.post("/api/v1/tasks/reorder", json={"task_ids": [ids[0], ids[1]]}).status_code == 404
+
+
 def test_task_tags_sync_and_delete(authenticated):
     c = authenticated
     record = task(c, "阅读", tags=["数学", "阅读", "数学"])

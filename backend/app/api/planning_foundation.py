@@ -31,6 +31,7 @@ from app.api.schemas import (
     TaskInput,
     TaskListInput,
     TaskListOut,
+    TaskOrderInput,
     TaskOut,
     TypePolicyInput,
     TypePolicyOut,
@@ -153,7 +154,32 @@ def delete_tag(tag_id: str, db: DB, user: UserDep) -> None:
 def list_tasks(db: DB, user: UserDep, trashed: bool = False) -> list[TaskOut]:
     query = select(Task).where(Task.workspace_id == user.workspace_id)
     query = query.where(Task.trashed_at.is_not(None) if trashed else Task.trashed_at.is_(None))
-    return [task_view(db, t) for t in db.scalars(query.order_by(Task.created_at.desc(), Task.id))]
+    return [
+        task_view(db, t)
+        for t in db.scalars(query.order_by(Task.sort_order, Task.created_at.desc(), Task.id))
+    ]
+
+
+@router.post("/tasks/reorder", response_model=list[TaskOut])
+def reorder_tasks(body: TaskOrderInput, db: DB, user: UserDep) -> list[TaskOut]:
+    if len(set(body.task_ids)) != len(body.task_ids):
+        raise HTTPException(422, "任务不能重复")
+    tasks = list(
+        db.scalars(
+            select(Task).where(
+                Task.workspace_id == user.workspace_id,
+                Task.trashed_at.is_(None),
+                Task.id.in_(body.task_ids),
+            )
+        )
+    )
+    if len(tasks) != len(body.task_ids):
+        raise HTTPException(404, "任务不存在")
+    by_id = {task.id: task for task in tasks}
+    for index, task_id in enumerate(body.task_ids, start=1):
+        by_id[task_id].sort_order = index
+    record_change(db, user, "task.reorder", by_id[body.task_ids[0]], scheduling=False)
+    return [task_view(db, by_id[task_id]) for task_id in body.task_ids]
 
 
 @router.post("/tasks", response_model=TaskOut, status_code=201)

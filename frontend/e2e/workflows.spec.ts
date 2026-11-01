@@ -324,6 +324,62 @@ test("清单创建、任务归类、筛选与完成历史", async ({ page }) => 
   expect(task.list_id).toBe(lists[0].id);
 });
 
+test("手动排序可拖动并持久化", async ({ page }, testInfo) => {
+  const headers = await login(page);
+  const records = [];
+  for (const title of ["任务A", "任务B", "任务C"]) {
+    const response = await page.request.post("/api/v1/tasks", {
+      headers,
+      data: { title },
+    });
+    expect(response.status()).toBe(201);
+    records.push(await response.json());
+  }
+  await page.request.post("/api/v1/tasks/reorder", {
+    headers,
+    data: { task_ids: records.map((record) => record.id) },
+  });
+  await page.goto("/tasks");
+  await expect(page.getByRole("heading", { name: "任务A" })).toBeVisible();
+  await page
+    .locator(".ant-select")
+    .filter({ has: page.getByRole("combobox", { name: "任务排序" }) })
+    .click();
+  await page.getByTitle("手动排序").click();
+  await expect(
+    page.locator(".ant-select-selection-item").filter({ hasText: "手动排序" }),
+  ).toBeVisible();
+
+  const cardA = page
+    .locator(".task-card")
+    .filter({ has: page.getByRole("heading", { name: "任务A" }) });
+  const cardC = page
+    .locator(".task-card")
+    .filter({ has: page.getByRole("heading", { name: "任务C" }) });
+  const expected =
+    testInfo.project.name === "mobile"
+      ? ["任务B", "任务A", "任务C"]
+      : ["任务B", "任务C", "任务A"];
+  if (testInfo.project.name === "mobile") {
+    await cardA.getByLabel("下移 任务A").click();
+  } else {
+    await cardA.getByLabel("拖动 任务A").dragTo(cardC);
+  }
+  await expect
+    .poll(
+      async () => {
+        const tasks = await (await page.request.get("/api/v1/tasks")).json();
+        return tasks
+          .filter((task: { title: string }) =>
+            ["任务A", "任务B", "任务C"].includes(task.title),
+          )
+          .map((task: { title: string }) => task.title);
+      },
+      { timeout: 10000 },
+    )
+    .toEqual(expected);
+});
+
 test("详情页内联子任务、完成进度与恢复", async ({ page }) => {
   const headers = await login(page);
   const response = await page.request.post("/api/v1/tasks", {

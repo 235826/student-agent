@@ -147,6 +147,13 @@ def apply_task(db: Session, user: User, body: TaskInput, task: Task | None = Non
         data["deadline_all_day"] = False
     if task is None:
         task = Task(workspace_id=user.workspace_id, **data)
+        last_order = db.scalar(
+            select(Task.sort_order)
+            .where(Task.workspace_id == user.workspace_id)
+            .order_by(Task.sort_order.desc())
+            .limit(1)
+        )
+        task.sort_order = (last_order or 0) + 1
         if body.status == "done":
             task.completed_at = now_ms()
         db.add(task)
