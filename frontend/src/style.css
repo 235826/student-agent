@@ -524,12 +524,28 @@ header {
   margin: 0;
   font-size: 18px;
 }
-.task-row {
+.task-row,
+.subtask-row {
   display: flex;
   align-items: flex-start;
   gap: 12px;
   padding: 12px 4px;
   border-bottom: 1px solid #ecefe9;
+}
+.subtask-row-main {
+  flex: 1;
+  min-width: 0;
+}
+.subtask-row-main > a {
+  font-weight: 600;
+  color: #1f4f3d;
+}
+.subtask-row-main .ant-tag {
+  margin-left: 8px;
+}
+.subtask-add {
+  width: 100%;
+  margin-top: 12px;
 }
 .task-row-main {
   flex: 1;

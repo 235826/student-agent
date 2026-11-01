@@ -324,6 +324,35 @@ test("清单创建、任务归类、筛选与完成历史", async ({ page }) => 
   expect(task.list_id).toBe(lists[0].id);
 });
 
+test("详情页内联子任务、完成进度与恢复", async ({ page }) => {
+  const headers = await login(page);
+  const response = await page.request.post("/api/v1/tasks", {
+    headers,
+    data: { title: "课程项目" },
+  });
+  expect(response.status()).toBe(201);
+  const parent = await response.json();
+  await page.goto(`/tasks/${parent.id}`);
+
+  await page.getByLabel("添加子任务").fill("收集资料");
+  await page.getByLabel("添加子任务").press("Enter");
+  await expect(
+    page.locator(".subtask-row").filter({ hasText: "收集资料" }),
+  ).toBeVisible();
+  await page.getByLabel("添加子任务").fill("写初稿");
+  await page.getByLabel("添加子任务").press("Enter");
+  await expect(page.getByText("子任务 0/2")).toBeVisible();
+
+  await page.getByLabel("完成 收集资料").click();
+  await expect(page.getByText("子任务 1/2")).toBeVisible();
+  await expect(page.getByText("子任务已完成")).toBeVisible();
+  await expect(page.getByLabel("恢复 收集资料")).toBeVisible();
+
+  await page.getByLabel("恢复 收集资料").click();
+  await expect(page.getByText("子任务 0/2")).toBeVisible();
+  await expect(page.getByLabel("完成 收集资料")).toBeVisible();
+});
+
 test("自然语言快速添加解析日期、标签和优先级", async ({ page }) => {
   await login(page);
   const input = page.getByLabel("快速添加任务");

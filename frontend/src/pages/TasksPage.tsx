@@ -1,5 +1,6 @@
 import ImportRecords from "../components/ImportRecords";
 import TaskListManager from "../components/TaskListManager";
+import SubtaskChecklist from "../components/SubtaskChecklist";
 import {
   Link,
   useNavigate,
@@ -267,6 +268,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
     onError: (e: unknown) => void message.error(errorText(e)),
   });
   const catalog = [...(tasks.data ?? []), ...(trash.data ?? [])];
+  const detailTask = id ? catalog.find((task) => task.id === id) : undefined;
   const titleOf = (id: string) =>
     catalog.find((t) => t.id === id)?.title ?? "不可用任务";
   const open = (next: Editor) => {
@@ -751,7 +753,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
                         前置：{relations(task.predecessor_ids)}
                       </p>
                     )}
-                    {task.child_ids.length > 0 && (
+                    {task.child_ids.length > 0 && !id && (
                       <p className="muted">
                         子任务：{relations(task.child_ids)}
                       </p>
@@ -848,6 +850,9 @@ export default function TasksPage({ profile }: { profile: Profile }) {
                 );
               })}
             </div>
+          )}
+          {id && detailTask && !detailTask.trashed_at && (
+            <SubtaskChecklist parent={detailTask} />
           )}
         </>
       )}
