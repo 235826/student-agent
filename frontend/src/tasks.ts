@@ -22,6 +22,8 @@ export function toTaskInput(
     deadline_all_day: task.deadline_all_day,
     estimate_minutes: task.estimate_minutes,
     task_type: task.task_type,
+    list_id: task.list_id,
+    tags: task.tags,
     parent_id: task.parent_id,
     predecessor_ids: task.predecessor_ids,
     parallel_policy: task.parallel_policy,

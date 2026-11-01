@@ -165,6 +165,19 @@ class EventOverride(Owned, Base):
     timezone: Mapped[str | None]
 
 
+class Tag(Owned, Base):
+    __tablename__ = "tags"
+    __table_args__ = (UniqueConstraint("workspace_id", "name"),)
+    name: Mapped[str] = mapped_column(String(50))
+
+
+class TaskTag(Owned, Base):
+    __tablename__ = "task_tags"
+    __table_args__ = (UniqueConstraint("task_id", "tag_id"),)
+    task_id: Mapped[str] = mapped_column(ForeignKey("tasks.id"), index=True)
+    tag_id: Mapped[str] = mapped_column(ForeignKey("tags.id"), index=True)
+
+
 class TaskDependency(Owned, Base):
     __tablename__ = "task_dependencies"
     __table_args__ = (

@@ -30,7 +30,14 @@ import {
 } from "antd";
 import { DateTime } from "luxon";
 import { api } from "../api";
-import type { Draft, Profile, Task, TaskInput, TaskList } from "../api";
+import type {
+  Draft,
+  Profile,
+  TagRecord,
+  Task,
+  TaskInput,
+  TaskList,
+} from "../api";
 import { displayTime, toLocal } from "../time";
 import { priorities, priorityLabel } from "../semantics";
 import {
@@ -79,6 +86,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
     "all" | "today" | "scheduled" | "done" | "trash"
   >("all");
   const [listFilter, setListFilter] = useState("all");
+  const [tagFilter, setTagFilter] = useState("all");
   const [listManager, setListManager] = useState(false);
   const [editor, setEditor] = useState<Editor | null>(
     isNew || params.has("new") ? { kind: "task" } : null,
@@ -114,6 +122,10 @@ export default function TasksPage({ profile }: { profile: Profile }) {
     queryKey: ["task-lists"],
     queryFn: () => api<TaskList[]>("/task-lists"),
   });
+  const tags = useQuery({
+    queryKey: ["tags"],
+    queryFn: () => api<TagRecord[]>("/tags"),
+  });
   useEffect(() => {
     if (
       listFilter !== "all" &&
@@ -123,6 +135,14 @@ export default function TasksPage({ profile }: { profile: Profile }) {
     )
       setListFilter("all");
   }, [listFilter, lists.data]);
+  useEffect(() => {
+    if (
+      tagFilter !== "all" &&
+      tags.data &&
+      !tags.data.some((tag) => tag.name === tagFilter)
+    )
+      setTagFilter("all");
+  }, [tagFilter, tags.data]);
   const writeOptions = {
     mutationFn: ({ path, method = "POST", body }: Write) =>
       api(path, method, body),
@@ -130,6 +150,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
       void client.invalidateQueries({ queryKey: ["tasks"] });
       void client.invalidateQueries({ queryKey: ["drafts"] });
       void client.invalidateQueries({ queryKey: ["plans"] });
+      void client.invalidateQueries({ queryKey: ["tags"] });
       closeEditor();
       void message.success("已保存");
     },
@@ -157,6 +178,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
     void client.invalidateQueries({ queryKey: ["tasks"] });
     void client.invalidateQueries({ queryKey: ["drafts"] });
     void client.invalidateQueries({ queryKey: ["plans"] });
+    void client.invalidateQueries({ queryKey: ["tags"] });
   };
   const reopen = useMutation({
     mutationFn: (task: Task) => api(`/tasks/${task.id}/reopen`, "POST"),
@@ -261,6 +283,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
       parallel_policy: payload?.parallel_policy ?? "inherit",
       deadline_at: toLocal(payload?.deadline_at, profile.timezone),
       deadline_all_day: payload?.deadline_all_day ?? false,
+      tags: payload?.tags ?? [],
       list_id:
         payload?.list_id ??
         (next.kind === "task" &&
@@ -372,6 +395,8 @@ export default function TasksPage({ profile }: { profile: Profile }) {
   const inList = (task: Task) =>
     listFilter === "all" ||
     (listFilter === "inbox" ? !task.list_id : task.list_id === listFilter);
+  const inTag = (task: Task) =>
+    tagFilter === "all" || task.tags.includes(tagFilter);
   const inView = (task: Task) => {
     if (view === "today")
       return (
@@ -388,7 +413,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
   const visible = (
     id ? catalog.filter((t) => t.id === id) : (current.data ?? [])
   )
-    .filter((t) => id || (inView(t) && inList(t)))
+    .filter((t) => id || (inView(t) && inList(t) && inTag(t)))
     .filter((t) => id || status === "all" || t.status === status)
     .filter(
       (t) =>
@@ -510,6 +535,18 @@ export default function TasksPage({ profile }: { profile: Profile }) {
             ]}
           />
           <Button onClick={() => setListManager(true)}>管理清单</Button>
+          <Select
+            aria-label="筛选标签"
+            value={tagFilter}
+            onChange={setTagFilter}
+            options={[
+              { value: "all", label: "全部标签" },
+              ...(tags.data ?? []).map((tag) => ({
+                value: tag.name,
+                label: tag.name,
+              })),
+            ]}
+          />
           <Input.Search
             aria-label="搜索任务"
             placeholder="搜索标题或描述"
@@ -689,6 +726,21 @@ export default function TasksPage({ profile }: { profile: Profile }) {
                     <p className="description">
                       {task.description || "暂无描述"}
                     </p>
+                    {task.tags.length > 0 && (
+                      <Space size={4} wrap style={{ marginBottom: 8 }}>
+                        {task.tags.map((tag) => (
+                          <Tag
+                            key={tag}
+                            style={{ cursor: "pointer" }}
+                            onClick={() =>
+                              setTagFilter(tagFilter === tag ? "all" : tag)
+                            }
+                          >
+                            {tag}
+                          </Tag>
+                        ))}
+                      </Space>
+                    )}
                     {task.parent_id && (
                       <p className="muted">
                         父任务：{relations([task.parent_id])}
@@ -897,6 +949,17 @@ export default function TasksPage({ profile }: { profile: Profile }) {
               options={(lists.data ?? []).map((list) => ({
                 value: list.id,
                 label: list.name,
+              }))}
+            />
+          </Form.Item>
+          <Form.Item name="tags" label="标签">
+            <Select
+              mode="tags"
+              tokenSeparators={[",", "，"]}
+              placeholder="输入标签后回车"
+              options={(tags.data ?? []).map((tag) => ({
+                value: tag.name,
+                label: tag.name,
               }))}
             />
           </Form.Item>

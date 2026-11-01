@@ -23,6 +23,7 @@ Timestamp = Annotated[datetime, BeforeValidator(from_epoch)]
 Title = Annotated[str, Field(min_length=1, max_length=200)]
 Status = Literal["todo", "in_progress", "done", "cancelled"]
 Policy = Literal["none", "allow_selected"]
+TagName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=50)]
 
 
 class Schema(BaseModel):
@@ -96,6 +97,7 @@ class TaskInput(Schema):
     estimate_minutes: Annotated[int, Field(gt=0, le=100000)] | None = None
     task_type: Annotated[str, Field(min_length=1, max_length=100)] | None = None
     list_id: str | None = None
+    tags: list[TagName] = Field(default_factory=list, max_length=20)
     parent_id: str | None = None
     predecessor_ids: list[str] = Field(default_factory=list, max_length=100)
     parallel_policy: Policy | None = None
@@ -115,6 +117,7 @@ class TaskOut(TaskInput):
     dependent_ids: list[str]
     child_ids: list[str]
     blocked_by: list[str]
+    tags: list[str]
     deadline_at: Timestamp | None
     completed_at: Timestamp | None
     trashed_at: Timestamp | None
@@ -147,6 +150,11 @@ class TaskListOut(TaskListInput):
     sort_order: int
     created_at: Timestamp
     updated_at: Timestamp
+
+
+class TagOut(Schema):
+    id: str
+    name: str
 
 
 class EventTypeInput(Schema):

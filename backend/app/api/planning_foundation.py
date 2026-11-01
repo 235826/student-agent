@@ -4,7 +4,7 @@ from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, HTTPException
 from pydantic import ValidationError
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
 from app.api.schemas import (
@@ -27,6 +27,7 @@ from app.api.schemas import (
     SeriesInput,
     SeriesOut,
     SkipInput,
+    TagOut,
     TaskInput,
     TaskListInput,
     TaskListOut,
@@ -44,8 +45,10 @@ from app.db.models import (
     Event,
     EventOverride,
     EventSeries,
+    Tag,
     Task,
     TaskList,
+    TaskTag,
     TaskTypePolicy,
     User,
     WorkLog,
@@ -130,6 +133,20 @@ def delete_task_list(list_id: str, db: DB, user: UserDep) -> None:
         .values(list_id=None)
     )
     remove_record(db, user, "task_list.delete", task_list)
+
+
+@router.get("/tags", response_model=list[TagOut])
+def list_tags(db: DB, user: UserDep) -> list[Tag]:
+    return list(
+        db.scalars(select(Tag).where(Tag.workspace_id == user.workspace_id).order_by(Tag.name))
+    )
+
+
+@router.delete("/tags/{tag_id}", status_code=204)
+def delete_tag(tag_id: str, db: DB, user: UserDep) -> None:
+    tag = owned(db, Tag, tag_id, user)
+    db.execute(delete(TaskTag).where(TaskTag.tag_id == tag_id))
+    remove_record(db, user, "tag.delete", tag)
 
 
 @router.get("/tasks", response_model=list[TaskOut])

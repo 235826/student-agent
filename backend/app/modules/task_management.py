@@ -5,7 +5,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.api.schemas import TaskInput, TaskOut
-from app.db.models import Task, TaskDependency, TaskList, User, now_ms
+from app.db.models import Tag, Task, TaskDependency, TaskList, TaskTag, User, now_ms
 from app.modules.records import owned
 
 
@@ -51,6 +51,14 @@ def task_view(db: Session, task: Task) -> TaskOut:
         )
     )
     data["child_ids"] = list(db.scalars(select(Task.id).where(Task.parent_id == task.id)))
+    data["tags"] = list(
+        db.scalars(
+            select(Tag.name)
+            .join(TaskTag, TaskTag.tag_id == Tag.id)
+            .where(TaskTag.task_id == task.id)
+            .order_by(Tag.name)
+        )
+    )
     data["blocked_by"] = []
     for task_id in predecessors:
         predecessor = db.get(Task, task_id)
@@ -114,11 +122,26 @@ def validate_links(
             raise HTTPException(409, f"请先完成前置任务“{predecessor.title}”")
 
 
+def sync_tags(db: Session, user: User, task: Task, names: list[str]) -> None:
+    db.execute(delete(TaskTag).where(TaskTag.task_id == task.id))
+    seen: set[str] = set()
+    for name in names:
+        if name in seen:
+            continue
+        seen.add(name)
+        tag = db.scalar(select(Tag).where(Tag.workspace_id == user.workspace_id, Tag.name == name))
+        if tag is None:
+            tag = Tag(workspace_id=user.workspace_id, name=name)
+            db.add(tag)
+            db.flush()
+        db.add(TaskTag(workspace_id=user.workspace_id, task_id=task.id, tag_id=tag.id))
+
+
 def apply_task(db: Session, user: User, body: TaskInput, task: Task | None = None) -> Task:
     validate_links(db, user, body, task)
     if task and body.status == "cancelled" and task.status != "cancelled":
         require_impact_confirmation(db, task, body.confirm_impact)
-    data = body.model_dump(exclude={"predecessor_ids", "confirm_impact"})
+    data = body.model_dump(exclude={"predecessor_ids", "confirm_impact", "tags"})
     data["deadline_at"] = int(body.deadline_at.timestamp() * 1000) if body.deadline_at else None
     if not body.deadline_at:
         data["deadline_all_day"] = False
@@ -138,6 +161,7 @@ def apply_task(db: Session, user: User, body: TaskInput, task: Task | None = Non
         elif body.status != "done":
             task.completed_at = None
     db.flush()
+    sync_tags(db, user, task, body.tags)
     db.execute(delete(TaskDependency).where(TaskDependency.successor_task_id == task.id))
     for predecessor_id in body.predecessor_ids:
         db.add(

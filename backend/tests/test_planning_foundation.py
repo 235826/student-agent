@@ -34,6 +34,7 @@ def update_task(client, record, **kwargs):
         "estimate_minutes",
         "task_type",
         "list_id",
+        "tags",
         "parent_id",
         "predecessor_ids",
         "parallel_policy",
@@ -229,6 +230,25 @@ def test_task_lists_assign_and_delete(authenticated):
         ).status_code
         == 409
     )
+
+
+def test_task_tags_sync_and_delete(authenticated):
+    c = authenticated
+    record = task(c, "阅读", tags=["数学", "阅读", "数学"])
+    assert set(record["tags"]) == {"数学", "阅读"}
+    assert {tag["name"] for tag in c.get("/api/v1/tags").json()} == {"数学", "阅读"}
+
+    updated = update_task(c, record, tags=["阅读", "编程"])
+    assert updated.status_code == 200, updated.text
+    assert set(updated.json()["tags"]) == {"阅读", "编程"}
+    tags = c.get("/api/v1/tags").json()
+    assert {tag["name"] for tag in tags} == {"数学", "阅读", "编程"}
+
+    math = next(tag for tag in tags if tag["name"] == "数学")
+    assert c.delete(f"/api/v1/tags/{math['id']}").status_code == 204
+    assert {tag["name"] for tag in c.get("/api/v1/tags").json()} == {"阅读", "编程"}
+    stored = next(t for t in c.get("/api/v1/tasks").json() if t["id"] == record["id"])
+    assert set(stored["tags"]) == {"阅读", "编程"}
 
 
 def test_quick_complete_reopen_and_all_day_deadline(authenticated):

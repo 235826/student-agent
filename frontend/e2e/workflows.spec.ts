@@ -270,6 +270,12 @@ test("清单创建、任务归类、筛选与完成历史", async ({ page }) => 
 
   await page.getByRole("button", { name: "新建任务", exact: true }).click();
   await page.getByLabel("任务标题").fill("清单任务");
+  await page.getByRole("combobox", { name: "标签", exact: true }).click();
+  await page.getByRole("combobox", { name: "标签", exact: true }).fill("数学");
+  await page.keyboard.press("Enter");
+  await page.getByRole("combobox", { name: "标签", exact: true }).fill("阅读");
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Escape");
   await page.getByRole("combobox", { name: "所属清单" }).click();
   await page
     .locator(".ant-select-dropdown:not(.ant-select-dropdown-hidden) .ant-select-item-option")
@@ -294,6 +300,15 @@ test("清单创建、任务归类、筛选与完成历史", async ({ page }) => 
     page.getByRole("heading", { name: "收件箱任务" }),
   ).not.toBeVisible();
   await card.getByText("课程", { exact: true }).click();
+  await expect(page.getByRole("heading", { name: "收件箱任务" })).toBeVisible();
+
+  await expect(card.getByText("数学", { exact: true })).toBeVisible();
+  await expect(card.getByText("阅读", { exact: true })).toBeVisible();
+  await card.getByText("数学", { exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "收件箱任务" }),
+  ).not.toBeVisible();
+  await card.getByText("数学", { exact: true }).click();
   await expect(page.getByRole("heading", { name: "收件箱任务" })).toBeVisible();
 
   await page.getByLabel("完成 清单任务").click();
