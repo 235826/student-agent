@@ -34,7 +34,7 @@ test("账号、任务、事件、设置和手机布局闭环", async ({ page }, 
   ).not.toBeVisible();
   await page.getByRole("button", { name: "垃圾箱", exact: true }).click();
   await page.getByRole("button", { name: "恢复任务" }).click();
-  await page.getByRole("button", { name: "我的任务" }).click();
+  await page.getByRole("button", { name: /^全\s*部$/ }).click();
   await expect(
     page.getByRole("heading", { name: `${title}-已编辑` }),
   ).toBeVisible();

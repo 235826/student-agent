@@ -4,7 +4,7 @@ from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, HTTPException
 from pydantic import ValidationError
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app.api.schemas import (
@@ -28,6 +28,8 @@ from app.api.schemas import (
     SeriesOut,
     SkipInput,
     TaskInput,
+    TaskListInput,
+    TaskListOut,
     TaskOut,
     TypePolicyInput,
     TypePolicyOut,
@@ -43,6 +45,7 @@ from app.db.models import (
     EventOverride,
     EventSeries,
     Task,
+    TaskList,
     TaskTypePolicy,
     User,
     WorkLog,
@@ -68,6 +71,65 @@ from app.modules.task_management import (
 )
 
 router = APIRouter(prefix="/api/v1")
+
+
+@router.get("/task-lists", response_model=list[TaskListOut])
+def list_task_lists(db: DB, user: UserDep) -> list[TaskList]:
+    return list(
+        db.scalars(
+            select(TaskList)
+            .where(TaskList.workspace_id == user.workspace_id)
+            .order_by(TaskList.sort_order, TaskList.created_at, TaskList.id)
+        )
+    )
+
+
+@router.post("/task-lists", response_model=TaskListOut, status_code=201)
+def create_task_list(body: TaskListInput, db: DB, user: UserDep) -> TaskList:
+    duplicate = db.scalar(
+        select(TaskList.id).where(
+            TaskList.workspace_id == user.workspace_id, TaskList.name == body.name
+        )
+    )
+    if duplicate:
+        raise HTTPException(409, "清单名称已存在")
+    task_list = TaskList(
+        workspace_id=user.workspace_id,
+        name=body.name,
+        color=body.color,
+    )
+    db.add(task_list)
+    record_change(db, user, "task_list.create", task_list)
+    return task_list
+
+
+@router.put("/task-lists/{list_id}", response_model=TaskListOut)
+def update_task_list(list_id: str, body: TaskListInput, db: DB, user: UserDep) -> TaskList:
+    task_list = owned(db, TaskList, list_id, user)
+    duplicate = db.scalar(
+        select(TaskList.id).where(
+            TaskList.workspace_id == user.workspace_id,
+            TaskList.name == body.name,
+            TaskList.id != list_id,
+        )
+    )
+    if duplicate:
+        raise HTTPException(409, "清单名称已存在")
+    task_list.name = body.name
+    task_list.color = body.color
+    record_change(db, user, "task_list.update", task_list)
+    return task_list
+
+
+@router.delete("/task-lists/{list_id}", status_code=204)
+def delete_task_list(list_id: str, db: DB, user: UserDep) -> None:
+    task_list = owned(db, TaskList, list_id, user)
+    db.execute(
+        update(Task)
+        .where(Task.workspace_id == user.workspace_id, Task.list_id == list_id)
+        .values(list_id=None)
+    )
+    remove_record(db, user, "task_list.delete", task_list)
 
 
 @router.get("/tasks", response_model=list[TaskOut])

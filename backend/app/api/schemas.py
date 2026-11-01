@@ -95,6 +95,7 @@ class TaskInput(Schema):
     deadline_all_day: bool = False
     estimate_minutes: Annotated[int, Field(gt=0, le=100000)] | None = None
     task_type: Annotated[str, Field(min_length=1, max_length=100)] | None = None
+    list_id: str | None = None
     parent_id: str | None = None
     predecessor_ids: list[str] = Field(default_factory=list, max_length=100)
     parallel_policy: Policy | None = None
@@ -134,6 +135,18 @@ class DeadlineInput(Schema):
 
 
 Color = Annotated[str, Field(pattern=r"^#[0-9a-fA-F]{6}$")]
+
+
+class TaskListInput(Schema):
+    name: Annotated[str, Field(min_length=1, max_length=100)]
+    color: Color = "#245c48"
+
+
+class TaskListOut(TaskListInput):
+    id: str
+    sort_order: int
+    created_at: Timestamp
+    updated_at: Timestamp
 
 
 class EventTypeInput(Schema):

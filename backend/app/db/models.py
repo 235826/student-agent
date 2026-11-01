@@ -57,6 +57,14 @@ class Owned(Record):
     workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id"), index=True)
 
 
+class TaskList(Owned, Base):
+    __tablename__ = "task_lists"
+    __table_args__ = (UniqueConstraint("workspace_id", "name"),)
+    name: Mapped[str] = mapped_column(String(100))
+    color: Mapped[str] = mapped_column(String(7), default="#245c48")
+    sort_order: Mapped[int] = mapped_column(default=0)
+
+
 class Task(Owned, Base):
     __tablename__ = "tasks"
     __table_args__ = (
@@ -68,6 +76,9 @@ class Task(Owned, Base):
     description: Mapped[str] = mapped_column(default="")
     status: Mapped[str] = mapped_column(default="todo", index=True)
     priority: Mapped[int] = mapped_column(default=2)
+    list_id: Mapped[str | None] = mapped_column(
+        ForeignKey("task_lists.id"), index=True, nullable=True
+    )
     deadline_at: Mapped[int | None] = mapped_column(BigInteger, index=True)
     deadline_all_day: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
     estimate_minutes: Mapped[int | None]

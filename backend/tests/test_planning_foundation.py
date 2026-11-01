@@ -33,6 +33,7 @@ def update_task(client, record, **kwargs):
         "deadline_all_day",
         "estimate_minutes",
         "task_type",
+        "list_id",
         "parent_id",
         "predecessor_ids",
         "parallel_policy",
@@ -195,6 +196,39 @@ def test_dependencies_cycles_states_and_impact(authenticated):
     assert update_task(c, a, status="cancelled", confirm_impact=True).status_code == 200
     assert update_task(c, a, status="done").status_code == 200
     assert update_task(c, b, status="in_progress").status_code == 200
+
+
+def test_task_lists_assign_and_delete(authenticated):
+    c = authenticated
+    study = post(c, "/task-lists", {"name": "学习", "color": "#123456"})
+    life = post(c, "/task-lists", {"name": "生活"})
+    assert c.post("/api/v1/task-lists", json={"name": "学习"}).status_code == 409
+    assert c.post("/api/v1/task-lists", json={"name": "坏颜色", "color": "red"}).status_code == 422
+
+    record = task(c, "写作业", list_id=study["id"])
+    assert record["list_id"] == study["id"]
+    renamed = c.put(
+        f"/api/v1/task-lists/{study['id']}",
+        json={"name": "课程", "color": "#abcdef"},
+    )
+    assert renamed.status_code == 200, renamed.text
+    assert renamed.json()["name"] == "课程" and renamed.json()["color"] == "#abcdef"
+    stored = next(t for t in c.get("/api/v1/tasks").json() if t["id"] == record["id"])
+    assert stored["list_id"] == study["id"]
+
+    assert c.delete(f"/api/v1/task-lists/{study['id']}").status_code == 204
+    inbox = next(t for t in c.get("/api/v1/tasks").json() if t["id"] == record["id"])
+    assert inbox["list_id"] is None
+    assert [item["id"] for item in c.get("/api/v1/task-lists").json()] == [life["id"]]
+
+    foreign = post(c, "/task-lists", {"name": "另一个"})
+    assert (
+        c.put(
+            f"/api/v1/task-lists/{foreign['id']}",
+            json={"name": "生活"},
+        ).status_code
+        == 409
+    )
 
 
 def test_quick_complete_reopen_and_all_day_deadline(authenticated):

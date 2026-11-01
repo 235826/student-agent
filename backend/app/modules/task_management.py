@@ -5,7 +5,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.api.schemas import TaskInput, TaskOut
-from app.db.models import Task, TaskDependency, User, now_ms
+from app.db.models import Task, TaskDependency, TaskList, User, now_ms
 from app.modules.records import owned
 
 
@@ -73,6 +73,8 @@ def validate_links(
     db: Session, user: User, body: TaskInput, task: Task | None = None, *, restoring: bool = False
 ) -> None:
     task_id = task.id if task else ""
+    if body.list_id:
+        owned(db, TaskList, body.list_id, user)
     if body.parent_id:
         parent = owned(db, Task, body.parent_id, user)
         if parent.trashed_at is not None or parent.status == "cancelled":

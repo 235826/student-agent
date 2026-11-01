@@ -1,4 +1,5 @@
 import ImportRecords from "../components/ImportRecords";
+import TaskListManager from "../components/TaskListManager";
 import {
   Link,
   useNavigate,
@@ -7,7 +8,7 @@ import {
   useSearchParams,
 } from "react-router-dom";
 import SourceButton from "../components/SourceButton";
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { backTarget, currentLocation, withFrom } from "../navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -29,7 +30,7 @@ import {
 } from "antd";
 import { DateTime } from "luxon";
 import { api } from "../api";
-import type { Draft, Profile, Task, TaskInput } from "../api";
+import type { Draft, Profile, Task, TaskInput, TaskList } from "../api";
 import { displayTime, toLocal } from "../time";
 import { priorities, priorityLabel } from "../semantics";
 import {
@@ -50,6 +51,13 @@ const policies = [
   { value: "none", label: "明确禁止并行" },
   { value: "allow_selected", label: "接受已明确允许的组合" },
 ];
+const views = [
+  ["all", "全部"],
+  ["today", "今天"],
+  ["scheduled", "已计划"],
+  ["done", "已完成"],
+  ["trash", "垃圾箱"],
+] as const;
 type Editor = { kind: "task"; task?: Task } | { kind: "draft"; draft?: Draft };
 type Write = { path: string; method?: string; body?: unknown };
 const errorText = (e: unknown) =>
@@ -67,7 +75,11 @@ export default function TasksPage({ profile }: { profile: Profile }) {
   const [sort, setSort] = useState("status");
   const client = useQueryClient();
   const { message, modal } = App.useApp();
-  const [tab, setTab] = useState<"tasks" | "trash">("tasks");
+  const [view, setView] = useState<
+    "all" | "today" | "scheduled" | "done" | "trash"
+  >("all");
+  const [listFilter, setListFilter] = useState("all");
+  const [listManager, setListManager] = useState(false);
   const [editor, setEditor] = useState<Editor | null>(
     isNew || params.has("new") ? { kind: "task" } : null,
   );
@@ -98,6 +110,19 @@ export default function TasksPage({ profile }: { profile: Profile }) {
     queryKey: ["drafts"],
     queryFn: () => api<Draft[]>("/drafts"),
   });
+  const lists = useQuery({
+    queryKey: ["task-lists"],
+    queryFn: () => api<TaskList[]>("/task-lists"),
+  });
+  useEffect(() => {
+    if (
+      listFilter !== "all" &&
+      listFilter !== "inbox" &&
+      lists.data &&
+      !lists.data.some((list) => list.id === listFilter)
+    )
+      setListFilter("all");
+  }, [listFilter, lists.data]);
   const writeOptions = {
     mutationFn: ({ path, method = "POST", body }: Write) =>
       api(path, method, body),
@@ -236,6 +261,14 @@ export default function TasksPage({ profile }: { profile: Profile }) {
       parallel_policy: payload?.parallel_policy ?? "inherit",
       deadline_at: toLocal(payload?.deadline_at, profile.timezone),
       deadline_all_day: payload?.deadline_all_day ?? false,
+      list_id:
+        payload?.list_id ??
+        (next.kind === "task" &&
+        !next.task &&
+        listFilter !== "all" &&
+        listFilter !== "inbox"
+          ? listFilter
+          : undefined),
     });
     setEditor(next);
   };
@@ -331,25 +364,65 @@ export default function TasksPage({ profile }: { profile: Profile }) {
           },
         }),
     });
-  const current = tab === "trash" ? trash : tasks;
+  const current = view === "trash" ? trash : tasks;
+  const now = DateTime.now().setZone(profile.timezone);
+  const tomorrow = now.startOf("day").plus({ days: 1 });
+  const listOf = (task: Task) =>
+    (lists.data ?? []).find((list) => list.id === task.list_id);
+  const inList = (task: Task) =>
+    listFilter === "all" ||
+    (listFilter === "inbox" ? !task.list_id : task.list_id === listFilter);
+  const inView = (task: Task) => {
+    if (view === "today")
+      return (
+        !["done", "cancelled"].includes(task.status) &&
+        (task.status === "in_progress" ||
+          (!!task.deadline_at &&
+            DateTime.fromISO(task.deadline_at) < tomorrow))
+      );
+    if (view === "scheduled")
+      return !["done", "cancelled"].includes(task.status) && !!task.deadline_at;
+    if (view === "done") return task.status === "done";
+    return true;
+  };
   const visible = (
     id ? catalog.filter((t) => t.id === id) : (current.data ?? [])
   )
+    .filter((t) => id || (inView(t) && inList(t)))
+    .filter((t) => id || status === "all" || t.status === status)
     .filter(
       (t) =>
-        (id || status === "all" || t.status === status) &&
-        (id ||
-          `${t.title} ${t.description}`
-            .toLowerCase()
-            .includes(search.toLowerCase())),
+        id ||
+        `${t.title} ${t.description}`
+          .toLowerCase()
+          .includes(search.toLowerCase()),
     )
     .sort((a, b) =>
       sort === "deadline"
         ? (a.deadline_at ?? "9999").localeCompare(b.deadline_at ?? "9999")
         : sort === "priority"
           ? b.priority - a.priority
-          : a.status.localeCompare(b.status),
+          : sort === "completed"
+            ? (b.completed_at ?? "").localeCompare(a.completed_at ?? "")
+            : a.status.localeCompare(b.status),
     );
+  const groupOf = (task: Task) =>
+    view === "done" && task.completed_at
+      ? DateTime.fromISO(task.completed_at)
+          .setZone(profile.timezone)
+          .toFormat("yyyy-MM-dd")
+      : view === "done"
+        ? "unknown"
+        : task.status;
+  const groupLabel = (task: Task) => {
+    if (view === "done")
+      return task.completed_at
+        ? DateTime.fromISO(task.completed_at)
+            .setZone(profile.timezone)
+            .toFormat("yyyy年M月d日")
+        : "完成时间未知";
+    return states.find((state) => state.value === task.status)?.label ?? task.status;
+  };
   const here = currentLocation(
     location.pathname,
     location.search,
@@ -404,16 +477,11 @@ export default function TasksPage({ profile }: { profile: Profile }) {
       </header>
       {!inbox && !id && (
         <Space className="toolbar" wrap>
-          {(
-            [
-              ["tasks", "我的任务"],
-              ["trash", "垃圾箱"],
-            ] as const
-          ).map(([key, label]) => (
+          {views.map(([key, label]) => (
             <Button
               key={key}
-              type={tab === key ? "primary" : "default"}
-              onClick={() => setTab(key)}
+              type={view === key ? "primary" : "default"}
+              onClick={() => setView(key)}
             >
               {label}
             </Button>
@@ -428,6 +496,20 @@ export default function TasksPage({ profile }: { profile: Profile }) {
       )}
       {!inbox && !id && (
         <Space wrap className="toolbar">
+          <Select
+            aria-label="筛选清单"
+            value={listFilter}
+            onChange={setListFilter}
+            options={[
+              { value: "all", label: "全部清单" },
+              { value: "inbox", label: "收件箱（未分类）" },
+              ...(lists.data ?? []).map((list) => ({
+                value: list.id,
+                label: list.name,
+              })),
+            ]}
+          />
+          <Button onClick={() => setListManager(true)}>管理清单</Button>
           <Input.Search
             aria-label="搜索任务"
             placeholder="搜索标题或描述"
@@ -448,6 +530,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
               { value: "status", label: "按状态分组" },
               { value: "deadline", label: "截止时间" },
               { value: "priority", label: "优先级" },
+              { value: "completed", label: "完成时间" },
             ]}
           />
         </Space>
@@ -534,21 +617,30 @@ export default function TasksPage({ profile }: { profile: Profile }) {
                 description={
                   id
                     ? "任务不存在或已删除"
-                    : tab === "trash"
+                    : view === "trash"
                       ? "垃圾箱为空"
-                      : "还没有任务，先添加一件想完成的事"
+                      : view === "done"
+                        ? "还没有已完成任务"
+                        : view === "today"
+                          ? "今天没有要做的任务"
+                          : view === "scheduled"
+                            ? "还没有设置截止时间的任务"
+                            : "还没有任务，先添加一件想完成的事"
                 }
               />
             </Card>
           ) : (
             <div className="cards">
-              {visible.map((task, index) => (
+              {visible.map((task, index) => {
+                const taskList = listOf(task);
+                return (
                 <Fragment key={task.id}>
                   {!id &&
                     sort === "status" &&
-                    visible[index - 1]?.status !== task.status && (
+                    (index === 0 ||
+                      groupOf(visible[index - 1]) !== groupOf(task)) && (
                       <h2 style={{ gridColumn: "1 / -1", margin: 0 }}>
-                        {states.find((s) => s.value === task.status)?.label}
+                        {groupLabel(task)}
                       </h2>
                     )}
                   <Card className="task-card">
@@ -573,9 +665,26 @@ export default function TasksPage({ profile }: { profile: Profile }) {
                           <Link to={`/tasks/${task.id}`}>{task.title}</Link>
                         </h3>
                       </div>
-                      <Tag color={task.status === "done" ? "green" : "default"}>
-                        {states.find((s) => s.value === task.status)?.label}
-                      </Tag>
+                      <Space size={4} wrap>
+                        {taskList && (
+                          <Tag
+                            color={taskList.color}
+                            style={{ cursor: "pointer" }}
+                            onClick={() =>
+                              setListFilter(
+                                listFilter === taskList.id ? "all" : taskList.id,
+                              )
+                            }
+                          >
+                            {taskList.name}
+                          </Tag>
+                        )}
+                        <Tag
+                          color={task.status === "done" ? "green" : "default"}
+                        >
+                          {states.find((s) => s.value === task.status)?.label}
+                        </Tag>
+                      </Space>
                     </div>
                     <p className="description">
                       {task.description || "暂无描述"}
@@ -684,7 +793,8 @@ export default function TasksPage({ profile }: { profile: Profile }) {
                     </Space>
                   </Card>
                 </Fragment>
-              ))}
+                );
+              })}
             </div>
           )}
         </>
@@ -780,6 +890,16 @@ export default function TasksPage({ profile }: { profile: Profile }) {
           <Form.Item name="task_type" label="任务类型（可选）">
             <Input placeholder="例如 reading / coding" maxLength={100} />
           </Form.Item>
+          <Form.Item name="list_id" label="所属清单">
+            <Select
+              allowClear
+              placeholder="收件箱（未分类）"
+              options={(lists.data ?? []).map((list) => ({
+                value: list.id,
+                label: list.name,
+              }))}
+            />
+          </Form.Item>
           <Form.Item name="parent_id" label="父任务（可选）">
             <Select
               allowClear
@@ -803,6 +923,10 @@ export default function TasksPage({ profile }: { profile: Profile }) {
           </p>
         </Form>
       </Modal>
+      <TaskListManager
+        open={listManager}
+        onClose={() => setListManager(false)}
+      />
     </>
   );
 }

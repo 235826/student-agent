@@ -258,6 +258,57 @@ test("今日新建事件继承日期并在表单内联新建课程", async ({ pa
   ).toBeVisible();
 });
 
+test("清单创建、任务归类、筛选与完成历史", async ({ page }) => {
+  await login(page);
+  await page.getByRole("link", { name: "任务", exact: true }).click();
+  await page.getByRole("button", { name: "管理清单", exact: true }).click();
+  await page.getByLabel("新清单名称").fill("课程");
+  await page.getByRole("button", { name: "创建清单", exact: true }).click();
+  await expect(page.getByText("清单已创建")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).not.toBeVisible();
+
+  await page.getByRole("button", { name: "新建任务", exact: true }).click();
+  await page.getByLabel("任务标题").fill("清单任务");
+  await page.getByRole("combobox", { name: "所属清单" }).click();
+  await page
+    .locator(".ant-select-dropdown:not(.ant-select-dropdown-hidden) .ant-select-item-option")
+    .filter({ hasText: "课程" })
+    .click();
+  await page.getByRole("button", { name: "创建任务", exact: true }).click();
+  await expect(page.getByRole("dialog")).not.toBeVisible();
+  const card = page
+    .locator(".ant-card")
+    .filter({ has: page.getByRole("heading", { name: "清单任务" }) });
+  await expect(card.getByText("课程", { exact: true })).toBeVisible();
+
+  await page.getByRole("button", { name: "新建任务", exact: true }).click();
+  await page.getByLabel("任务标题").fill("收件箱任务");
+  await page.getByRole("button", { name: "创建任务", exact: true }).click();
+  await expect(page.getByRole("dialog")).not.toBeVisible();
+  await expect(page.getByRole("heading", { name: "收件箱任务" })).toBeVisible();
+
+  await card.getByText("课程", { exact: true }).click();
+  await expect(page.getByRole("heading", { name: "清单任务" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "收件箱任务" }),
+  ).not.toBeVisible();
+  await card.getByText("课程", { exact: true }).click();
+  await expect(page.getByRole("heading", { name: "收件箱任务" })).toBeVisible();
+
+  await page.getByLabel("完成 清单任务").click();
+  await expect(page.getByText("已完成“清单任务”")).toBeVisible();
+  await page.getByRole("button", { name: "已完成", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "清单任务" })).toBeVisible();
+
+  const tasks = await (await page.request.get("/api/v1/tasks")).json();
+  const task = tasks.find((item: { title: string }) => item.title === "清单任务");
+  expect(task.status).toBe("done");
+  expect(task.completed_at).not.toBeNull();
+  const lists = await (await page.request.get("/api/v1/task-lists")).json();
+  expect(task.list_id).toBe(lists[0].id);
+});
+
 test("今日快速添加、改期、一键完成与撤销", async ({ page }) => {
   await login(page);
   await page.getByLabel("快速添加任务").fill("买牛奶");
