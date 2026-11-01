@@ -72,6 +72,22 @@ nav a.active {
   background: #eaf1e9;
   font-weight: 650;
 }
+.nav-count {
+  display: inline-block;
+  min-width: 18px;
+  margin-left: 8px;
+  padding: 0 6px;
+  border-radius: 9px;
+  background: #eef2ec;
+  color: #4f6b5d;
+  font-size: 11px;
+  line-height: 18px;
+  text-align: center;
+}
+.nav-count.danger {
+  background: #fdecec;
+  color: #cf1322;
+}
 .account {
   margin-top: auto;
   font-size: 13px;
@@ -116,6 +132,15 @@ header {
   justify-content: space-between;
   align-items: flex-start;
   gap: 12px;
+}
+.card-heading-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+}
+.card-heading-main h3 {
+  margin: 0;
 }
 .meta {
   font-size: 12px;

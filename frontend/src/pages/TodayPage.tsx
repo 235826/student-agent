@@ -6,6 +6,7 @@ import {
   App,
   Button,
   Checkbox,
+  Dropdown,
   Empty,
   Form,
   Input,
@@ -21,22 +22,7 @@ import { api, type Plan, type Event, type Task, type Profile } from "../api";
 import { displayTime } from "../time";
 import { withFrom } from "../navigation";
 import { eventTypeLabel, priorityLabel, staleInfo } from "../semantics";
-
-function taskBody(task: Task, status = task.status) {
-  return {
-    title: task.title,
-    description: task.description,
-    status,
-    priority: task.priority,
-    deadline_at: task.deadline_at,
-    estimate_minutes: task.estimate_minutes,
-    task_type: task.task_type,
-    parent_id: task.parent_id,
-    predecessor_ids: task.predecessor_ids,
-    parallel_policy: task.parallel_policy,
-    confirm_impact: false,
-  };
-}
+import { deadlineLabel, quickDeadlineOptions } from "../tasks";
 
 export default function TodayPage({ profile }: { profile: Profile }) {
   const client = useQueryClient();
@@ -66,14 +52,59 @@ export default function TodayPage({ profile }: { profile: Profile }) {
     },
     onError: (e) => void message.error(e.message),
   });
-  const complete = useMutation({
-    mutationFn: (task: Task) =>
-      api(`/tasks/${task.id}`, "PUT", taskBody(task, "done")),
+  const refreshTasks = () => {
+    void client.invalidateQueries({ queryKey: ["tasks"] });
+    void client.invalidateQueries({ queryKey: ["plans"] });
+  };
+  const reopen = useMutation({
+    mutationFn: (task: Task) => api(`/tasks/${task.id}/reopen`, "POST"),
     onSuccess: () => {
+      refreshTasks();
+      void message.success("任务已恢复为待办");
+    },
+    onError: (e) => void message.error(e.message),
+  });
+  const complete = useMutation({
+    mutationFn: (task: Task) => api(`/tasks/${task.id}/complete`, "POST"),
+    onSuccess: (_data, task) => {
       setCompleting(null);
-      void client.invalidateQueries({ queryKey: ["tasks"] });
-      void client.invalidateQueries({ queryKey: ["plans"] });
-      void message.success("任务已完成");
+      refreshTasks();
+      message.open({
+        type: "success",
+        duration: 8,
+        content: (
+          <Space wrap>
+            <span>已完成“{task.title}”</span>
+            <Button
+              type="link"
+              size="small"
+              onClick={() => reopen.mutate(task)}
+            >
+              撤销
+            </Button>
+          </Space>
+        ),
+      });
+    },
+    onError: (e) => void message.error(e.message),
+  });
+  const setDeadline = useMutation({
+    mutationFn: ({
+      task,
+      deadline_at,
+      deadline_all_day,
+    }: {
+      task: Task;
+      deadline_at: string | null;
+      deadline_all_day: boolean;
+    }) =>
+      api(`/tasks/${task.id}/deadline`, "PATCH", {
+        deadline_at,
+        deadline_all_day,
+      }),
+    onSuccess: () => {
+      refreshTasks();
+      void message.success("截止时间已更新");
     },
     onError: (e) => void message.error(e.message),
   });
@@ -114,6 +145,11 @@ export default function TodayPage({ profile }: { profile: Profile }) {
     .sort((a, b) =>
       (a.deadline_at ?? "9999").localeCompare(b.deadline_at ?? "9999"),
     );
+  const overdueTasks = todayTasks.filter(
+    (t) => t.deadline_at && DateTime.fromISO(t.deadline_at) < now,
+  );
+  const overdueIds = new Set(overdueTasks.map((t) => t.id));
+  const dueToday = todayTasks.filter((t) => !overdueIds.has(t.id));
   const todayIds = new Set(todayTasks.map((t) => t.id));
   const upcoming = active
     .filter((t) => !todayIds.has(t.id))
@@ -136,6 +172,7 @@ export default function TodayPage({ profile }: { profile: Profile }) {
     .sort((a, b) => a.start_at.localeCompare(b.start_at));
   const stale = plan.data ? staleInfo(plan.data) : null;
   const error = plan.error ?? events.error ?? tasks.error;
+  const deadlineOptions = quickDeadlineOptions(now);
   const taskLine = (task: Task) => {
     const deadline = task.deadline_at
       ? DateTime.fromISO(task.deadline_at).setZone(profile.timezone)
@@ -146,14 +183,7 @@ export default function TodayPage({ profile }: { profile: Profile }) {
         <Checkbox
           aria-label={`完成 ${task.title}`}
           checked={false}
-          onChange={() => {
-            completeForm.resetFields();
-            completeForm.setFieldsValue({
-              actual_minutes: task.estimate_minutes ?? undefined,
-              cause: "unknown",
-            });
-            setCompleting(task);
-          }}
+          onChange={() => complete.mutate(task)}
         />
         <div className="task-row-main">
           <Link to={withFrom(`/tasks/${task.id}`, "/")}>{task.title}</Link>
@@ -161,13 +191,54 @@ export default function TodayPage({ profile }: { profile: Profile }) {
             {deadline ? (
               <span className={overdue ? "danger-text" : ""}>
                 {overdue ? "已逾期 · " : "截止 · "}
-                {deadline.toFormat("MM-dd HH:mm")}
+                {deadlineLabel(
+                  task.deadline_at,
+                  task.deadline_all_day,
+                  profile.timezone,
+                )}
               </span>
             ) : (
               <span>未设置截止时间</span>
             )}
             <span>{priorityLabel(task.priority)}</span>
             {task.status === "in_progress" && <Tag color="blue">进行中</Tag>}
+            <Dropdown
+              menu={{
+                items: deadlineOptions.map(({ key, label }) => ({
+                  key,
+                  label,
+                })),
+                onClick: ({ key }) => {
+                  const option = deadlineOptions.find(
+                    (item) => item.key === key,
+                  );
+                  if (option)
+                    setDeadline.mutate({
+                      task,
+                      deadline_at: option.deadline_at,
+                      deadline_all_day: option.deadline_all_day,
+                    });
+                },
+              }}
+            >
+              <Button type="text" size="small">
+                改期
+              </Button>
+            </Dropdown>
+            <Button
+              type="text"
+              size="small"
+              onClick={() => {
+                completeForm.resetFields();
+                completeForm.setFieldsValue({
+                  actual_minutes: task.estimate_minutes ?? undefined,
+                  cause: "unknown",
+                });
+                setCompleting(task);
+              }}
+            >
+              记录用时
+            </Button>
           </div>
         </div>
       </div>
@@ -219,13 +290,22 @@ export default function TodayPage({ profile }: { profile: Profile }) {
         <Spin />
       ) : (
         <>
+          {overdueTasks.length > 0 && (
+            <section className="today-block">
+              <div className="section-heading">
+                <h2>逾期</h2>
+                <span className="muted">{overdueTasks.length} 项</span>
+              </div>
+              {overdueTasks.map(taskLine)}
+            </section>
+          )}
           <section className="today-block">
             <div className="section-heading">
               <h2>今天要做</h2>
-              <span className="muted">{todayTasks.length} 项</span>
+              <span className="muted">{dueToday.length} 项</span>
             </div>
-            {todayTasks.length ? (
-              todayTasks.map(taskLine)
+            {dueToday.length ? (
+              dueToday.map(taskLine)
             ) : (
               <Empty
                 image={Empty.PRESENTED_IMAGE_SIMPLE}

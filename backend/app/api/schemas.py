@@ -92,6 +92,7 @@ class TaskInput(Schema):
     status: Status = "todo"
     priority: Annotated[int, Field(ge=1, le=4)] = 2
     deadline_at: datetime | None = None
+    deadline_all_day: bool = False
     estimate_minutes: Annotated[int, Field(gt=0, le=100000)] | None = None
     task_type: Annotated[str, Field(min_length=1, max_length=100)] | None = None
     parent_id: str | None = None
@@ -114,9 +115,22 @@ class TaskOut(TaskInput):
     child_ids: list[str]
     blocked_by: list[str]
     deadline_at: Timestamp | None
+    completed_at: Timestamp | None
     trashed_at: Timestamp | None
     created_at: Timestamp
     updated_at: Timestamp
+
+
+class DeadlineInput(Schema):
+    deadline_at: datetime | None = None
+    deadline_all_day: bool = False
+
+    @field_validator("deadline_at")
+    @classmethod
+    def aware(cls, value: datetime | None) -> datetime | None:
+        if value is not None and value.utcoffset() is None:
+            raise ValueError("截止时间必须包含 UTC 偏移")
+        return value
 
 
 Color = Annotated[str, Field(pattern=r"^#[0-9a-fA-F]{6}$")]

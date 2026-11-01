@@ -28,10 +28,7 @@ test("账号、任务、事件、设置和手机布局闭环", async ({ page }, 
     page.getByRole("heading", { name: `${title}-已编辑` }),
   ).toBeVisible();
   await card.getByRole("button", { name: "移入垃圾箱" }).click();
-  await page
-    .getByRole("dialog")
-    .getByRole("button", { name: /^确\s*定$/ })
-    .click();
+  await expect(page.getByText("已移入垃圾箱")).toBeVisible();
   await expect(
     page.getByRole("heading", { name: `${title}-已编辑` }),
   ).not.toBeVisible();

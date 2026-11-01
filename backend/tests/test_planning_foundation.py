@@ -30,6 +30,7 @@ def update_task(client, record, **kwargs):
         "status",
         "priority",
         "deadline_at",
+        "deadline_all_day",
         "estimate_minutes",
         "task_type",
         "parent_id",
@@ -194,6 +195,53 @@ def test_dependencies_cycles_states_and_impact(authenticated):
     assert update_task(c, a, status="cancelled", confirm_impact=True).status_code == 200
     assert update_task(c, a, status="done").status_code == 200
     assert update_task(c, b, status="in_progress").status_code == 200
+
+
+def test_quick_complete_reopen_and_all_day_deadline(authenticated):
+    c = authenticated
+    record = task(
+        c,
+        "写作业",
+        deadline_at="2026-11-02T23:59:00+08:00",
+        deadline_all_day=True,
+    )
+    assert record["deadline_all_day"] is True
+    assert record["completed_at"] is None
+
+    done = c.post(f"/api/v1/tasks/{record['id']}/complete")
+    assert done.status_code == 200, done.text
+    done_task = done.json()
+    assert done_task["status"] == "done"
+    assert done_task["completed_at"] is not None
+    first_completed_at = done_task["completed_at"]
+    assert c.post(f"/api/v1/tasks/{record['id']}/complete").json()["completed_at"] == (
+        first_completed_at
+    )
+
+    reopened = c.post(f"/api/v1/tasks/{record['id']}/reopen").json()
+    assert reopened["status"] == "todo"
+    assert reopened["completed_at"] is None
+
+    deadline = c.patch(
+        f"/api/v1/tasks/{record['id']}/deadline",
+        json={"deadline_at": "2026-11-02T23:59:00+08:00", "deadline_all_day": True},
+    )
+    assert deadline.status_code == 200, deadline.text
+    assert deadline.json()["deadline_all_day"] is True
+    assert deadline.json()["deadline_at"] == "2026-11-02T15:59:00Z"
+    cleared = c.patch(f"/api/v1/tasks/{record['id']}/deadline", json={"deadline_at": None}).json()
+    assert cleared["deadline_at"] is None and cleared["deadline_all_day"] is False
+    assert (
+        c.patch(
+            f"/api/v1/tasks/{record['id']}/deadline",
+            json={"deadline_at": "2026-11-02T23:59:00"},
+        ).status_code
+        == 422
+    )
+
+    predecessor = task(c, "前置")
+    blocked = task(c, "后续", predecessor_ids=[predecessor["id"]])
+    assert c.post(f"/api/v1/tasks/{blocked['id']}/complete").status_code == 409
 
 
 def test_parent_cycles_do_not_cascade_delete(authenticated):

@@ -258,21 +258,44 @@ test("今日新建事件继承日期并在表单内联新建课程", async ({ pa
   ).toBeVisible();
 });
 
-test("今日快速添加并完成任务", async ({ page }) => {
+test("今日快速添加、改期、一键完成与撤销", async ({ page }) => {
   await login(page);
   await page.getByLabel("快速添加任务").fill("买牛奶");
   await page.getByLabel("快速添加任务").press("Enter");
-  await expect(page.getByRole("link", { name: "买牛奶", exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "买牛奶", exact: true }),
+  ).toBeVisible();
+
+  await page.getByRole("button", { name: "改期", exact: true }).click();
+  await page.getByText("明天", { exact: true }).click();
+  await expect(page.getByText("截止时间已更新")).toBeVisible();
+  let tasks = await (await page.request.get("/api/v1/tasks")).json();
+  let task = tasks.find((item: { title: string }) => item.title === "买牛奶");
+  expect(task.deadline_all_day).toBe(true);
+
   await page.getByLabel("完成 买牛奶").click();
-  await page.getByLabel("实际用了多少分钟").fill("15");
-  await page.getByRole("button", { name: "完成并记录" }).click();
-  await expect(page.getByText("任务已完成，实际耗时已记录")).toBeVisible();
+  await expect(page.getByText("已完成“买牛奶”")).toBeVisible();
   await expect(
     page.getByRole("link", { name: "买牛奶", exact: true }),
   ).not.toBeVisible();
-  const tasks = await (await page.request.get("/api/v1/tasks")).json();
-  const task = tasks.find((item: { title: string }) => item.title === "买牛奶");
+  tasks = await (await page.request.get("/api/v1/tasks")).json();
+  task = tasks.find((item: { title: string }) => item.title === "买牛奶");
   expect(task.status).toBe("done");
+  expect(task.completed_at).not.toBeNull();
+
+  await page.getByRole("button", { name: "撤销" }).click();
+  await expect(
+    page.getByRole("link", { name: "买牛奶", exact: true }),
+  ).toBeVisible();
+
+  await page.getByRole("button", { name: "记录用时" }).click();
+  await page.getByLabel("实际用了多少分钟").fill("15");
+  await page.getByRole("button", { name: "完成并记录" }).click();
+  await expect(page.getByText("任务已完成，实际耗时已记录")).toBeVisible();
+  tasks = await (await page.request.get("/api/v1/tasks")).json();
+  task = tasks.find((item: { title: string }) => item.title === "买牛奶");
+  expect(task.status).toBe("done");
+  expect(task.completed_at).not.toBeNull();
   const logs = await (
     await page.request.get(`/api/v1/tasks/${task.id}/worklogs`)
   ).json();

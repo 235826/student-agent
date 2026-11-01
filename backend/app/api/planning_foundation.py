@@ -13,6 +13,7 @@ from app.api.schemas import (
     ConfirmInput,
     CourseInput,
     CourseOut,
+    DeadlineInput,
     DraftInput,
     DraftOut,
     DraftUpdate,
@@ -61,6 +62,7 @@ from app.modules.security import DB, UserDep
 from app.modules.task_management import (
     apply_task,
     require_impact_confirmation,
+    task_input,
     task_view,
     validate_links,
 )
@@ -106,11 +108,45 @@ def trash_task(task_id: str, db: DB, user: UserDep, confirm_impact: bool = False
 def restore_task(task_id: str, db: DB, user: UserDep) -> TaskOut:
     task = owned(db, Task, task_id, user)
     if task.trashed_at is not None:
-        view = task_view(db, task)
-        body = TaskInput.model_validate({k: getattr(view, k) for k in TaskInput.model_fields})
-        validate_links(db, user, body, task, restoring=True)
+        validate_links(db, user, task_input(db, task), task, restoring=True)
         task.trashed_at = None
         record_change(db, user, "task.restore", task)
+    return task_view(db, task)
+
+
+def active_task(db: Session, user: User, task_id: str) -> Task:
+    task = owned(db, Task, task_id, user)
+    if task.trashed_at is not None:
+        raise HTTPException(409, "请先恢复垃圾箱中的任务")
+    return task
+
+
+@router.post("/tasks/{task_id}/complete", response_model=TaskOut)
+def complete_task(task_id: str, db: DB, user: UserDep) -> TaskOut:
+    task = active_task(db, user, task_id)
+    if task.status != "done":
+        body = task_input(db, task).model_copy(update={"status": "done"})
+        apply_task(db, user, body, task)
+        record_change(db, user, "task.complete", task)
+    return task_view(db, task)
+
+
+@router.post("/tasks/{task_id}/reopen", response_model=TaskOut)
+def reopen_task(task_id: str, db: DB, user: UserDep) -> TaskOut:
+    task = active_task(db, user, task_id)
+    if task.status != "todo":
+        body = task_input(db, task).model_copy(update={"status": "todo"})
+        apply_task(db, user, body, task)
+        record_change(db, user, "task.reopen", task)
+    return task_view(db, task)
+
+
+@router.patch("/tasks/{task_id}/deadline", response_model=TaskOut)
+def update_deadline(task_id: str, body: DeadlineInput, db: DB, user: UserDep) -> TaskOut:
+    task = active_task(db, user, task_id)
+    task.deadline_at = int(body.deadline_at.timestamp() * 1000) if body.deadline_at else None
+    task.deadline_all_day = body.deadline_all_day if body.deadline_at else False
+    record_change(db, user, "task.deadline", task)
     return task_view(db, task)
 
 
@@ -163,6 +199,14 @@ def add_worklog(task_id: str, body: WorkLogInput, db: DB, user: UserDep) -> Work
     db.flush()
     record_change(db, user, "worklog.create", log)
     if body.complete:
+        if task.status != "done":
+            validate_links(
+                db,
+                user,
+                task_input(db, task).model_copy(update={"status": "done"}),
+                task,
+            )
+            task.completed_at = now_ms()
         task.status = "done"
         record_change(db, user, "task.complete", task)
     return WorkLogOut.model_validate(log)

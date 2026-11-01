@@ -15,6 +15,8 @@ import {
   App,
   Button,
   Card,
+  Checkbox,
+  Dropdown,
   Empty,
   Form,
   Input,
@@ -25,10 +27,17 @@ import {
   Spin,
   Tag,
 } from "antd";
+import { DateTime } from "luxon";
 import { api } from "../api";
 import type { Draft, Profile, Task, TaskInput } from "../api";
-import { displayTime, toInstant, toLocal } from "../time";
+import { displayTime, toLocal } from "../time";
 import { priorities, priorityLabel } from "../semantics";
+import {
+  deadlineInstant,
+  deadlineLabel,
+  quickDeadlineOptions,
+  toTaskInput,
+} from "../tasks";
 
 const states = [
   { value: "todo", label: "待开始" },
@@ -117,10 +126,99 @@ export default function TasksPage({ profile }: { profile: Profile }) {
       }
     },
   });
-  const trashWrite = useMutation(writeOptions);
   const publishWrite = useMutation(writeOptions);
   const draftDelete = useMutation(writeOptions);
-  const restoreWrite = useMutation(writeOptions);
+  const refresh = () => {
+    void client.invalidateQueries({ queryKey: ["tasks"] });
+    void client.invalidateQueries({ queryKey: ["drafts"] });
+    void client.invalidateQueries({ queryKey: ["plans"] });
+  };
+  const reopen = useMutation({
+    mutationFn: (task: Task) => api(`/tasks/${task.id}/reopen`, "POST"),
+    onSuccess: () => {
+      refresh();
+      void message.success("任务已恢复为待办");
+    },
+    onError: (e: unknown) => void message.error(errorText(e)),
+  });
+  const complete = useMutation({
+    mutationFn: (task: Task) => api(`/tasks/${task.id}/complete`, "POST"),
+    onSuccess: (_data, task) => {
+      refresh();
+      message.open({
+        type: "success",
+        duration: 8,
+        content: (
+          <Space wrap>
+            <span>已完成“{task.title}”</span>
+            <Button
+              type="link"
+              size="small"
+              onClick={() => reopen.mutate(task)}
+            >
+              撤销
+            </Button>
+          </Space>
+        ),
+      });
+    },
+    onError: (e: unknown) => void message.error(errorText(e)),
+  });
+  const setDeadline = useMutation({
+    mutationFn: ({
+      task,
+      deadline_at,
+      deadline_all_day,
+    }: {
+      task: Task;
+      deadline_at: string | null;
+      deadline_all_day: boolean;
+    }) =>
+      api(`/tasks/${task.id}/deadline`, "PATCH", {
+        deadline_at,
+        deadline_all_day,
+      }),
+    onSuccess: () => {
+      refresh();
+      void message.success("截止时间已更新");
+    },
+    onError: (e: unknown) => void message.error(errorText(e)),
+  });
+  const restoreTask = useMutation({
+    mutationFn: (task: Task) => api(`/tasks/${task.id}/restore`, "POST"),
+    onSuccess: () => {
+      refresh();
+      void message.success("任务已恢复");
+    },
+    onError: (e: unknown) => void message.error(errorText(e)),
+  });
+  const trashTask = useMutation({
+    mutationFn: ({ task, confirmed }: { task: Task; confirmed?: boolean }) =>
+      api(
+        `/tasks/${task.id}/trash${confirmed ? "?confirm_impact=true" : ""}`,
+        "POST",
+      ),
+    onSuccess: (_data, { task }) => {
+      refresh();
+      message.open({
+        type: "success",
+        duration: 8,
+        content: (
+          <Space wrap>
+            <span>已移入垃圾箱</span>
+            <Button
+              type="link"
+              size="small"
+              onClick={() => restoreTask.mutate(task)}
+            >
+              撤销
+            </Button>
+          </Space>
+        ),
+      });
+    },
+    onError: (e: unknown) => void message.error(errorText(e)),
+  });
   const catalog = [...(tasks.data ?? []), ...(trash.data ?? [])];
   const titleOf = (id: string) =>
     catalog.find((t) => t.id === id)?.title ?? "不可用任务";
@@ -137,6 +235,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
       parent_id: payload?.parent_id ?? undefined,
       parallel_policy: payload?.parallel_policy ?? "inherit",
       deadline_at: toLocal(payload?.deadline_at, profile.timezone),
+      deadline_all_day: payload?.deadline_all_day ?? false,
     });
     setEditor(next);
   };
@@ -149,9 +248,17 @@ export default function TasksPage({ profile }: { profile: Profile }) {
       if (asDraft) form.setFields([{ name: "title", errors: [] }]);
       const values = await form.validateFields();
       const body: TaskInput = {
+        ...(editor?.kind === "task" && editor.task
+          ? toTaskInput(editor.task)
+          : {}),
         ...values,
         title: values.title?.trim() ?? "",
-        deadline_at: toInstant(values.deadline_at ?? "", profile.timezone),
+        deadline_at: deadlineInstant(
+          values.deadline_at ?? "",
+          values.deadline_all_day ?? false,
+          profile.timezone,
+        ),
+        deadline_all_day: values.deadline_all_day ?? false,
         task_type: values.task_type?.trim() || null,
         estimate_minutes: values.estimate_minutes ?? null,
         parent_id: values.parent_id ?? null,
@@ -201,22 +308,15 @@ export default function TasksPage({ profile }: { profile: Profile }) {
     }
   };
   const remove = (task: Task) => {
-    const path = `/tasks/${task.id}/trash`;
     if (task.dependent_ids.length || task.child_ids.length)
       modal.confirm({
         title: "确认移入垃圾箱",
         content:
           "子任务和依赖不会被删除。后续任务会标记前置任务不可用：" +
           [...task.dependent_ids, ...task.child_ids].map(titleOf).join("、"),
-        onOk: () =>
-          trashWrite.mutateAsync({ path: path + "?confirm_impact=true" }),
+        onOk: () => trashTask.mutate({ task, confirmed: true }),
       });
-    else
-      modal.confirm({
-        title: "确认移入垃圾箱",
-        content: "任务将停止参与排程，可从垃圾箱恢复。",
-        onOk: () => trashWrite.mutateAsync({ path }),
-      });
+    else trashTask.mutate({ task });
   };
   const publish = (draft: Draft) =>
     modal.confirm({
@@ -453,9 +553,26 @@ export default function TasksPage({ profile }: { profile: Profile }) {
                     )}
                   <Card className="task-card">
                     <div className="card-heading">
-                      <h3>
-                        <Link to={`/tasks/${task.id}`}>{task.title}</Link>
-                      </h3>
+                      <div className="card-heading-main">
+                        {!task.trashed_at && (
+                          <Checkbox
+                            aria-label={
+                              task.status === "done"
+                                ? `恢复 ${task.title}`
+                                : `完成 ${task.title}`
+                            }
+                            checked={task.status === "done"}
+                            disabled={task.status === "cancelled"}
+                            onChange={(e) => {
+                              if (task.status === "done") reopen.mutate(task);
+                              else if (e.target.checked) complete.mutate(task);
+                            }}
+                          />
+                        )}
+                        <h3>
+                          <Link to={`/tasks/${task.id}`}>{task.title}</Link>
+                        </h3>
+                      </div>
                       <Tag color={task.status === "done" ? "green" : "default"}>
                         {states.find((s) => s.value === task.status)?.label}
                       </Tag>
@@ -501,21 +618,24 @@ export default function TasksPage({ profile }: { profile: Profile }) {
                       />
                     )}
                     <div className="meta">
-                      截止：{displayTime(task.deadline_at, profile.timezone)} ·
-                      预计 {task.estimate_minutes ?? "—"} 分钟 ·{" "}
+                      截止：
+                      {deadlineLabel(
+                        task.deadline_at,
+                        task.deadline_all_day,
+                        profile.timezone,
+                      )}{" "}
+                      · 预计 {task.estimate_minutes ?? "—"} 分钟 ·{" "}
                       {priorityLabel(task.priority)}
+                      {task.completed_at &&
+                        ` · 完成于 ${displayTime(task.completed_at, profile.timezone)}`}
                     </div>
                     <Space wrap>
                       {task.trashed_at ? (
                         <Button
-                          onClick={() =>
-                            restoreWrite.mutate({
-                              path: `/tasks/${task.id}/restore`,
-                            })
-                          }
+                          onClick={() => restoreTask.mutate(task)}
                           loading={
-                            restoreWrite.isPending &&
-                            restoreWrite.variables?.path.includes(task.id)
+                            restoreTask.isPending &&
+                            restoreTask.variables?.id === task.id
                           }
                         >
                           恢复任务
@@ -526,11 +646,34 @@ export default function TasksPage({ profile }: { profile: Profile }) {
                           <Button onClick={() => open({ kind: "task", task })}>
                             编辑
                           </Button>
+                          <Dropdown
+                            disabled={["done", "cancelled"].includes(
+                              task.status,
+                            )}
+                            menu={{
+                              items: quickDeadlineOptions(
+                                DateTime.now().setZone(profile.timezone),
+                              ).map(({ key, label }) => ({ key, label })),
+                              onClick: ({ key }) => {
+                                const option = quickDeadlineOptions(
+                                  DateTime.now().setZone(profile.timezone),
+                                ).find((item) => item.key === key);
+                                if (option)
+                                  setDeadline.mutate({
+                                    task,
+                                    deadline_at: option.deadline_at,
+                                    deadline_all_day: option.deadline_all_day,
+                                  });
+                              },
+                            }}
+                          >
+                            <Button>改期</Button>
+                          </Dropdown>
                           <Button
                             danger
                             disabled={
-                              trashWrite.isPending &&
-                              trashWrite.variables?.path.includes(task.id)
+                              trashTask.isPending &&
+                              trashTask.variables?.task.id === task.id
                             }
                             onClick={() => remove(task)}
                           >
@@ -596,6 +739,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
             status: "todo",
             priority: 2,
             parallel_policy: "inherit",
+            deadline_all_day: false,
           }}
         >
           <Form.Item
@@ -622,6 +766,13 @@ export default function TasksPage({ profile }: { profile: Profile }) {
             label={`截止时间（${profile.timezone}）`}
           >
             <Input type="datetime-local" />
+          </Form.Item>
+          <Form.Item
+            name="deadline_all_day"
+            valuePropName="checked"
+            extra="仅显示日期，不展示具体时刻；清除截止时间时自动关闭。"
+          >
+            <Checkbox>仅日期（全天）</Checkbox>
           </Form.Item>
           <Form.Item name="estimate_minutes" label="预计用时（分钟，可留空）">
             <InputNumber min={1} max={100000} precision={0} />

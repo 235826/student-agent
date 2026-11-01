@@ -69,8 +69,10 @@ class Task(Owned, Base):
     status: Mapped[str] = mapped_column(default="todo", index=True)
     priority: Mapped[int] = mapped_column(default=2)
     deadline_at: Mapped[int | None] = mapped_column(BigInteger, index=True)
+    deadline_all_day: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
     estimate_minutes: Mapped[int | None]
     task_type: Mapped[str | None]
+    completed_at: Mapped[int | None] = mapped_column(BigInteger, index=True)
     trashed_at: Mapped[int | None] = mapped_column(BigInteger, index=True)
     parent_id: Mapped[str | None] = mapped_column(ForeignKey("tasks.id"), index=True)
     parallel_policy: Mapped[str | None]

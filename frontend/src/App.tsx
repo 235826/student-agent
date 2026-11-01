@@ -11,7 +11,15 @@ import {
 } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Alert, Button, Spin, Result } from "antd";
-import { api, ApiError, setCsrf, type Auth, type Profile } from "./api";
+import { DateTime } from "luxon";
+import {
+  api,
+  ApiError,
+  setCsrf,
+  type Auth,
+  type Profile,
+  type Task,
+} from "./api";
 import Login from "./pages/Login";
 import TodayPage from "./pages/TodayPage";
 import SettingsPage from "./pages/SettingsPage";
@@ -80,6 +88,11 @@ export default function App() {
     queryFn: () => api<{ initialized: boolean }>("/auth/status"),
     enabled: me.error instanceof ApiError && me.error.status === 401,
   });
+  const tasks = useQuery({
+    queryKey: ["tasks", false],
+    queryFn: () => api<Task[]>("/tasks"),
+    enabled: !!me.data,
+  });
   const logout = useMutation({
     mutationFn: () => api("/auth/logout", "POST"),
     onSuccess: async () => {
@@ -133,19 +146,36 @@ export default function App() {
     );
   }
   const profile = me.data.user;
+  const now = DateTime.now().setZone(profile.timezone);
+  const tomorrow = now.startOf("day").plus({ days: 1 });
+  const activeTasks = (tasks.data ?? []).filter(
+    (task) => !["done", "cancelled"].includes(task.status),
+  );
+  const todayCount = activeTasks.filter(
+    (task) =>
+      task.status === "in_progress" ||
+      (task.deadline_at &&
+        DateTime.fromISO(task.deadline_at).setZone(profile.timezone) <
+          tomorrow),
+  ).length;
+  const overdueCount = activeTasks.filter(
+    (task) =>
+      task.deadline_at &&
+      DateTime.fromISO(task.deadline_at).setZone(profile.timezone) < now,
+  ).length;
   const nav = [
-    ["/", "今日"],
-    ["/tasks", "任务"],
-    ["/calendar", "日历"],
-    ["/inbox", "收件箱"],
-  ];
+    ["/", "今日", todayCount],
+    ["/tasks", "任务", overdueCount],
+    ["/calendar", "日历", 0],
+    ["/inbox", "收件箱", 0],
+  ] as const;
   return (
     <div className="shell">
       <aside>
         <div className="brand">STUDENT AGENT</div>
         <div className="brand-sub">你的学习安排</div>
         <nav>
-          {nav.map(([path, label]) => (
+          {nav.map(([path, label, count]) => (
             <NavLink
               end={path === "/"}
               to={path}
@@ -159,6 +189,15 @@ export default function App() {
               }
             >
               {label}
+              {count > 0 && (
+                <span
+                  className={
+                    path === "/tasks" ? "nav-count danger" : "nav-count"
+                  }
+                >
+                  {count}
+                </span>
+              )}
             </NavLink>
           ))}
         </nav>

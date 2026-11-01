@@ -5,7 +5,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.api.schemas import TaskInput, TaskOut
-from app.db.models import Task, TaskDependency, User
+from app.db.models import Task, TaskDependency, User, now_ms
 from app.modules.records import owned
 
 
@@ -64,6 +64,11 @@ def task_view(db: Session, task: Task) -> TaskOut:
     return TaskOut.model_validate(data)
 
 
+def task_input(db: Session, task: Task) -> TaskInput:
+    view = task_view(db, task)
+    return TaskInput.model_validate({k: getattr(view, k) for k in TaskInput.model_fields})
+
+
 def validate_links(
     db: Session, user: User, body: TaskInput, task: Task | None = None, *, restoring: bool = False
 ) -> None:
@@ -112,16 +117,24 @@ def apply_task(db: Session, user: User, body: TaskInput, task: Task | None = Non
     if task and body.status == "cancelled" and task.status != "cancelled":
         require_impact_confirmation(db, task, body.confirm_impact)
     data = body.model_dump(exclude={"predecessor_ids", "confirm_impact"})
-    if body.deadline_at:
-        data["deadline_at"] = int(body.deadline_at.timestamp() * 1000)
+    data["deadline_at"] = int(body.deadline_at.timestamp() * 1000) if body.deadline_at else None
+    if not body.deadline_at:
+        data["deadline_all_day"] = False
     if task is None:
         task = Task(workspace_id=user.workspace_id, **data)
+        if body.status == "done":
+            task.completed_at = now_ms()
         db.add(task)
     else:
+        previous_status = task.status
         if task.parallel_policy != body.parallel_policy:
             task.policy_revision += 1
         for key, value in data.items():
             setattr(task, key, value)
+        if body.status == "done" and previous_status != "done":
+            task.completed_at = now_ms()
+        elif body.status != "done":
+            task.completed_at = None
     db.flush()
     db.execute(delete(TaskDependency).where(TaskDependency.successor_task_id == task.id))
     for predecessor_id in body.predecessor_ids:
