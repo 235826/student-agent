@@ -70,6 +70,7 @@ export default function EventsPage({ profile }: { profile: Profile }) {
     label: "返回日历",
   });
   const setWeek = (day: string) => {
+    if (!weekParam && day === week) return;
     const next = new URLSearchParams(params);
     next.set("week", day);
     setParams(next, { replace: true });
