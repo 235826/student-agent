@@ -19,6 +19,7 @@ from app.api.schemas import (
     DraftUpdate,
     EventOut,
     EventPolicyInput,
+    FlagInput,
     PolicyInput,
     PublishInput,
     RuleInput,
@@ -252,6 +253,14 @@ def update_deadline(task_id: str, body: DeadlineInput, db: DB, user: UserDep) ->
     task.deadline_at = int(body.deadline_at.timestamp() * 1000) if body.deadline_at else None
     task.deadline_all_day = body.deadline_all_day if body.deadline_at else False
     record_change(db, user, "task.deadline", task)
+    return task_view(db, task)
+
+
+@router.patch("/tasks/{task_id}/flag", response_model=TaskOut)
+def update_flag(task_id: str, body: FlagInput, db: DB, user: UserDep) -> TaskOut:
+    task = active_task(db, user, task_id)
+    task.flagged = body.flagged
+    record_change(db, user, "task.flag", task, scheduling=False)
     return task_view(db, task)
 
 

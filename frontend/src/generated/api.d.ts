@@ -643,6 +643,23 @@ export interface paths {
         patch: operations["update_deadline_api_v1_tasks__task_id__deadline_patch"];
         trace?: never;
     };
+    "/api/v1/tasks/{task_id}/flag": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Flag */
+        patch: operations["update_flag_api_v1_tasks__task_id__flag_patch"];
+        trace?: never;
+    };
     "/api/v1/tasks/{task_id}/parallel-policy": {
         parameters: {
             query?: never;
@@ -1162,6 +1179,11 @@ export interface components {
              * @default 2
              */
             priority: number;
+            /**
+             * Flagged
+             * @default false
+             */
+            flagged: boolean;
             /** Deadline At */
             deadline_at?: string | null;
             /**
@@ -1417,6 +1439,11 @@ export interface components {
             color: string;
             /** System Key */
             system_key?: string | null;
+        };
+        /** FlagInput */
+        FlagInput: {
+            /** Flagged */
+            flagged: boolean;
         };
         /** Health */
         Health: {
@@ -2021,6 +2048,11 @@ export interface components {
              * @default 2
              */
             priority: number;
+            /**
+             * Flagged
+             * @default false
+             */
+            flagged: boolean;
             /** Deadline At */
             deadline_at?: string | null;
             /**
@@ -2107,6 +2139,8 @@ export interface components {
              * @default 2
              */
             priority: number;
+            /** Flagged */
+            flagged: boolean;
             /** Deadline At */
             deadline_at: string | null;
             /**
@@ -6229,6 +6263,95 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["DeadlineInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    update_flag_api_v1_tasks__task_id__flag_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FlagInput"];
             };
         };
         responses: {

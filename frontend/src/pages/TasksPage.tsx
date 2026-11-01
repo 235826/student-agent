@@ -63,6 +63,7 @@ const views = [
   ["all", "全部"],
   ["today", "今天"],
   ["scheduled", "已计划"],
+  ["flagged", "已标记"],
   ["done", "已完成"],
   ["trash", "垃圾箱"],
 ] as const;
@@ -84,7 +85,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
   const client = useQueryClient();
   const { message, modal } = App.useApp();
   const [view, setView] = useState<
-    "all" | "today" | "scheduled" | "done" | "trash"
+    "all" | "today" | "scheduled" | "flagged" | "done" | "trash"
   >("all");
   const [listFilter, setListFilter] = useState("all");
   const [tagFilter, setTagFilter] = useState("all");
@@ -233,6 +234,12 @@ export default function TasksPage({ profile }: { profile: Profile }) {
     },
     onError: (e: unknown) => void message.error(errorText(e)),
   });
+  const setFlag = useMutation({
+    mutationFn: ({ task, flagged }: { task: Task; flagged: boolean }) =>
+      api(`/tasks/${task.id}/flag`, "PATCH", { flagged }),
+    onSuccess: () => refresh(),
+    onError: (e: unknown) => void message.error(errorText(e)),
+  });
   const reorder = useMutation({
     mutationFn: (task_ids: string[]) =>
       api("/tasks/reorder", "POST", { task_ids }),
@@ -292,6 +299,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
       parallel_policy: payload?.parallel_policy ?? "inherit",
       deadline_at: toLocal(payload?.deadline_at, profile.timezone),
       deadline_all_day: payload?.deadline_all_day ?? false,
+      flagged: payload?.flagged ?? false,
       tags: payload?.tags ?? [],
       list_id:
         payload?.list_id ??
@@ -416,6 +424,8 @@ export default function TasksPage({ profile }: { profile: Profile }) {
       );
     if (view === "scheduled")
       return !["done", "cancelled"].includes(task.status) && !!task.deadline_at;
+    if (view === "flagged")
+      return task.flagged && task.status !== "cancelled";
     if (view === "done") return task.status === "done";
     return true;
   };
@@ -707,7 +717,9 @@ export default function TasksPage({ profile }: { profile: Profile }) {
                           ? "今天没有要做的任务"
                           : view === "scheduled"
                             ? "还没有设置截止时间的任务"
-                            : "还没有任务，先添加一件想完成的事"
+                            : view === "flagged"
+                              ? "还没有标记的重点任务"
+                              : "还没有任务，先添加一件想完成的事"
                 }
               />
             </Card>
@@ -899,6 +911,29 @@ export default function TasksPage({ profile }: { profile: Profile }) {
                         </Button>
                       ) : (
                         <>
+                          <Button
+                            type="text"
+                            className={
+                              task.flagged ? "flag-button active" : "flag-button"
+                            }
+                            aria-label={
+                              task.flagged
+                                ? `取消标记 ${task.title}`
+                                : `标记 ${task.title}`
+                            }
+                            loading={
+                              setFlag.isPending &&
+                              setFlag.variables?.task.id === task.id
+                            }
+                            onClick={() =>
+                              setFlag.mutate({
+                                task,
+                                flagged: !task.flagged,
+                              })
+                            }
+                          >
+                            {task.flagged ? "★" : "☆"}
+                          </Button>
                           <SourceButton objectId={task.id} />
                           <Button onClick={() => open({ kind: "task", task })}>
                             编辑
@@ -999,6 +1034,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
             title: "",
             status: "todo",
             priority: 2,
+            flagged: false,
             parallel_policy: "inherit",
             deadline_all_day: false,
           }}
@@ -1022,6 +1058,9 @@ export default function TasksPage({ profile }: { profile: Profile }) {
               <Select options={priorities} />
             </Form.Item>
           </div>
+          <Form.Item name="flagged" valuePropName="checked">
+            <Checkbox>标记为重点</Checkbox>
+          </Form.Item>
           <Form.Item
             name="deadline_at"
             label={`截止时间（${profile.timezone}）`}

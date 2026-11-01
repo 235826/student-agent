@@ -92,6 +92,7 @@ class TaskInput(Schema):
     description: Annotated[str, Field(max_length=20000)] = ""
     status: Status = "todo"
     priority: Annotated[int, Field(ge=1, le=4)] = 2
+    flagged: bool = False
     deadline_at: datetime | None = None
     deadline_all_day: bool = False
     estimate_minutes: Annotated[int, Field(gt=0, le=100000)] | None = None
@@ -118,6 +119,7 @@ class TaskOut(TaskInput):
     child_ids: list[str]
     blocked_by: list[str]
     tags: list[str]
+    flagged: bool
     sort_order: int
     deadline_at: Timestamp | None
     completed_at: Timestamp | None
@@ -128,6 +130,10 @@ class TaskOut(TaskInput):
 
 class TaskOrderInput(Schema):
     task_ids: list[str] = Field(min_length=1, max_length=1000)
+
+
+class FlagInput(Schema):
+    flagged: bool
 
 
 class DeadlineInput(Schema):

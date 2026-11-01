@@ -76,6 +76,7 @@ class Task(Owned, Base):
     description: Mapped[str] = mapped_column(default="")
     status: Mapped[str] = mapped_column(default="todo", index=True)
     priority: Mapped[int] = mapped_column(default=2)
+    flagged: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
     sort_order: Mapped[int] = mapped_column(default=0, server_default="0")
     list_id: Mapped[str | None] = mapped_column(
         ForeignKey("task_lists.id"), index=True, nullable=True

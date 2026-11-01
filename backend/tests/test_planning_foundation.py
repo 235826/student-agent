@@ -29,6 +29,7 @@ def update_task(client, record, **kwargs):
         "description",
         "status",
         "priority",
+        "flagged",
         "deadline_at",
         "deadline_all_day",
         "estimate_minutes",
@@ -230,6 +231,30 @@ def test_task_lists_assign_and_delete(authenticated):
         ).status_code
         == 409
     )
+
+
+def test_task_flag_toggle_and_preserve(authenticated):
+    c = authenticated
+    record = task(c, "重点任务", flagged=True)
+    assert record["flagged"] is True
+
+    off = c.patch(f"/api/v1/tasks/{record['id']}/flag", json={"flagged": False})
+    assert off.status_code == 200, off.text
+    assert off.json()["flagged"] is False
+    assert (
+        next(item for item in c.get("/api/v1/tasks").json() if item["id"] == record["id"])[
+            "flagged"
+        ]
+        is False
+    )
+
+    on = c.patch(f"/api/v1/tasks/{record['id']}/flag", json={"flagged": True})
+    assert on.status_code == 200
+    done = c.post(f"/api/v1/tasks/{record['id']}/complete")
+    assert done.status_code == 200 and done.json()["flagged"] is True
+
+    c.post(f"/api/v1/tasks/{record['id']}/trash")
+    assert c.patch(f"/api/v1/tasks/{record['id']}/flag", json={"flagged": False}).status_code == 409
 
 
 def test_task_reorder_and_new_task_appends(authenticated):

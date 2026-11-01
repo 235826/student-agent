@@ -4651,6 +4651,115 @@
         }
       }
     },
+    "/api/v1/tasks/{task_id}/flag": {
+      "patch": {
+        "summary": "Update Flag",
+        "operationId": "update_flag_api_v1_tasks__task_id__flag_patch",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Task Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FlagInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        }
+      }
+    },
     "/api/v1/tasks/{task_id}/parallel-policy": {
       "patch": {
         "summary": "Task Policy",
@@ -8073,6 +8182,11 @@
             "title": "Priority",
             "default": 2
           },
+          "flagged": {
+            "type": "boolean",
+            "title": "Flagged",
+            "default": false
+          },
           "deadline_at": {
             "anyOf": [
               {
@@ -8704,6 +8818,20 @@
           "color"
         ],
         "title": "EventTypeRef"
+      },
+      "FlagInput": {
+        "properties": {
+          "flagged": {
+            "type": "boolean",
+            "title": "Flagged"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "flagged"
+        ],
+        "title": "FlagInput"
       },
       "Health": {
         "properties": {
@@ -10105,6 +10233,11 @@
             "title": "Priority",
             "default": 2
           },
+          "flagged": {
+            "type": "boolean",
+            "title": "Flagged",
+            "default": false
+          },
           "deadline_at": {
             "anyOf": [
               {
@@ -10333,6 +10466,10 @@
             "title": "Priority",
             "default": 2
           },
+          "flagged": {
+            "type": "boolean",
+            "title": "Flagged"
+          },
           "deadline_at": {
             "anyOf": [
               {
@@ -10500,6 +10637,7 @@
         "type": "object",
         "required": [
           "title",
+          "flagged",
           "deadline_at",
           "tags",
           "predecessor_ids",

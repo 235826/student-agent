@@ -324,6 +324,36 @@ test("清单创建、任务归类、筛选与完成历史", async ({ page }) => 
   expect(task.list_id).toBe(lists[0].id);
 });
 
+test("旗标标记、已标记视图与取消标记", async ({ page }) => {
+  const headers = await login(page);
+  const response = await page.request.post("/api/v1/tasks", {
+    headers,
+    data: { title: "重点任务" },
+  });
+  expect(response.status()).toBe(201);
+  const task = await response.json();
+  await page.goto("/tasks");
+  await expect(
+    page.getByRole("heading", { name: "重点任务" }),
+  ).toBeVisible();
+
+  await page.getByLabel("标记 重点任务").click();
+  await expect(page.getByLabel("取消标记 重点任务")).toBeVisible();
+  await page.getByRole("button", { name: "已标记", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "重点任务" }),
+  ).toBeVisible();
+
+  await page.getByLabel("取消标记 重点任务").click();
+  await expect(
+    page.getByRole("heading", { name: "重点任务" }),
+  ).not.toBeVisible();
+  const tasks = await (await page.request.get("/api/v1/tasks")).json();
+  expect(
+    tasks.find((item: { id: string }) => item.id === task.id).flagged,
+  ).toBe(false);
+});
+
 test("手动排序可拖动并持久化", async ({ page }, testInfo) => {
   const headers = await login(page);
   const records = [];

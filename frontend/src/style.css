@@ -156,6 +156,14 @@ header {
 .task-card.dragging {
   opacity: 0.5;
 }
+.flag-button {
+  color: #9aa79f;
+  font-size: 16px;
+  line-height: 1;
+}
+.flag-button.active {
+  color: #d48806;
+}
 .task-list-manager {
   margin-top: 20px;
 }

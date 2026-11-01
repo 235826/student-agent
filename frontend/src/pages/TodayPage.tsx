@@ -130,6 +130,12 @@ export default function TodayPage({ profile }: { profile: Profile }) {
     },
     onError: (e) => void message.error(e.message),
   });
+  const setFlag = useMutation({
+    mutationFn: ({ task, flagged }: { task: Task; flagged: boolean }) =>
+      api(`/tasks/${task.id}/flag`, "PATCH", { flagged }),
+    onSuccess: () => refreshTasks(),
+    onError: (e) => void message.error(e.message),
+  });
   const logWork = useMutation({
     mutationFn: (values: {
       actual_minutes: number;
@@ -253,6 +259,24 @@ export default function TodayPage({ profile }: { profile: Profile }) {
                 改期
               </Button>
             </Dropdown>
+            <Button
+              type="text"
+              size="small"
+              className={task.flagged ? "flag-button active" : "flag-button"}
+              aria-label={
+                task.flagged
+                  ? `取消标记 ${task.title}`
+                  : `标记 ${task.title}`
+              }
+              loading={
+                setFlag.isPending && setFlag.variables?.task.id === task.id
+              }
+              onClick={() =>
+                setFlag.mutate({ task, flagged: !task.flagged })
+              }
+            >
+              {task.flagged ? "★" : "☆"}
+            </Button>
             <Button
               type="text"
               size="small"
