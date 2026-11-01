@@ -324,6 +324,40 @@ test("清单创建、任务归类、筛选与完成历史", async ({ page }) => 
   expect(task.list_id).toBe(lists[0].id);
 });
 
+test("自然语言快速添加解析日期、标签和优先级", async ({ page }) => {
+  await login(page);
+  const input = page.getByLabel("快速添加任务");
+  await input.fill("明天下午3点交高数作业 #数学 !高 预计30分钟");
+  await expect(page.getByText("将创建：交高数作业")).toBeVisible();
+  await expect(page.getByText("#数学", { exact: true })).toBeVisible();
+  await expect(page.getByText("优先级 高", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("预计 30 分钟", { exact: true }),
+  ).toBeVisible();
+  await input.press("Enter");
+  await expect(
+    page.getByRole("link", { name: "交高数作业", exact: true }),
+  ).toBeVisible();
+
+  const tasks = await (await page.request.get("/api/v1/tasks")).json();
+  const task = tasks.find(
+    (item: { title: string }) => item.title === "交高数作业",
+  );
+  expect(task.priority).toBe(3);
+  expect(task.tags).toEqual(["数学"]);
+  expect(task.estimate_minutes).toBe(30);
+  expect(task.deadline_all_day).toBe(false);
+  const expected = DateTime.now()
+    .setZone("Asia/Shanghai")
+    .plus({ days: 1 })
+    .set({ hour: 15, minute: 0, second: 0, millisecond: 0 });
+  expect(
+    DateTime.fromISO(task.deadline_at).setZone("Asia/Shanghai").toFormat(
+      "yyyy-MM-dd HH:mm",
+    ),
+  ).toBe(expected.toFormat("yyyy-MM-dd HH:mm"));
+});
+
 test("今日快速添加、改期、一键完成与撤销", async ({ page }) => {
   await login(page);
   await page.getByLabel("快速添加任务").fill("买牛奶");

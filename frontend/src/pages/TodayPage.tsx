@@ -18,16 +18,24 @@ import {
   Tag,
 } from "antd";
 import { DateTime } from "luxon";
-import { api, type Plan, type Event, type Task, type Profile } from "../api";
+import {
+  api,
+  type Plan,
+  type Event,
+  type Task,
+  type Profile,
+  type TaskList,
+} from "../api";
 import { displayTime } from "../time";
 import { withFrom } from "../navigation";
 import { eventTypeLabel, priorityLabel, staleInfo } from "../semantics";
 import { deadlineLabel, quickDeadlineOptions } from "../tasks";
+import { parseQuickAdd, type ParsedQuickAdd } from "../nlp";
 
 export default function TodayPage({ profile }: { profile: Profile }) {
   const client = useQueryClient();
   const { message } = App.useApp();
-  const [title, setTitle] = useState("");
+  const [draft, setDraft] = useState("");
   const [completing, setCompleting] = useState<Task | null>(null);
   const [completeForm] = Form.useForm();
   const plan = useQuery({
@@ -42,12 +50,26 @@ export default function TodayPage({ profile }: { profile: Profile }) {
     queryKey: ["tasks", false],
     queryFn: () => api<Task[]>("/tasks"),
   });
+  const lists = useQuery({
+    queryKey: ["task-lists"],
+    queryFn: () => api<TaskList[]>("/task-lists"),
+  });
   const create = useMutation({
-    mutationFn: () => api<Task>("/tasks", "POST", { title: title.trim() }),
+    mutationFn: (parsed: ParsedQuickAdd) =>
+      api<Task>("/tasks", "POST", {
+        title: parsed.title.trim(),
+        priority: parsed.priority,
+        deadline_at: parsed.deadline_at,
+        deadline_all_day: parsed.deadline_all_day,
+        tags: parsed.tags,
+        estimate_minutes: parsed.estimate_minutes,
+        list_id: parsed.list_id,
+      }),
     onSuccess: () => {
-      setTitle("");
+      setDraft("");
       void client.invalidateQueries({ queryKey: ["tasks"] });
       void client.invalidateQueries({ queryKey: ["plans"] });
+      void client.invalidateQueries({ queryKey: ["tags"] });
       void message.success("任务已添加");
     },
     onError: (e) => void message.error(e.message),
@@ -130,6 +152,12 @@ export default function TodayPage({ profile }: { profile: Profile }) {
     onError: (e) => void message.error(e.message),
   });
   const now = DateTime.now().setZone(profile.timezone);
+  const quick = parseQuickAdd(
+    draft,
+    now,
+    profile.timezone,
+    lists.data ?? [],
+  );
   const day = now.startOf("day");
   const tomorrow = day.plus({ days: 1 });
   const week = day.plus({ days: 7 });
@@ -265,27 +293,40 @@ export default function TodayPage({ profile }: { profile: Profile }) {
         </Space>
       </header>
       {error && <Alert type="error" message={error.message} />}
-      <section className="quick-add">
-        <Input
-          aria-label="快速添加任务"
-          size="large"
-          value={title}
-          placeholder="记录一件要做的事，按回车添加"
-          onChange={(e) => setTitle(e.target.value)}
-          onPressEnter={() => {
-            if (title.trim()) create.mutate();
-          }}
-        />
-        <Button
-          type="primary"
-          size="large"
-          loading={create.isPending}
-          disabled={!title.trim()}
-          onClick={() => create.mutate()}
-        >
-          添加
-        </Button>
-      </section>
+      <div className="quick-add-block">
+        <section className="quick-add">
+          <Input
+            aria-label="快速添加任务"
+            size="large"
+            value={draft}
+            placeholder="例如：明天下午3点交高数作业 #数学 !高 预计30分钟"
+            onChange={(e) => setDraft(e.target.value)}
+            onPressEnter={() => {
+              if (quick.title.trim()) create.mutate(quick);
+            }}
+          />
+          <Button
+            type="primary"
+            size="large"
+            loading={create.isPending}
+            disabled={!quick.title.trim()}
+            onClick={() => create.mutate(quick)}
+          >
+            添加
+          </Button>
+        </section>
+        {draft.trim() &&
+          (quick.chips.length > 0 || quick.warnings.length > 0) && (
+            <div className="quick-add-preview">
+              <span className="muted">
+                {quick.title ? `将创建：${quick.title}` : quick.warnings[0]}
+              </span>
+              {quick.chips.map((chip) => (
+                <Tag key={chip.key}>{chip.label}</Tag>
+              ))}
+            </div>
+          )}
+      </div>
       {plan.isPending || events.isPending || tasks.isPending ? (
         <Spin />
       ) : (
