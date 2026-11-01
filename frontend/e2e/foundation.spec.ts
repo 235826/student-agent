@@ -40,8 +40,9 @@ test("账号、任务、事件、设置和手机布局闭环", async ({ page }, 
   ).toBeVisible();
   await page.getByRole("link", { name: "日历", exact: true }).click();
   await page.getByRole("button", { name: "添加事件", exact: true }).click();
+  const auth = await (await page.request.get("/api/v1/auth/me")).json();
   const eventDay = DateTime.now()
-    .setZone("Asia/Shanghai")
+    .setZone(auth.user.timezone)
     .toFormat("yyyy-MM-dd");
   await page.getByLabel("事件标题").fill(`数据库课-${testInfo.project.name}`);
   await page.getByLabel("开始时间").fill(`${eventDay}T09:00`);
