@@ -1,10 +1,20 @@
 from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, datetime
 from uuid import uuid4
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.main import create_app
 from tests.test_planning_foundation import check, event_ref, post, rule, selector, task, task_ref
+
+
+@pytest.fixture(autouse=True)
+def frozen_scheduling_now(monkeypatch):
+    monkeypatch.setattr(
+        "app.modules.scheduling.now_ms",
+        lambda: int(datetime(2029, 12, 1, tzinfo=UTC).timestamp() * 1000),
+    )
 
 
 def profile(c, start="09:00", end="13:00", rest=None, zone="Asia/Shanghai"):
