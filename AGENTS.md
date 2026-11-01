@@ -20,5 +20,5 @@
 - `scope` 可选，使用简短模块名，例如 `api`、`db`、`frontend`、`planning`。冒号后必须有空格和具体描述；主题行尽量不超过 72 个字符，不以句号结尾。
 - 需要解释原因、取舍或验证时，空一行后写正文。破坏兼容性时在类型或范围后加 `!`，并在脚注中写明 `BREAKING CHANGE: <影响和迁移方法>`。
 - 示例：`feat(planning): add recurring courses and task dependencies`；`fix(scheduler): reject stale plan adoption`；`docs(repo): define Git commit rules`。
-- 不自动推送。只有用户明确要求推送时，才执行 `git push`。
+- 每次提交成功后自动推送当前分支到远端。推送失败（无远端、网络、冲突等）时保留本地提交并报告，不使用强制推送或改写历史。
 - 用户要求“先不执行”时，只说明操作方案，不修改文件或运行 Git 写操作。
