@@ -1,6 +1,15 @@
+import { DateTime } from "luxon";
 import { test, expect } from "./fixtures";
 
 test("排程预览、确认、版本保留及失效提示", async ({ page }, info) => {
+  const scheduleStart = DateTime.now()
+    .setZone("Asia/Shanghai")
+    .startOf("week")
+    .plus({ weeks: 1 });
+  const scheduleStartInput = scheduleStart.toFormat("yyyy-MM-dd'T'HH:mm");
+  const scheduleEndInput = scheduleStart
+    .plus({ days: 1 })
+    .toFormat("yyyy-MM-dd'T'HH:mm");
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto("/");
@@ -24,8 +33,8 @@ test("排程预览、确认、版本保留及失效提示", async ({ page }, inf
   await page.getByRole("button", { name: "创建任务", exact: true }).click();
   await expect(page.getByRole("heading", { name: title })).toBeVisible();
   await page.goto("/plans");
-  await page.getByLabel("排程开始").fill("2030-01-07T00:00");
-  await page.getByLabel("排程结束").fill("2030-01-08T00:00");
+  await page.getByLabel("排程开始").fill(scheduleStartInput);
+  await page.getByLabel("排程结束").fill(scheduleEndInput);
   await page.getByRole("button", { name: "生成草稿" }).click();
   await expect(page.getByText("待确认计划草稿", { exact: true })).toBeVisible();
   await page.getByText("查看计划块变更明细", { exact: true }).click();
@@ -47,8 +56,8 @@ test("排程预览、确认、版本保留及失效提示", async ({ page }, inf
   await expect(page).toHaveURL(firstPlanUrl);
   await expect(page.getByText("当前计划", { exact: true })).toBeVisible();
   await page.goto("/plans");
-  await page.getByLabel("排程开始").fill("2030-01-07T00:00");
-  await page.getByLabel("排程结束").fill("2030-01-08T00:00");
+  await page.getByLabel("排程开始").fill(scheduleStartInput);
+  await page.getByLabel("排程结束").fill(scheduleEndInput);
   await page.getByRole("button", { name: "生成草稿" }).click();
   await expect(page.getByText("待确认计划草稿", { exact: true })).toBeVisible();
   await page.getByRole("link", { name: "任务", exact: true }).click();

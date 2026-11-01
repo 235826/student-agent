@@ -1,5 +1,6 @@
 import { test, expect } from "./fixtures";
 import type { Page } from "@playwright/test";
+import { DateTime } from "luxon";
 async function login(page: Page) {
   await page.goto("/");
   await page.getByLabel("用户名").fill("student");
@@ -139,9 +140,14 @@ test("系列批量修改、事件删除与空课程清理", async ({ page }) => 
 
 test("兼容性检查默认隐藏过去事件", async ({ page }) => {
   const headers = await login(page);
+  const futureStart = DateTime.now()
+    .setZone("Asia/Shanghai")
+    .plus({ days: 30 })
+    .startOf("hour");
+  const futureEnd = futureStart.plus({ hours: 1 });
   for (const [title, start_at, end_at] of [
     ["过去事件", "2000-01-01T09:00:00Z", "2000-01-01T10:00:00Z"],
-    ["未来事件", "2030-01-01T09:00:00Z", "2030-01-01T10:00:00Z"],
+    ["未来事件", futureStart.toISO()!, futureEnd.toISO()!],
   ]) {
     const response = await page.request.post("/api/v1/events", {
       headers,

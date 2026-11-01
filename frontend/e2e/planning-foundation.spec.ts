@@ -1,4 +1,5 @@
 import { type Page } from "@playwright/test";
+import { DateTime } from "luxon";
 import { test, expect } from "./fixtures";
 
 async function choose(page: Page, label: string, option: string) {
@@ -61,8 +62,16 @@ test("草稿发布、重复课程单次变更与规则检查", async ({ page }, 
     .click();
   await page.getByRole("button", { name: "建立每周课程" }).click();
   await choose(page, "选择课程", course);
-  await page.getByLabel("起始日期").fill("2026-11-02");
-  await page.getByLabel("结束日期").fill("2026-11-09");
+  const seriesStart = DateTime.now()
+    .setZone("Asia/Shanghai")
+    .startOf("week")
+    .plus({ weeks: 1 });
+  await page
+    .getByLabel("起始日期")
+    .fill(seriesStart.toFormat("yyyy-MM-dd"));
+  await page
+    .getByLabel("结束日期")
+    .fill(seriesStart.plus({ weeks: 1 }).toFormat("yyyy-MM-dd"));
   await page
     .getByRole("dialog")
     .getByRole("button", { name: /^确\s*定$/ })
