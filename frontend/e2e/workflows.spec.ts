@@ -339,6 +339,8 @@ test("自然语言快速添加解析日期、标签和优先级", async ({ page 
     page.getByRole("link", { name: "交高数作业", exact: true }),
   ).toBeVisible();
 
+  const auth = await (await page.request.get("/api/v1/auth/me")).json();
+  const zone = auth.user.timezone;
   const tasks = await (await page.request.get("/api/v1/tasks")).json();
   const task = tasks.find(
     (item: { title: string }) => item.title === "交高数作业",
@@ -348,13 +350,11 @@ test("自然语言快速添加解析日期、标签和优先级", async ({ page 
   expect(task.estimate_minutes).toBe(30);
   expect(task.deadline_all_day).toBe(false);
   const expected = DateTime.now()
-    .setZone("Asia/Shanghai")
+    .setZone(zone)
     .plus({ days: 1 })
     .set({ hour: 15, minute: 0, second: 0, millisecond: 0 });
   expect(
-    DateTime.fromISO(task.deadline_at).setZone("Asia/Shanghai").toFormat(
-      "yyyy-MM-dd HH:mm",
-    ),
+    DateTime.fromISO(task.deadline_at).setZone(zone).toFormat("yyyy-MM-dd HH:mm"),
   ).toBe(expected.toFormat("yyyy-MM-dd HH:mm"));
 });
 
