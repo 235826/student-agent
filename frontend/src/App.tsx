@@ -1,4 +1,4 @@
-import HierarchyPage from "./pages/HierarchyPage";
+import { lazy, Suspense } from "react";
 import {
   NavLink,
   Navigate,
@@ -20,15 +20,16 @@ import {
   type Profile,
   type Task,
 } from "./api";
-import Login from "./pages/Login";
-import TodayPage from "./pages/TodayPage";
-import SettingsPage from "./pages/SettingsPage";
-import ImportsPage from "./pages/ImportsPage";
-import PlansPage from "./pages/PlansPage";
-import TasksPage from "./pages/TasksPage";
-import EventsPage from "./pages/EventsPage";
-import CompatibilityPage from "./pages/CompatibilityPage";
-import EventTypesPage from "./pages/EventTypesPage";
+const HierarchyPage = lazy(() => import("./pages/HierarchyPage"));
+const Login = lazy(() => import("./pages/Login"));
+const TodayPage = lazy(() => import("./pages/TodayPage"));
+const SettingsPage = lazy(() => import("./pages/SettingsPage"));
+const ImportsPage = lazy(() => import("./pages/ImportsPage"));
+const PlansPage = lazy(() => import("./pages/PlansPage"));
+const TasksPage = lazy(() => import("./pages/TasksPage"));
+const EventsPage = lazy(() => import("./pages/EventsPage"));
+const CompatibilityPage = lazy(() => import("./pages/CompatibilityPage"));
+const EventTypesPage = lazy(() => import("./pages/EventTypesPage"));
 const errorText = (e: unknown) =>
   e instanceof Error ? e.message : "操作失败，请重试";
 function LegacyImports() {
@@ -58,9 +59,7 @@ function HierarchyRoute({
   profile: Profile;
 }) {
   const { id } = useParams();
-  return (
-    <HierarchyPage key={`${kind}:${id}`} kind={kind} profile={profile} />
-  );
+  return <HierarchyPage key={`${kind}:${id}`} kind={kind} profile={profile} />;
 }
 function LegacyDetail({ prefix }: { prefix: string }) {
   const { id } = useParams();
@@ -117,13 +116,21 @@ export default function App() {
         );
       if (status.data)
         return (
-          <Login
-            initialized={status.data.initialized}
-            onDone={(auth) => {
-              setCsrf(auth.csrf_token);
-              client.setQueryData(["me"], auth);
-            }}
-          />
+          <Suspense
+            fallback={
+              <div className="center">
+                <Spin />
+              </div>
+            }
+          >
+            <Login
+              initialized={status.data.initialized}
+              onDone={(auth) => {
+                setCsrf(auth.csrf_token);
+                client.setQueryData(["me"], auth);
+              }}
+            />
+          </Suspense>
         );
     }
     return (
@@ -204,9 +211,7 @@ export default function App() {
         <div className="sidebar-bottom">
           <NavLink
             to="/settings"
-            className={() =>
-              pathname.startsWith("/settings") ? "active" : ""
-            }
+            className={() => (pathname.startsWith("/settings") ? "active" : "")}
           >
             设置
           </NavLink>
@@ -226,103 +231,126 @@ export default function App() {
         {logout.error && (
           <Alert type="error" message={errorText(logout.error)} />
         )}
-        <Routes>
-          <Route path="/" element={<TodayPage profile={profile} />} />
-          <Route path="/inbox" element={<TasksPage profile={profile} />} />
-          <Route
-            path="/inbox/imports"
-            element={<ImportsPage profile={profile} />}
-          />
-          <Route
-            path="/inbox/imports/:id"
-            element={<ImportsPage profile={profile} />}
-          />
-          <Route path="/imports" element={<LegacyImports />} />
-          <Route
-            path="/imports/:id"
-            element={<LegacyDetail prefix="/inbox/imports" />}
-          />
-          <Route path="/plans" element={<PlansPage profile={profile} />} />
-          <Route path="/plans/new" element={<PlansPage profile={profile} />} />
-          <Route path="/plans/:id" element={<PlansPage profile={profile} />} />
-          <Route path="/tasks" element={<TasksPage profile={profile} />} />
-          <Route path="/tasks/new" element={<TasksPage profile={profile} />} />
-          <Route path="/tasks/:id" element={<TasksPage profile={profile} />} />
-          <Route path="/calendar" element={<EventsPage profile={profile} />} />
-          <Route
-            path="/calendar/events/new"
-            element={<EventsPage profile={profile} />}
-          />
-          <Route
-            path="/calendar/events/:id"
-            element={<EventsPage profile={profile} />}
-          />
-          <Route
-            path="/calendar/courses/:id"
-            element={<HierarchyRoute kind="course" profile={profile} />}
-          />
-          <Route
-            path="/calendar/series/new"
-            element={<EventsPage profile={profile} />}
-          />
-          <Route
-            path="/calendar/series/:id"
-            element={<HierarchyRoute kind="series" profile={profile} />}
-          />
-          <Route path="/events" element={<LegacyPath to="/calendar" />} />
-          <Route
-            path="/events/:id"
-            element={<LegacyDetail prefix="/calendar/events" />}
-          />
-          <Route
-            path="/courses/:id"
-            element={<LegacyDetail prefix="/calendar/courses" />}
-          />
-          <Route
-            path="/series/:id"
-            element={<LegacyDetail prefix="/calendar/series" />}
-          />
-          <Route path="/settings/event-types" element={<EventTypesPage />} />
-          <Route
-            path="/settings/rules"
-            element={<CompatibilityPage profile={profile} />}
-          />
-          <Route
-            path="/compatibility"
-            element={<Navigate to="/settings/rules" replace />}
-          />
-          <Route
-            path="/settings"
-            element={
-              <SettingsPage
-                profile={profile}
-                onLogout={() => logout.mutate()}
-                loggingOut={logout.isPending}
-              />
-            }
-          />
-          <Route
-            path="/settings/schedule"
-            element={
-              <SettingsPage
-                profile={profile}
-                onLogout={() => logout.mutate()}
-                loggingOut={logout.isPending}
-              />
-            }
-          />
-          <Route
-            path="*"
-            element={
-              <Result
-                status="404"
-                title="404"
-                subTitle="页面不存在，请检查地址"
-                extra={<Link to="/">返回今日</Link>}
-              />
-            }
-          />
-        </Routes>
+        <Suspense
+          fallback={
+            <div className="center">
+              <Spin />
+            </div>
+          }
+        >
+          <Routes>
+            <Route path="/" element={<TodayPage profile={profile} />} />
+            <Route path="/inbox" element={<TasksPage profile={profile} />} />
+            <Route
+              path="/inbox/imports"
+              element={<ImportsPage profile={profile} />}
+            />
+            <Route
+              path="/inbox/imports/:id"
+              element={<ImportsPage profile={profile} />}
+            />
+            <Route path="/imports" element={<LegacyImports />} />
+            <Route
+              path="/imports/:id"
+              element={<LegacyDetail prefix="/inbox/imports" />}
+            />
+            <Route path="/plans" element={<PlansPage profile={profile} />} />
+            <Route
+              path="/plans/new"
+              element={<PlansPage profile={profile} />}
+            />
+            <Route
+              path="/plans/:id"
+              element={<PlansPage profile={profile} />}
+            />
+            <Route path="/tasks" element={<TasksPage profile={profile} />} />
+            <Route
+              path="/tasks/new"
+              element={<TasksPage profile={profile} />}
+            />
+            <Route
+              path="/tasks/:id"
+              element={<TasksPage profile={profile} />}
+            />
+            <Route
+              path="/calendar"
+              element={<EventsPage profile={profile} />}
+            />
+            <Route
+              path="/calendar/events/new"
+              element={<EventsPage profile={profile} />}
+            />
+            <Route
+              path="/calendar/events/:id"
+              element={<EventsPage profile={profile} />}
+            />
+            <Route
+              path="/calendar/courses/:id"
+              element={<HierarchyRoute kind="course" profile={profile} />}
+            />
+            <Route
+              path="/calendar/series/new"
+              element={<EventsPage profile={profile} />}
+            />
+            <Route
+              path="/calendar/series/:id"
+              element={<HierarchyRoute kind="series" profile={profile} />}
+            />
+            <Route path="/events" element={<LegacyPath to="/calendar" />} />
+            <Route
+              path="/events/:id"
+              element={<LegacyDetail prefix="/calendar/events" />}
+            />
+            <Route
+              path="/courses/:id"
+              element={<LegacyDetail prefix="/calendar/courses" />}
+            />
+            <Route
+              path="/series/:id"
+              element={<LegacyDetail prefix="/calendar/series" />}
+            />
+            <Route path="/settings/event-types" element={<EventTypesPage />} />
+            <Route
+              path="/settings/rules"
+              element={<CompatibilityPage profile={profile} />}
+            />
+            <Route
+              path="/compatibility"
+              element={<Navigate to="/settings/rules" replace />}
+            />
+            <Route
+              path="/settings"
+              element={
+                <SettingsPage
+                  profile={profile}
+                  onLogout={() => logout.mutate()}
+                  loggingOut={logout.isPending}
+                />
+              }
+            />
+            <Route
+              path="/settings/schedule"
+              element={
+                <SettingsPage
+                  profile={profile}
+                  onLogout={() => logout.mutate()}
+                  loggingOut={logout.isPending}
+                />
+              }
+            />
+            <Route
+              path="*"
+              element={
+                <Result
+                  status="404"
+                  title="404"
+                  subTitle="页面不存在，请检查地址"
+                  extra={<Link to="/">返回今日</Link>}
+                />
+              }
+            />
+          </Routes>
+        </Suspense>
       </main>
     </div>
   );
