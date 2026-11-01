@@ -69,6 +69,12 @@ export default function TaskListManager({
     },
     onError: (e: unknown) => void message.error(errorText(e)),
   });
+  const reorder = useMutation({
+    mutationFn: (list_ids: string[]) =>
+      api("/task-lists/reorder", "POST", { list_ids }),
+    onSuccess: () => refresh(),
+    onError: (e: unknown) => void message.error(errorText(e)),
+  });
   const valueOf = (list: TaskList): TaskListInput =>
     edits[list.id] ?? { name: list.name, color: list.color };
   const change = (list: TaskList, patch: Partial<TaskListInput>) =>
@@ -76,6 +82,15 @@ export default function TaskListManager({
       ...current,
       [list.id]: { ...valueOf(list), ...patch },
     }));
+  const move = (list: TaskList, delta: number) => {
+    const data = lists.data ?? [];
+    const from = data.findIndex((item) => item.id === list.id);
+    const to = from + delta;
+    if (from < 0 || to < 0 || to >= data.length) return;
+    const next = [...data];
+    [next[from], next[to]] = [next[to], next[from]];
+    reorder.mutate(next.map((item) => item.id));
+  };
   return (
     <Modal
       title="管理清单"
@@ -115,11 +130,32 @@ export default function TaskListManager({
         <List
           className="task-list-manager"
           dataSource={lists.data}
-          renderItem={(list) => {
+          renderItem={(list, index) => {
             const value = valueOf(list);
             return (
               <List.Item
                 actions={[
+                  <Button
+                    key="up"
+                    type="text"
+                    aria-label={`上移清单 ${list.name}`}
+                    disabled={index === 0 || reorder.isPending}
+                    onClick={() => move(list, -1)}
+                  >
+                    ↑
+                  </Button>,
+                  <Button
+                    key="down"
+                    type="text"
+                    aria-label={`下移清单 ${list.name}`}
+                    disabled={
+                      index === (lists.data?.length ?? 0) - 1 ||
+                      reorder.isPending
+                    }
+                    onClick={() => move(list, 1)}
+                  >
+                    ↓
+                  </Button>,
                   <Button
                     key="save"
                     type="link"

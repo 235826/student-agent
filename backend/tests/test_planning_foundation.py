@@ -233,6 +233,39 @@ def test_task_lists_assign_and_delete(authenticated):
     )
 
 
+def test_task_list_reorder_and_new_list_appends(authenticated):
+    c = authenticated
+    lists = [post(c, "/task-lists", {"name": f"清单{index}"}) for index in range(3)]
+    ids = [item["id"] for item in lists]
+    assert [item["sort_order"] for item in lists] == [1, 2, 3]
+    assert [item["id"] for item in c.get("/api/v1/task-lists").json()] == ids
+
+    reordered = c.post(
+        "/api/v1/task-lists/reorder",
+        json={"list_ids": [ids[2], ids[0], ids[1]]},
+    )
+    assert reordered.status_code == 200, reordered.text
+    assert [item["id"] for item in reordered.json()] == [ids[2], ids[0], ids[1]]
+    assert [item["id"] for item in c.get("/api/v1/task-lists").json()] == [
+        ids[2],
+        ids[0],
+        ids[1],
+    ]
+
+    appended = post(c, "/task-lists", {"name": "新清单"})
+    assert appended["sort_order"] == 4
+    assert (
+        c.post("/api/v1/task-lists/reorder", json={"list_ids": [ids[0], ids[0]]}).status_code == 422
+    )
+    assert (
+        c.post(
+            "/api/v1/task-lists/reorder",
+            json={"list_ids": [ids[0], "missing"]},
+        ).status_code
+        == 404
+    )
+
+
 def test_task_flag_toggle_and_preserve(authenticated):
     c = authenticated
     record = task(c, "重点任务", flagged=True)
@@ -281,6 +314,28 @@ def test_task_reorder_and_new_task_appends(authenticated):
     )
     c.post(f"/api/v1/tasks/{ids[0]}/trash")
     assert c.post("/api/v1/tasks/reorder", json={"task_ids": [ids[0], ids[1]]}).status_code == 404
+
+
+def test_tag_usage_rename_and_trash(authenticated):
+    c = authenticated
+    first = task(c, "任务一", tags=["数学", "阅读"])
+    task(c, "任务二", tags=["数学"])
+    tags = {tag["name"]: tag for tag in c.get("/api/v1/tags").json()}
+    assert tags["数学"]["usage_count"] == 2
+    assert tags["阅读"]["usage_count"] == 1
+
+    renamed = c.put(f"/api/v1/tags/{tags['数学']['id']}", json={"name": "高数"})
+    assert renamed.status_code == 200, renamed.text
+    assert renamed.json()["name"] == "高数"
+    assert renamed.json()["usage_count"] == 2
+    assert c.put(f"/api/v1/tags/{tags['阅读']['id']}", json={"name": "高数"}).status_code == 409
+    stored = next(item for item in c.get("/api/v1/tasks").json() if item["id"] == first["id"])
+    assert set(stored["tags"]) == {"高数", "阅读"}
+
+    c.post(f"/api/v1/tasks/{first['id']}/trash")
+    tags = {tag["name"]: tag for tag in c.get("/api/v1/tags").json()}
+    assert tags["高数"]["usage_count"] == 1
+    assert tags["阅读"]["usage_count"] == 0
 
 
 def test_task_tags_sync_and_delete(authenticated):

@@ -1,5 +1,6 @@
 import ImportRecords from "../components/ImportRecords";
 import TaskListManager from "../components/TaskListManager";
+import TagManager from "../components/TagManager";
 import SubtaskChecklist from "../components/SubtaskChecklist";
 import {
   Link,
@@ -63,6 +64,7 @@ const views = [
   ["all", "全部"],
   ["today", "今天"],
   ["scheduled", "已计划"],
+  ["unscheduled", "无日期"],
   ["flagged", "已标记"],
   ["done", "已完成"],
   ["trash", "垃圾箱"],
@@ -85,11 +87,12 @@ export default function TasksPage({ profile }: { profile: Profile }) {
   const client = useQueryClient();
   const { message, modal } = App.useApp();
   const [view, setView] = useState<
-    "all" | "today" | "scheduled" | "flagged" | "done" | "trash"
+    "all" | "today" | "scheduled" | "unscheduled" | "flagged" | "done" | "trash"
   >("all");
   const [listFilter, setListFilter] = useState("all");
   const [tagFilter, setTagFilter] = useState("all");
   const [listManager, setListManager] = useState(false);
+  const [tagManager, setTagManager] = useState(false);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [editor, setEditor] = useState<Editor | null>(
     isNew || params.has("new") ? { kind: "task" } : null,
@@ -424,6 +427,10 @@ export default function TasksPage({ profile }: { profile: Profile }) {
       );
     if (view === "scheduled")
       return !["done", "cancelled"].includes(task.status) && !!task.deadline_at;
+    if (view === "unscheduled")
+      return (
+        !["done", "cancelled"].includes(task.status) && !task.deadline_at
+      );
     if (view === "flagged")
       return task.flagged && task.status !== "cancelled";
     if (view === "done") return task.status === "done";
@@ -584,6 +591,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
             ]}
           />
           <Button onClick={() => setListManager(true)}>管理清单</Button>
+          <Button onClick={() => setTagManager(true)}>管理标签</Button>
           <Select
             aria-label="筛选标签"
             value={tagFilter}
@@ -717,7 +725,9 @@ export default function TasksPage({ profile }: { profile: Profile }) {
                           ? "今天没有要做的任务"
                           : view === "scheduled"
                             ? "还没有设置截止时间的任务"
-                            : view === "flagged"
+                            : view === "unscheduled"
+                              ? "没有未设置截止时间的任务"
+                              : view === "flagged"
                               ? "还没有标记的重点任务"
                               : "还没有任务，先添加一件想完成的事"
                 }
@@ -1128,6 +1138,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
         open={listManager}
         onClose={() => setListManager(false)}
       />
+      <TagManager open={tagManager} onClose={() => setTagManager(false)} />
     </>
   );
 }

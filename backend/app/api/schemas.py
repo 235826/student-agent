@@ -163,9 +163,17 @@ class TaskListOut(TaskListInput):
     updated_at: Timestamp
 
 
-class TagOut(Schema):
+class TaskListOrderInput(Schema):
+    list_ids: list[str] = Field(min_length=1, max_length=500)
+
+
+class TagInput(Schema):
+    name: TagName
+
+
+class TagOut(TagInput):
     id: str
-    name: str
+    usage_count: int
 
 
 class EventTypeInput(Schema):

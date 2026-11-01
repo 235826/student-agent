@@ -4,7 +4,7 @@ from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, HTTPException
 from pydantic import ValidationError
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
 from app.api.schemas import (
@@ -28,9 +28,11 @@ from app.api.schemas import (
     SeriesInput,
     SeriesOut,
     SkipInput,
+    TagInput,
     TagOut,
     TaskInput,
     TaskListInput,
+    TaskListOrderInput,
     TaskListOut,
     TaskOrderInput,
     TaskOut,
@@ -98,14 +100,42 @@ def create_task_list(body: TaskListInput, db: DB, user: UserDep) -> TaskList:
     )
     if duplicate:
         raise HTTPException(409, "清单名称已存在")
+    last_order = db.scalar(
+        select(TaskList.sort_order)
+        .where(TaskList.workspace_id == user.workspace_id)
+        .order_by(TaskList.sort_order.desc())
+        .limit(1)
+    )
     task_list = TaskList(
         workspace_id=user.workspace_id,
         name=body.name,
         color=body.color,
+        sort_order=(last_order or 0) + 1,
     )
     db.add(task_list)
     record_change(db, user, "task_list.create", task_list)
     return task_list
+
+
+@router.post("/task-lists/reorder", response_model=list[TaskListOut])
+def reorder_task_lists(body: TaskListOrderInput, db: DB, user: UserDep) -> list[TaskList]:
+    if len(set(body.list_ids)) != len(body.list_ids):
+        raise HTTPException(422, "清单不能重复")
+    lists = list(
+        db.scalars(
+            select(TaskList).where(
+                TaskList.workspace_id == user.workspace_id,
+                TaskList.id.in_(body.list_ids),
+            )
+        )
+    )
+    if len(lists) != len(body.list_ids):
+        raise HTTPException(404, "清单不存在")
+    by_id = {item.id: item for item in lists}
+    for index, list_id in enumerate(body.list_ids, start=1):
+        by_id[list_id].sort_order = index
+    record_change(db, user, "task_list.reorder", by_id[body.list_ids[0]], scheduling=False)
+    return [by_id[list_id] for list_id in body.list_ids]
 
 
 @router.put("/task-lists/{list_id}", response_model=TaskListOut)
@@ -137,11 +167,48 @@ def delete_task_list(list_id: str, db: DB, user: UserDep) -> None:
     remove_record(db, user, "task_list.delete", task_list)
 
 
+def tag_usage(db: DB, user: User) -> dict[str, int]:
+    return {
+        tag_id: count
+        for tag_id, count in db.execute(
+            select(TaskTag.tag_id, func.count(TaskTag.id))
+            .join(Task, Task.id == TaskTag.task_id)
+            .where(
+                TaskTag.workspace_id == user.workspace_id,
+                Task.trashed_at.is_(None),
+            )
+            .group_by(TaskTag.tag_id)
+        ).all()
+    }
+
+
 @router.get("/tags", response_model=list[TagOut])
-def list_tags(db: DB, user: UserDep) -> list[Tag]:
-    return list(
-        db.scalars(select(Tag).where(Tag.workspace_id == user.workspace_id).order_by(Tag.name))
+def list_tags(db: DB, user: UserDep) -> list[TagOut]:
+    usage = tag_usage(db, user)
+    return [
+        TagOut(id=tag.id, name=tag.name, usage_count=usage.get(tag.id, 0))
+        for tag in db.scalars(
+            select(Tag).where(Tag.workspace_id == user.workspace_id).order_by(Tag.name, Tag.id)
+        )
+    ]
+
+
+@router.put("/tags/{tag_id}", response_model=TagOut)
+def rename_tag(tag_id: str, body: TagInput, db: DB, user: UserDep) -> TagOut:
+    tag = owned(db, Tag, tag_id, user)
+    duplicate = db.scalar(
+        select(Tag.id).where(
+            Tag.workspace_id == user.workspace_id,
+            Tag.name == body.name,
+            Tag.id != tag_id,
+        )
     )
+    if duplicate:
+        raise HTTPException(409, "标签名称已存在")
+    tag.name = body.name
+    record_change(db, user, "tag.update", tag, scheduling=False)
+    usage = tag_usage(db, user)
+    return TagOut(id=tag.id, name=tag.name, usage_count=usage.get(tag.id, 0))
 
 
 @router.delete("/tags/{tag_id}", status_code=204)
