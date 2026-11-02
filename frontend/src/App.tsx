@@ -11,14 +11,13 @@ import {
 } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Alert, Button, Spin, Result } from "antd";
-import { DateTime } from "luxon";
 import {
   api,
   ApiError,
   setCsrf,
   type Auth,
   type Profile,
-  type Task,
+  type TaskSummary,
 } from "./api";
 const HierarchyPage = lazy(() => import("./pages/HierarchyPage"));
 const Login = lazy(() => import("./pages/Login"));
@@ -87,9 +86,9 @@ export default function App() {
     queryFn: () => api<{ initialized: boolean }>("/auth/status"),
     enabled: me.error instanceof ApiError && me.error.status === 401,
   });
-  const tasks = useQuery({
-    queryKey: ["tasks", false],
-    queryFn: () => api<Task[]>("/tasks"),
+  const summary = useQuery({
+    queryKey: ["tasks", "summary"],
+    queryFn: () => api<TaskSummary>("/tasks/summary"),
     enabled: !!me.data,
   });
   const logout = useMutation({
@@ -153,23 +152,8 @@ export default function App() {
     );
   }
   const profile = me.data.user;
-  const now = DateTime.now().setZone(profile.timezone);
-  const tomorrow = now.startOf("day").plus({ days: 1 });
-  const activeTasks = (tasks.data ?? []).filter(
-    (task) => !["done", "cancelled"].includes(task.status),
-  );
-  const todayCount = activeTasks.filter(
-    (task) =>
-      task.status === "in_progress" ||
-      (task.deadline_at &&
-        DateTime.fromISO(task.deadline_at).setZone(profile.timezone) <
-          tomorrow),
-  ).length;
-  const overdueCount = activeTasks.filter(
-    (task) =>
-      task.deadline_at &&
-      DateTime.fromISO(task.deadline_at).setZone(profile.timezone) < now,
-  ).length;
+  const todayCount = summary.data?.today ?? 0;
+  const overdueCount = summary.data?.overdue ?? 0;
   const nav = [
     ["/", "今日", todayCount],
     ["/tasks", "任务", overdueCount],
@@ -198,6 +182,7 @@ export default function App() {
               {label}
               {count > 0 && (
                 <span
+                  aria-hidden="true"
                   className={
                     path === "/tasks" ? "nav-count danger" : "nav-count"
                   }

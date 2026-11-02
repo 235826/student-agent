@@ -60,6 +60,7 @@ def task_view(db: Session, task: Task) -> TaskOut:
         )
     )
     data["blocked_by"] = []
+    data["blocked_by_ids"] = []
     for task_id in predecessors:
         predecessor = db.get(Task, task_id)
         if predecessor and (predecessor.trashed_at is not None or predecessor.status != "done"):
@@ -69,6 +70,7 @@ def task_view(db: Session, task: Task) -> TaskOut:
                 else ("已取消" if predecessor.status == "cancelled" else "尚未完成")
             )
             data["blocked_by"].append(f"{predecessor.title}（{state}）")
+            data["blocked_by_ids"].append(task_id)
     return TaskOut.model_validate(data)
 
 

@@ -82,6 +82,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
   const inbox = location.pathname === "/inbox";
   const isNew = location.pathname === "/tasks/new";
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [status, setStatus] = useState("all");
   const [sort, setSort] = useState("status");
   const client = useQueryClient();
@@ -98,6 +99,14 @@ export default function TasksPage({ profile }: { profile: Profile }) {
     isNew || params.has("new") ? { kind: "task" } : null,
   );
   const [form] = Form.useForm();
+  useEffect(() => {
+    const value = search.trim();
+    const timer = setTimeout(
+      () => setDebouncedSearch(value),
+      value ? 300 : 0,
+    );
+    return () => clearTimeout(timer);
+  }, [search]);
   const closeEditor = () => {
     setEditor(null);
     if (isNew) {
@@ -112,13 +121,41 @@ export default function TasksPage({ profile }: { profile: Profile }) {
       setParams(next, { replace: true });
     }
   };
-  const tasks = useQuery({
-    queryKey: ["tasks", false],
-    queryFn: () => api<Task[]>("/tasks"),
+  const taskQuery = new URLSearchParams({ view });
+  if (listFilter !== "all") taskQuery.set("list_id", listFilter);
+  if (tagFilter !== "all") taskQuery.set("tag", tagFilter);
+  if (status !== "all") taskQuery.set("status", status);
+  if (debouncedSearch) taskQuery.set("q", debouncedSearch);
+  const taskQueryString = taskQuery.toString();
+  const listTasks = useQuery({
+    queryKey: [
+      "tasks",
+      "list",
+      view,
+      listFilter,
+      tagFilter,
+      status,
+      debouncedSearch,
+    ],
+    queryFn: () => api<Task[]>(`/tasks?${taskQueryString}`),
+    enabled: !inbox && !id,
+    placeholderData: (previous) => previous,
   });
-  const trash = useQuery({
-    queryKey: ["tasks", true],
-    queryFn: () => api<Task[]>("/tasks?trashed=true"),
+  const detailTaskQuery = useQuery({
+    queryKey: ["tasks", "detail", id],
+    queryFn: () => api<Task>(`/tasks/${id}`),
+    enabled: !!id,
+  });
+  const editorTasks = useQuery({
+    queryKey: ["tasks", "editor"],
+    queryFn: async () => {
+      const [active, trashed] = await Promise.all([
+        api<Task[]>("/tasks?view=all"),
+        api<Task[]>("/tasks?view=trash"),
+      ]);
+      return [...active, ...trashed];
+    },
+    enabled: !!editor,
   });
   const drafts = useQuery({
     queryKey: ["drafts"],
@@ -284,10 +321,42 @@ export default function TasksPage({ profile }: { profile: Profile }) {
     },
     onError: (e: unknown) => void message.error(errorText(e)),
   });
-  const catalog = [...(tasks.data ?? []), ...(trash.data ?? [])];
-  const detailTask = id ? catalog.find((task) => task.id === id) : undefined;
-  const titleOf = (id: string) =>
-    catalog.find((t) => t.id === id)?.title ?? "不可用任务";
+  const baseTasks = id
+    ? detailTaskQuery.data
+      ? [detailTaskQuery.data]
+      : []
+    : (listTasks.data ?? []);
+  const knownTitles: Record<string, string> = Object.fromEntries(
+    baseTasks.map((task) => [task.id, task.title]),
+  );
+  const relationIds = [
+    ...new Set(
+      baseTasks.flatMap((task) => [
+        ...(task.parent_id ? [task.parent_id] : []),
+        ...task.predecessor_ids,
+        ...task.dependent_ids,
+        ...task.child_ids,
+        ...task.blocked_by_ids,
+      ]),
+    ),
+  ]
+    .filter((taskId) => !knownTitles[taskId])
+    .sort();
+  const relationTitles = useQuery({
+    queryKey: ["tasks", "titles", relationIds],
+    queryFn: () =>
+      api<Record<string, string>>("/tasks/titles", "POST", {
+        ids: relationIds,
+      }),
+    enabled: relationIds.length > 0,
+  });
+  const titleMap: Record<string, string> = {
+    ...knownTitles,
+    ...(relationTitles.data ?? {}),
+  };
+  const detailTask = detailTaskQuery.data;
+  const titleOf = (taskId: string) => titleMap[taskId] ?? "不可用任务";
+  const editorCatalog = editorTasks.data ?? [];
   const open = (next: Editor) => {
     form.resetFields();
     const payload = next.kind === "task" ? next.task : next.draft?.payload;
@@ -407,47 +476,10 @@ export default function TasksPage({ profile }: { profile: Profile }) {
           },
         }),
     });
-  const current = view === "trash" ? trash : tasks;
-  const now = DateTime.now().setZone(profile.timezone);
-  const tomorrow = now.startOf("day").plus({ days: 1 });
+  const currentQuery = id ? detailTaskQuery : listTasks;
   const listOf = (task: Task) =>
     (lists.data ?? []).find((list) => list.id === task.list_id);
-  const inList = (task: Task) =>
-    listFilter === "all" ||
-    (listFilter === "inbox" ? !task.list_id : task.list_id === listFilter);
-  const inTag = (task: Task) =>
-    tagFilter === "all" || task.tags.includes(tagFilter);
-  const inView = (task: Task) => {
-    if (view === "today")
-      return (
-        !["done", "cancelled"].includes(task.status) &&
-        (task.status === "in_progress" ||
-          (!!task.deadline_at &&
-            DateTime.fromISO(task.deadline_at) < tomorrow))
-      );
-    if (view === "scheduled")
-      return !["done", "cancelled"].includes(task.status) && !!task.deadline_at;
-    if (view === "unscheduled")
-      return (
-        !["done", "cancelled"].includes(task.status) && !task.deadline_at
-      );
-    if (view === "flagged")
-      return task.flagged && task.status !== "cancelled";
-    if (view === "done") return task.status === "done";
-    return true;
-  };
-  const visible = (
-    id ? catalog.filter((t) => t.id === id) : (current.data ?? [])
-  )
-    .filter((t) => id || (inView(t) && inList(t) && inTag(t)))
-    .filter((t) => id || status === "all" || t.status === status)
-    .filter(
-      (t) =>
-        id ||
-        `${t.title} ${t.description}`
-          .toLowerCase()
-          .includes(search.toLowerCase()),
-    )
+  const visible = (id ? (detailTask ? [detailTask] : []) : (listTasks.data ?? []))
     .sort((a, b) =>
       sort === "deadline"
         ? (a.deadline_at ?? "9999").localeCompare(b.deadline_at ?? "9999")
@@ -522,7 +554,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
       </Link>
     ));
   const currentTask = editor?.kind === "task" ? editor.task : undefined;
-  const options = catalog
+  const options = editorCatalog
     .filter((t) => t.id !== currentTask?.id)
     .map((t) => ({
       value: t.id,
@@ -702,14 +734,10 @@ export default function TasksPage({ profile }: { profile: Profile }) {
         </>
       ) : (
         <>
-          {(current.error || (id && trash.error)) && (
-            <Alert
-              type="error"
-              message={errorText(current.error ?? trash.error)}
-            />
+          {currentQuery.error && (
+            <Alert type="error" message={errorText(currentQuery.error)} />
           )}{" "}
-          {current.error || (id && trash.error) ? null : current.isPending ||
-            (id && trash.isPending) ? (
+          {currentQuery.error ? null : currentQuery.isPending ? (
             <Spin />
           ) : !visible.length ? (
             <Card>
@@ -878,21 +906,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
                       <Alert
                         type="warning"
                         message={
-                          <span>
-                            等待前置：
-                            {relations(
-                              task.predecessor_ids.filter((predecessorId) => {
-                                const predecessor = catalog.find(
-                                  (t) => t.id === predecessorId,
-                                );
-                                return (
-                                  predecessor &&
-                                  (predecessor.trashed_at ||
-                                    predecessor.status !== "done")
-                                );
-                              }),
-                            )}
-                          </span>
+                          <span>等待前置：{relations(task.blocked_by_ids)}</span>
                         }
                       />
                     )}

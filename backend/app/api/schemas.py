@@ -22,6 +22,7 @@ def from_epoch(value: object) -> object:
 Timestamp = Annotated[datetime, BeforeValidator(from_epoch)]
 Title = Annotated[str, Field(min_length=1, max_length=200)]
 Status = Literal["todo", "in_progress", "done", "cancelled"]
+TaskView = Literal["all", "today", "scheduled", "unscheduled", "flagged", "done", "trash"]
 Policy = Literal["none", "allow_selected"]
 TagName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=50)]
 
@@ -118,6 +119,7 @@ class TaskOut(TaskInput):
     dependent_ids: list[str]
     child_ids: list[str]
     blocked_by: list[str]
+    blocked_by_ids: list[str]
     tags: list[str]
     flagged: bool
     sort_order: int
@@ -134,6 +136,18 @@ class TaskOrderInput(Schema):
 
 class FlagInput(Schema):
     flagged: bool
+
+
+class TaskSummaryOut(Schema):
+    active: int
+    today: int
+    overdue: int
+    flagged: int
+    trashed: int
+
+
+class TaskTitlesInput(Schema):
+    ids: list[str] = Field(default_factory=list, max_length=1000)
 
 
 class DeadlineInput(Schema):

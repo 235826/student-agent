@@ -1,4 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
@@ -264,6 +265,106 @@ def test_task_list_reorder_and_new_list_appends(authenticated):
         ).status_code
         == 404
     )
+
+
+def test_task_summary_counts(authenticated):
+    c = authenticated
+    now = datetime.now(UTC)
+    task(c, "逾期", deadline_at=(now - timedelta(days=1)).isoformat())
+    task(c, "进行中", status="in_progress")
+    task(c, "未来", deadline_at=(now + timedelta(days=7)).isoformat())
+    task(c, "标记", flagged=True)
+    task(c, "完成", status="done")
+    trashed = task(c, "垃圾")
+    c.post(f"/api/v1/tasks/{trashed['id']}/trash")
+
+    summary = c.get("/api/v1/tasks/summary")
+    assert summary.status_code == 200, summary.text
+    assert summary.json() == {
+        "active": 4,
+        "today": 2,
+        "overdue": 1,
+        "flagged": 1,
+        "trashed": 1,
+    }
+
+
+def test_task_filters_and_views(authenticated):
+    c = authenticated
+    now = datetime.now(UTC)
+    math_list = post(c, "/task-lists", {"name": "数学"})
+    reading_list = post(c, "/task-lists", {"name": "阅读"})
+    math = task(
+        c,
+        "数学作业",
+        description="微分方程练习",
+        list_id=math_list["id"],
+        tags=["数学"],
+        deadline_at=(now + timedelta(days=2)).isoformat(),
+        flagged=True,
+    )
+    reading = task(
+        c,
+        "阅读论文",
+        list_id=reading_list["id"],
+        tags=["阅读"],
+    )
+    done = task(
+        c,
+        "已完成作业",
+        status="done",
+        list_id=math_list["id"],
+        tags=["数学"],
+    )
+    inbox = task(c, "收件箱任务")
+    trashed = task(c, "垃圾任务")
+    c.post(f"/api/v1/tasks/{trashed['id']}/trash")
+
+    def ids(**params: str) -> set[str]:
+        response = c.get("/api/v1/tasks", params=params)
+        assert response.status_code == 200, response.text
+        return {item["id"] for item in response.json()}
+
+    assert ids(q="微分") == {math["id"]}
+    assert ids(q="数学") == {math["id"]}
+    assert ids(view="scheduled") == {math["id"]}
+    assert ids(view="unscheduled") == {reading["id"], inbox["id"]}
+    assert ids(view="done") == {done["id"]}
+    assert ids(view="flagged") == {math["id"]}
+    assert ids(view="trash") == {trashed["id"]}
+    assert ids(list_id=math_list["id"]) == {math["id"], done["id"]}
+    assert ids(list_id="inbox") == {inbox["id"]}
+    assert ids(tag="数学") == {math["id"], done["id"]}
+    assert ids(status="done") == {done["id"]}
+    assert ids(flagged="true") == {math["id"]}
+    assert ids(
+        due_from=(now + timedelta(days=1)).isoformat(),
+        due_to=(now + timedelta(days=3)).isoformat(),
+    ) == {math["id"]}
+
+
+def test_task_detail_titles_and_get_task(authenticated):
+    c = authenticated
+    parent = task(c, "父任务")
+    child = task(c, "子任务", parent_id=parent["id"])
+    trashed = task(c, "已删除任务")
+    c.post(f"/api/v1/tasks/{trashed['id']}/trash")
+
+    detail = c.get(f"/api/v1/tasks/{parent['id']}")
+    assert detail.status_code == 200 and detail.json()["title"] == "父任务"
+    assert c.get("/api/v1/tasks/missing").status_code == 404
+    assert c.get(f"/api/v1/tasks/{trashed['id']}").status_code == 200
+
+    titles = c.post(
+        "/api/v1/tasks/titles",
+        json={"ids": [parent["id"], child["id"], trashed["id"], "missing"]},
+    )
+    assert titles.status_code == 200, titles.text
+    assert titles.json() == {
+        parent["id"]: "父任务",
+        child["id"]: "子任务",
+        trashed["id"]: "已删除任务",
+    }
 
 
 def test_task_flag_toggle_and_preserve(authenticated):

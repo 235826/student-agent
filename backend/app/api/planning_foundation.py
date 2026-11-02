@@ -1,10 +1,10 @@
-from datetime import date, datetime
-from typing import Literal
+from datetime import UTC, date, datetime, timedelta
+from typing import Any, Literal
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, HTTPException
 from pydantic import ValidationError
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import and_, delete, func, or_, select, update
 from sqlalchemy.orm import Session
 
 from app.api.schemas import (
@@ -28,6 +28,7 @@ from app.api.schemas import (
     SeriesInput,
     SeriesOut,
     SkipInput,
+    Status,
     TagInput,
     TagOut,
     TaskInput,
@@ -36,6 +37,9 @@ from app.api.schemas import (
     TaskListOut,
     TaskOrderInput,
     TaskOut,
+    TaskSummaryOut,
+    TaskTitlesInput,
+    TaskView,
     TypePolicyInput,
     TypePolicyOut,
     WorkLogInput,
@@ -218,14 +222,157 @@ def delete_tag(tag_id: str, db: DB, user: UserDep) -> None:
     remove_record(db, user, "tag.delete", tag)
 
 
+def task_day_bounds(user: User) -> tuple[int, int]:
+    now = datetime.now(UTC)
+    local = now.astimezone(ZoneInfo(user.timezone))
+    tomorrow = (local + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    return int(now.timestamp() * 1000), int(tomorrow.timestamp() * 1000)
+
+
+def query_ms(value: datetime | None, label: str) -> int | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        raise HTTPException(422, f"{label}必须包含 UTC 偏移")
+    return int(value.timestamp() * 1000)
+
+
 @router.get("/tasks", response_model=list[TaskOut])
-def list_tasks(db: DB, user: UserDep, trashed: bool = False) -> list[TaskOut]:
+def list_tasks(
+    db: DB,
+    user: UserDep,
+    trashed: bool = False,
+    view: TaskView = "all",
+    q: str | None = None,
+    status: Status | None = None,
+    list_id: str | None = None,
+    tag: str | None = None,
+    flagged: bool | None = None,
+    due_from: datetime | None = None,
+    due_to: datetime | None = None,
+) -> list[TaskOut]:
+    scope: TaskView = "trash" if trashed else view
+    now_ms, tomorrow_ms = task_day_bounds(user)
     query = select(Task).where(Task.workspace_id == user.workspace_id)
-    query = query.where(Task.trashed_at.is_not(None) if trashed else Task.trashed_at.is_(None))
+    if scope == "trash":
+        query = query.where(Task.trashed_at.is_not(None))
+    else:
+        query = query.where(Task.trashed_at.is_(None))
+
+    active = Task.status.notin_(["done", "cancelled"])
+    if scope == "today":
+        query = query.where(
+            active,
+            or_(
+                Task.status == "in_progress",
+                and_(
+                    Task.deadline_at.is_not(None),
+                    Task.deadline_at < tomorrow_ms,
+                ),
+            ),
+        )
+    elif scope == "scheduled":
+        query = query.where(active, Task.deadline_at.is_not(None))
+    elif scope == "unscheduled":
+        query = query.where(active, Task.deadline_at.is_(None))
+    elif scope == "flagged":
+        query = query.where(Task.flagged.is_(True), Task.status != "cancelled")
+    elif scope == "done":
+        query = query.where(Task.status == "done")
+
+    if status:
+        query = query.where(Task.status == status)
+    if list_id:
+        query = query.where(
+            Task.list_id.is_(None) if list_id == "inbox" else Task.list_id == list_id
+        )
+    if q:
+        query = query.where(
+            or_(
+                Task.title.contains(q, autoescape=True),
+                Task.description.contains(q, autoescape=True),
+            )
+        )
+    if tag:
+        query = query.where(
+            Task.id.in_(
+                select(TaskTag.task_id)
+                .join(Tag, Tag.id == TaskTag.tag_id)
+                .where(
+                    Tag.workspace_id == user.workspace_id,
+                    Tag.name == tag,
+                )
+            )
+        )
+    if flagged is not None:
+        query = query.where(Task.flagged.is_(flagged))
+    from_ms = query_ms(due_from, "截止范围起点")
+    to_ms = query_ms(due_to, "截止范围终点")
+    if from_ms is not None:
+        query = query.where(Task.deadline_at.is_not(None), Task.deadline_at >= from_ms)
+    if to_ms is not None:
+        query = query.where(Task.deadline_at.is_not(None), Task.deadline_at <= to_ms)
+
     return [
-        task_view(db, t)
-        for t in db.scalars(query.order_by(Task.sort_order, Task.created_at.desc(), Task.id))
+        task_view(db, task)
+        for task in db.scalars(query.order_by(Task.sort_order, Task.created_at.desc(), Task.id))
     ]
+
+
+@router.get("/tasks/summary", response_model=TaskSummaryOut)
+def task_summary(db: DB, user: UserDep) -> TaskSummaryOut:
+    now_ms, tomorrow_ms = task_day_bounds(user)
+    base = (Task.workspace_id == user.workspace_id, Task.trashed_at.is_(None))
+    active = (*base, Task.status.notin_(["done", "cancelled"]))
+
+    def count(*conditions: Any) -> int:
+        return db.scalar(select(func.count(Task.id)).where(*conditions)) or 0
+
+    return TaskSummaryOut(
+        active=count(*active),
+        today=count(
+            *active,
+            or_(
+                Task.status == "in_progress",
+                and_(
+                    Task.deadline_at.is_not(None),
+                    Task.deadline_at < tomorrow_ms,
+                ),
+            ),
+        ),
+        overdue=count(
+            *active,
+            Task.deadline_at.is_not(None),
+            Task.deadline_at < now_ms,
+        ),
+        flagged=count(
+            *base,
+            Task.flagged.is_(True),
+            Task.status != "cancelled",
+        ),
+        trashed=count(
+            Task.workspace_id == user.workspace_id,
+            Task.trashed_at.is_not(None),
+        ),
+    )
+
+
+@router.get("/tasks/{task_id}", response_model=TaskOut)
+def get_task(task_id: str, db: DB, user: UserDep) -> TaskOut:
+    return task_view(db, owned(db, Task, task_id, user))
+
+
+@router.post("/tasks/titles", response_model=dict[str, str])
+def task_titles(body: TaskTitlesInput, db: DB, user: UserDep) -> dict[str, str]:
+    if not body.ids:
+        return {}
+    rows = db.execute(
+        select(Task.id, Task.title).where(
+            Task.workspace_id == user.workspace_id,
+            Task.id.in_(body.ids),
+        )
+    ).all()
+    return {task_id: title for task_id, title in rows}
 
 
 @router.post("/tasks/reorder", response_model=list[TaskOut])

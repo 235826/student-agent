@@ -324,6 +324,48 @@ test("清单创建、任务归类、筛选与完成历史", async ({ page }) => 
   expect(task.list_id).toBe(lists[0].id);
 });
 
+test("服务端搜索与侧栏角标", async ({ page }) => {
+  const headers = await login(page);
+  const auth = await (await page.request.get("/api/v1/auth/me")).json();
+  const zone = auth.user.timezone;
+  for (const data of [
+    {
+      title: "逾期任务",
+      deadline_at: DateTime.now()
+        .setZone(zone)
+        .minus({ days: 1 })
+        .toISO(),
+    },
+    { title: "进行中任务", status: "in_progress" },
+    { title: "微积分作业" },
+    { title: "英语阅读" },
+  ]) {
+    const response = await page.request.post("/api/v1/tasks", {
+      headers,
+      data,
+    });
+    expect(response.status()).toBe(201);
+  }
+  await page.goto("/tasks");
+  const todayLink = page.locator("aside nav a").filter({ hasText: "今日" });
+  await expect(todayLink).toContainText("2");
+  const tasksLink = page.locator("aside nav a").filter({ hasText: "任务" });
+  await expect(tasksLink).toContainText("1");
+
+  const search = page.getByLabel("搜索任务");
+  await search.fill("微积分");
+  await expect(
+    page.getByRole("heading", { name: "微积分作业" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "英语阅读" }),
+  ).not.toBeVisible();
+  await search.fill("");
+  await expect(
+    page.getByRole("heading", { name: "英语阅读" }),
+  ).toBeVisible();
+});
+
 test("标签管理重命名、使用次数与删除", async ({ page }) => {
   const headers = await login(page);
   for (const [title, tags] of [
