@@ -2,9 +2,9 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Any, Literal
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import ValidationError
-from sqlalchemy import and_, delete, func, or_, select, update
+from sqlalchemy import String, and_, cast, delete, func, or_, select, update
 from sqlalchemy.orm import Session
 
 from app.api.schemas import (
@@ -24,8 +24,11 @@ from app.api.schemas import (
     FlagInput,
     PolicyInput,
     PublishInput,
+    PurgeOut,
     RuleInput,
     RuleOut,
+    SavedFilterInput,
+    SavedFilterOut,
     SeriesEdit,
     SeriesInput,
     SeriesOut,
@@ -34,6 +37,8 @@ from app.api.schemas import (
     TagInput,
     TagOut,
     TaskInput,
+    TaskListGroupInput,
+    TaskListGroupOut,
     TaskListInput,
     TaskListOrderInput,
     TaskListOut,
@@ -49,15 +54,19 @@ from app.api.schemas import (
     WorkLogUpdate,
 )
 from app.db.models import (
+    Audit,
     CompatibilityRule,
     Course,
     Draft,
     Event,
     EventOverride,
     EventSeries,
+    SavedFilter,
     Tag,
     Task,
+    TaskAttachment,
     TaskList,
+    TaskListGroup,
     TaskTag,
     TaskTypePolicy,
     User,
@@ -83,8 +92,146 @@ from app.modules.task_management import (
     task_view,
     validate_links,
 )
+from app.modules.trash import (
+    TRASH_RETENTION_MS,
+    purge_old_trash,
+    purge_tasks,
+    unlink_paths,
+)
 
 router = APIRouter(prefix="/api/v1")
+
+
+@router.get("/task-list-groups", response_model=list[TaskListGroupOut])
+def list_task_list_groups(db: DB, user: UserDep) -> list[TaskListGroup]:
+    return list(
+        db.scalars(
+            select(TaskListGroup)
+            .where(TaskListGroup.workspace_id == user.workspace_id)
+            .order_by(
+                TaskListGroup.sort_order,
+                TaskListGroup.created_at,
+                TaskListGroup.id,
+            )
+        )
+    )
+
+
+@router.post("/task-list-groups", response_model=TaskListGroupOut, status_code=201)
+def create_task_list_group(body: TaskListGroupInput, db: DB, user: UserDep) -> TaskListGroup:
+    duplicate = db.scalar(
+        select(TaskListGroup.id).where(
+            TaskListGroup.workspace_id == user.workspace_id,
+            TaskListGroup.name == body.name,
+        )
+    )
+    if duplicate:
+        raise HTTPException(409, "文件夹名称已存在")
+    last_order = db.scalar(
+        select(TaskListGroup.sort_order)
+        .where(TaskListGroup.workspace_id == user.workspace_id)
+        .order_by(TaskListGroup.sort_order.desc())
+        .limit(1)
+    )
+    group = TaskListGroup(
+        workspace_id=user.workspace_id,
+        name=body.name,
+        sort_order=(last_order or 0) + 1,
+    )
+    db.add(group)
+    record_change(db, user, "task_list_group.create", group)
+    return group
+
+
+@router.put("/task-list-groups/{group_id}", response_model=TaskListGroupOut)
+def update_task_list_group(
+    group_id: str, body: TaskListGroupInput, db: DB, user: UserDep
+) -> TaskListGroup:
+    group = owned(db, TaskListGroup, group_id, user)
+    duplicate = db.scalar(
+        select(TaskListGroup.id).where(
+            TaskListGroup.workspace_id == user.workspace_id,
+            TaskListGroup.name == body.name,
+            TaskListGroup.id != group_id,
+        )
+    )
+    if duplicate:
+        raise HTTPException(409, "文件夹名称已存在")
+    group.name = body.name
+    record_change(db, user, "task_list_group.update", group)
+    return group
+
+
+@router.delete("/task-list-groups/{group_id}", status_code=204)
+def delete_task_list_group(group_id: str, db: DB, user: UserDep) -> None:
+    group = owned(db, TaskListGroup, group_id, user)
+    db.execute(update(TaskList).where(TaskList.group_id == group_id).values(group_id=None))
+    remove_record(db, user, "task_list_group.delete", group)
+
+
+@router.get("/saved-filters", response_model=list[SavedFilterOut])
+def list_saved_filters(db: DB, user: UserDep) -> list[SavedFilter]:
+    return list(
+        db.scalars(
+            select(SavedFilter)
+            .where(SavedFilter.workspace_id == user.workspace_id)
+            .order_by(SavedFilter.created_at, SavedFilter.id)
+        )
+    )
+
+
+@router.post("/saved-filters", response_model=SavedFilterOut, status_code=201)
+def create_saved_filter(body: SavedFilterInput, db: DB, user: UserDep) -> SavedFilter:
+    duplicate = db.scalar(
+        select(SavedFilter.id).where(
+            SavedFilter.workspace_id == user.workspace_id,
+            SavedFilter.name == body.name,
+        )
+    )
+    if duplicate:
+        raise HTTPException(409, "筛选名称已存在")
+    saved = SavedFilter(
+        workspace_id=user.workspace_id,
+        name=body.name,
+        payload=body.payload.model_dump(),
+    )
+    db.add(saved)
+    record_change(db, user, "saved_filter.create", saved, scheduling=False)
+    return saved
+
+
+@router.put("/saved-filters/{filter_id}", response_model=SavedFilterOut)
+def update_saved_filter(
+    filter_id: str, body: SavedFilterInput, db: DB, user: UserDep
+) -> SavedFilter:
+    saved = owned(db, SavedFilter, filter_id, user)
+    duplicate = db.scalar(
+        select(SavedFilter.id).where(
+            SavedFilter.workspace_id == user.workspace_id,
+            SavedFilter.name == body.name,
+            SavedFilter.id != filter_id,
+        )
+    )
+    if duplicate:
+        raise HTTPException(409, "筛选名称已存在")
+    saved.name = body.name
+    saved.payload = body.payload.model_dump()
+    record_change(db, user, "saved_filter.update", saved, scheduling=False)
+    return saved
+
+
+@router.delete("/saved-filters/{filter_id}", status_code=204)
+def delete_saved_filter(filter_id: str, db: DB, user: UserDep) -> None:
+    saved = owned(db, SavedFilter, filter_id, user)
+    db.delete(saved)
+    db.add(
+        Audit(
+            workspace_id=user.workspace_id,
+            action="saved_filter.delete",
+            object_id=filter_id,
+        )
+    )
+    db.commit()
 
 
 @router.get("/task-lists", response_model=list[TaskListOut])
@@ -107,6 +254,8 @@ def create_task_list(body: TaskListInput, db: DB, user: UserDep) -> TaskList:
     )
     if duplicate:
         raise HTTPException(409, "清单名称已存在")
+    if body.group_id:
+        owned(db, TaskListGroup, body.group_id, user)
     last_order = db.scalar(
         select(TaskList.sort_order)
         .where(TaskList.workspace_id == user.workspace_id)
@@ -117,6 +266,7 @@ def create_task_list(body: TaskListInput, db: DB, user: UserDep) -> TaskList:
         workspace_id=user.workspace_id,
         name=body.name,
         color=body.color,
+        group_id=body.group_id,
         sort_order=(last_order or 0) + 1,
     )
     db.add(task_list)
@@ -157,8 +307,11 @@ def update_task_list(list_id: str, body: TaskListInput, db: DB, user: UserDep) -
     )
     if duplicate:
         raise HTTPException(409, "清单名称已存在")
+    if body.group_id:
+        owned(db, TaskListGroup, body.group_id, user)
     task_list.name = body.name
     task_list.color = body.color
+    task_list.group_id = body.group_id
     record_change(db, user, "task_list.update", task_list)
     return task_list
 
@@ -296,6 +449,21 @@ def list_tasks(
             or_(
                 Task.title.contains(q, autoescape=True),
                 Task.description.contains(q, autoescape=True),
+                cast(Task.links, String).contains(q, autoescape=True),
+                Task.id.in_(
+                    select(TaskTag.task_id)
+                    .join(Tag, Tag.id == TaskTag.tag_id)
+                    .where(
+                        Tag.workspace_id == user.workspace_id,
+                        Tag.name.contains(q, autoescape=True),
+                    )
+                ),
+                Task.id.in_(
+                    select(TaskAttachment.task_id).where(
+                        TaskAttachment.workspace_id == user.workspace_id,
+                        TaskAttachment.filename.contains(q, autoescape=True),
+                    )
+                ),
             )
         )
     if tag:
@@ -449,6 +617,86 @@ def task_titles(body: TaskTitlesInput, db: DB, user: UserDep) -> dict[str, str]:
     return {task_id: title for task_id, title in rows}
 
 
+@router.delete("/tasks/{task_id}/permanent", status_code=204)
+def purge_task(
+    task_id: str,
+    request: Request,
+    db: DB,
+    user: UserDep,
+) -> None:
+    task = owned(db, Task, task_id, user)
+    if task.trashed_at is None:
+        raise HTTPException(409, "只能永久删除垃圾箱中的任务")
+    paths, _ = purge_tasks(
+        db,
+        user.workspace_id,
+        [task.id],
+        request.app.state.settings.attachment_dir,
+    )
+    db.commit()
+    unlink_paths(paths)
+
+
+@router.post("/tasks/trash/purge", response_model=PurgeOut)
+def purge_trash(
+    request: Request,
+    db: DB,
+    user: UserDep,
+) -> PurgeOut:
+    ids = list(
+        db.scalars(
+            select(Task.id).where(
+                Task.workspace_id == user.workspace_id,
+                Task.trashed_at.is_not(None),
+            )
+        )
+    )
+    paths, deleted = purge_tasks(
+        db,
+        user.workspace_id,
+        ids,
+        request.app.state.settings.attachment_dir,
+    )
+    db.commit()
+    unlink_paths(paths)
+    return PurgeOut(deleted=deleted)
+
+
+@router.post("/tasks/{parent_id}/subtasks/reorder", response_model=list[TaskOut])
+def reorder_subtasks(
+    parent_id: str,
+    body: TaskOrderInput,
+    db: DB,
+    user: UserDep,
+) -> list[TaskOut]:
+    parent = owned(db, Task, parent_id, user)
+    if len(set(body.task_ids)) != len(body.task_ids):
+        raise HTTPException(422, "子任务不能重复")
+    tasks = list(
+        db.scalars(
+            select(Task).where(
+                Task.workspace_id == user.workspace_id,
+                Task.parent_id == parent.id,
+                Task.trashed_at.is_(None),
+                Task.id.in_(body.task_ids),
+            )
+        )
+    )
+    if len(tasks) != len(body.task_ids):
+        raise HTTPException(404, "子任务不存在")
+    by_id = {task.id: task for task in tasks}
+    for index, task_id in enumerate(body.task_ids, start=1):
+        by_id[task_id].subtask_order = index
+    record_change(
+        db,
+        user,
+        "subtask.reorder",
+        by_id[body.task_ids[0]],
+        scheduling=False,
+    )
+    return [task_view(db, by_id[task_id]) for task_id in body.task_ids]
+
+
 @router.post("/tasks/reorder", response_model=list[TaskOut])
 def reorder_tasks(body: TaskOrderInput, db: DB, user: UserDep) -> list[TaskOut]:
     if len(set(body.task_ids)) != len(body.task_ids):
@@ -489,12 +737,25 @@ def update_task(task_id: str, body: TaskInput, db: DB, user: UserDep) -> TaskOut
 
 
 @router.post("/tasks/{task_id}/trash", response_model=TaskOut)
-def trash_task(task_id: str, db: DB, user: UserDep, confirm_impact: bool = False) -> TaskOut:
+def trash_task(
+    task_id: str,
+    request: Request,
+    db: DB,
+    user: UserDep,
+    confirm_impact: bool = False,
+) -> TaskOut:
     task = owned(db, Task, task_id, user)
     if task.trashed_at is None:
         require_impact_confirmation(db, task, confirm_impact)
         task.trashed_at = now_ms()
+        paths, _ = purge_old_trash(
+            db,
+            user.workspace_id,
+            request.app.state.settings.attachment_dir,
+            now_ms() - TRASH_RETENTION_MS,
+        )
         record_change(db, user, "task.trash", task)
+        unlink_paths(paths)
     return task_view(db, task)
 
 

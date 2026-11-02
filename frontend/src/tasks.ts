@@ -24,6 +24,10 @@ export function toTaskInput(
     estimate_minutes: task.estimate_minutes,
     task_type: task.task_type,
     recurrence: task.recurrence,
+    recurrence_interval: task.recurrence_interval,
+    recurrence_from_completion: task.recurrence_from_completion,
+    recurrence_until: task.recurrence_until,
+    recurrence_remaining: task.recurrence_remaining,
     flagged: task.flagged,
     list_id: task.list_id,
     tags: task.tags,
@@ -80,11 +84,32 @@ export function deadlineInstant(value: string, allDay: boolean, zone: string) {
   return deadline.endOf("day").toISO();
 }
 
-export function recurrenceLabel(value: string | null | undefined) {
-  if (value === "daily") return "每天";
-  if (value === "weekly") return "每周";
-  if (value === "monthly") return "每月";
-  return "";
+export function recurrenceLabel(
+  value: string | null | undefined,
+  interval = 1,
+  fromCompletion = false,
+) {
+  const base =
+    value === "daily"
+      ? interval > 1
+        ? `每 ${interval} 天`
+        : "每天"
+      : value === "weekly"
+        ? interval > 1
+          ? `每 ${interval} 周`
+          : "每周"
+        : value === "monthly"
+          ? interval > 1
+            ? `每 ${interval} 月`
+            : "每月"
+          : value === "yearly"
+            ? interval > 1
+              ? `每 ${interval} 年`
+              : "每年"
+            : value === "weekdays"
+              ? "工作日"
+              : "";
+  return fromCompletion ? `${base}（按完成日）` : base;
 }
 
 export function deadlineLabel(

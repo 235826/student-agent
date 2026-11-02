@@ -350,6 +350,19 @@ test("批量选择并完成任务", async ({ page }) => {
   expect(selected.every((task: { status: string }) => task.status === "done")).toBe(
     true,
   );
+
+  await page.getByRole("button", { name: /^撤\s*销$/ }).click();
+  await expect(page.getByText("已撤销批量操作")).toBeVisible();
+  await expect
+    .poll(async () => {
+      const items = await (await page.request.get("/api/v1/tasks")).json();
+      return items
+        .filter((task: { title: string }) =>
+          ["批量任务A", "批量任务B"].includes(task.title),
+        )
+        .every((task: { status: string }) => task.status === "todo");
+    })
+    .toBe(true);
 });
 
 test("完成统计展示今日、估时与实耗", async ({ page }) => {
@@ -446,6 +459,146 @@ test("任务快速查看抽屉", async ({ page }, testInfo) => {
   ).toBeVisible();
 });
 
+test("批量改期、添加标签与撤销", async ({ page }) => {
+  const headers = await login(page);
+  for (const title of ["批量改期A", "批量改期B"]) {
+    const response = await page.request.post("/api/v1/tasks", {
+      headers,
+      data: { title },
+    });
+    expect(response.status()).toBe(201);
+  }
+  await page.goto("/tasks");
+  await page.getByRole("button", { name: "批量操作", exact: true }).click();
+  await page.getByLabel("选择 批量改期A").check();
+  await page.getByLabel("选择 批量改期B").check();
+  const bar = page.locator(".ant-card").filter({ hasText: "已选 2 项" });
+  await bar.getByRole("button", { name: /^改\s*期$/ }).click();
+  await page
+    .locator(".ant-dropdown-menu-item")
+    .filter({ hasText: "明天" })
+    .click();
+  await expect(page.getByText("已处理 2 项")).toBeVisible();
+  await expect
+    .poll(async () => {
+      const tasks = await (await page.request.get("/api/v1/tasks")).json();
+      return tasks
+        .filter((task: { title: string }) =>
+          ["批量改期A", "批量改期B"].includes(task.title),
+        )
+        .every((task: { deadline_all_day: boolean }) => task.deadline_all_day);
+    })
+    .toBe(true);
+
+  await page.getByLabel("选择 批量改期A").check();
+  await page.getByLabel("选择 批量改期B").check();
+  await bar.getByRole("button", { name: /^标\s*签$/ }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("combobox").click();
+  await dialog.getByRole("combobox").fill("批量标签");
+  await page.keyboard.press("Enter");
+  await dialog.getByText("批量标签", { exact: true }).first().click();
+  await dialog
+    .getByRole("button", { name: "添加标签", exact: true })
+    .click();
+  await expect(page.getByText("已处理 2 项").last()).toBeVisible();
+  await expect
+    .poll(async () => {
+      const tasks = await (await page.request.get("/api/v1/tasks")).json();
+      return tasks
+        .filter((task: { title: string }) =>
+          ["批量改期A", "批量改期B"].includes(task.title),
+        )
+        .every((task: { tags: string[] }) => task.tags.includes("批量标签"));
+    })
+    .toBe(true);
+
+  await page.getByRole("button", { name: /^撤\s*销$/ }).last().click();
+  await expect(page.getByText("已撤销批量操作")).toBeVisible();
+  await expect
+    .poll(async () => {
+      const tasks = await (await page.request.get("/api/v1/tasks")).json();
+      return tasks
+        .filter((task: { title: string }) =>
+          ["批量改期A", "批量改期B"].includes(task.title),
+        )
+        .every((task: { tags: string[] }) => !task.tags.includes("批量标签"));
+    })
+    .toBe(true);
+});
+
+test("垃圾箱永久删除与清空", async ({ page }) => {
+  const headers = await login(page);
+  const created: { id: string }[] = [];
+  for (const title of ["永久删除A", "永久删除B"]) {
+    const response = await page.request.post("/api/v1/tasks", {
+      headers,
+      data: { title },
+    });
+    expect(response.status()).toBe(201);
+    created.push(await response.json());
+  }
+  for (const task of created) {
+    expect(
+      (
+        await page.request.post(`/api/v1/tasks/${task.id}/trash`, {
+          headers,
+        })
+      ).status(),
+    ).toBe(200);
+  }
+  await page.goto("/tasks");
+  await page.getByRole("button", { name: "垃圾箱", exact: true }).click();
+  const card = page
+    .locator(".task-card")
+    .filter({ hasText: "永久删除A" });
+  await card.getByRole("button", { name: "永久删除", exact: true }).click();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "永久删除", exact: true })
+    .click();
+  await expect(page.getByText("任务已永久删除")).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "永久删除A" }),
+  ).not.toBeVisible();
+
+  await page.getByRole("button", { name: "清空垃圾箱", exact: true }).click();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "清空垃圾箱", exact: true })
+    .click();
+  await expect(page.getByText(/已永久删除 1 项/)).toBeVisible();
+  expect(
+    await (
+      await page.request.get("/api/v1/tasks?trashed=true")
+    ).json(),
+  ).toEqual([]);
+});
+
+test("附件图片预览", async ({ page }) => {
+  const headers = await login(page);
+  const created = await page.request.post("/api/v1/tasks", {
+    headers,
+    data: { title: "预览任务" },
+  });
+  expect(created.status()).toBe(201);
+  const task = await created.json();
+  await page.goto(`/tasks/${task.id}`);
+  await page.locator('input[type="file"]').setInputFiles({
+    name: "pixel.png",
+    mimeType: "image/png",
+    buffer: Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+      "base64",
+    ),
+  });
+  await expect(page.getByText("pixel.png", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: /^预\s*览$/ }).click();
+  const image = page.locator(".attachment-preview-image");
+  await expect(image).toBeVisible();
+  expect(await image.getAttribute("src")).toContain("?inline=true");
+});
+
 test("任务附件上传、下载链接与删除", async ({ page }) => {
   const headers = await login(page);
   const created = await page.request.post("/api/v1/tasks", {
@@ -513,6 +666,41 @@ test("任务链接保存与展示", async ({ page }) => {
     "https://example.com/a",
     "https://example.org/b",
   ]);
+});
+
+test("重复任务支持间隔与工作日选项", async ({ page }) => {
+  await login(page);
+  const auth = await (await page.request.get("/api/v1/auth/me")).json();
+  const zone = auth.user.timezone;
+  const deadline = DateTime.now()
+    .setZone(zone)
+    .plus({ days: 2 })
+    .set({ hour: 9, minute: 0, second: 0, millisecond: 0 })
+    .toFormat("yyyy-MM-dd'T'HH:mm");
+
+  await page.getByRole("link", { name: "任务", exact: true }).click();
+  await page.getByRole("button", { name: "新建任务", exact: true }).click();
+  await page.getByLabel("任务标题").fill("双周任务");
+  await page.getByLabel(/截止时间/).fill(deadline);
+  const recurrence = page
+    .locator(".ant-select")
+    .filter({ has: page.getByRole("combobox", { name: "重复", exact: true }) });
+  await recurrence.click();
+  await page.getByTitle("每周").click();
+  await page.getByLabel(/重复间隔/).fill("2");
+  await page.getByRole("button", { name: "创建任务", exact: true }).click();
+  await expect(page.getByRole("dialog")).not.toBeVisible();
+
+  const card = page
+    .locator(".task-card")
+    .filter({ has: page.getByRole("heading", { name: "双周任务" }) });
+  await expect(card.getByText(/重复：每 2 周/)).toBeVisible();
+  const tasks = await (await page.request.get("/api/v1/tasks")).json();
+  const task = tasks.find(
+    (item: { title: string }) => item.title === "双周任务",
+  );
+  expect(task.recurrence).toBe("weekly");
+  expect(task.recurrence_interval).toBe(2);
 });
 
 test("重复任务完成后生成下一次并可撤销", async ({ page }) => {
@@ -641,6 +829,74 @@ test("服务端搜索与侧栏角标", async ({ page }) => {
   await expect(
     page.getByRole("heading", { name: "英语阅读" }),
   ).toBeVisible();
+});
+
+test("清单文件夹与保存筛选", async ({ page }) => {
+  const headers = await login(page);
+  const created = await page.request.post("/api/v1/tasks", {
+    headers,
+    data: { title: "数学作业" },
+  });
+  expect(created.status()).toBe(201);
+
+  await page.getByRole("link", { name: "任务", exact: true }).click();
+  await page.getByRole("button", { name: "管理清单", exact: true }).click();
+  await page.getByLabel("新文件夹名称").fill("学习");
+  await page.getByRole("button", { name: "创建文件夹", exact: true }).click();
+  await expect(page.getByText("文件夹已创建")).toBeVisible();
+  await page.getByLabel("新清单名称").fill("数学");
+  await page.getByRole("button", { name: "创建清单", exact: true }).click();
+  await expect(page.getByText("清单已创建")).toBeVisible();
+
+  const listRow = page
+    .locator(".ant-list-item")
+    .filter({ has: page.getByLabel("数学 名称") });
+  const groupSelect = page
+    .locator(".ant-select")
+    .filter({ has: page.getByRole("combobox", { name: "数学 文件夹" }) });
+  await groupSelect.click();
+  await page.getByTitle("学习").click();
+  await listRow.getByRole("button", { name: /^保\s*存$/ }).click();
+  await expect(page.getByText("清单已更新")).toBeVisible();
+  await page.locator(".ant-modal-close").click();
+  await expect(page.getByRole("dialog")).not.toBeVisible();
+
+  const groups = await (
+    await page.request.get("/api/v1/task-list-groups")
+  ).json();
+  const lists = await (await page.request.get("/api/v1/task-lists")).json();
+  expect(lists.find((item: { name: string }) => item.name === "数学").group_id).toBe(
+    groups[0].id,
+  );
+
+  const search = page.getByLabel("搜索任务");
+  await search.fill("数学");
+  await page.getByRole("button", { name: "保存筛选", exact: true }).click();
+  await page.getByLabel("筛选名称").fill("数学筛选");
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: /^保\s*存$/ })
+    .click();
+  await expect(page.getByText("筛选已保存")).toBeVisible();
+
+  await search.fill("");
+  const savedSelect = page
+    .locator(".ant-select")
+    .filter({ has: page.getByRole("combobox", { name: "已保存筛选" }) });
+  await savedSelect.hover();
+  await savedSelect.locator(".ant-select-clear").click();
+  await savedSelect.click();
+  await page
+    .locator(".ant-select-dropdown:not(.ant-select-dropdown-hidden) .ant-select-item-option")
+    .filter({ hasText: "数学筛选" })
+    .click();
+  await expect(search).toHaveValue("数学");
+  await expect(
+    page.getByRole("heading", { name: "数学作业" }),
+  ).toBeVisible();
+
+  await page.getByRole("button", { name: "删除筛选", exact: true }).click();
+  await expect(page.getByText("筛选已删除")).toBeVisible();
 });
 
 test("标签管理重命名、使用次数与删除", async ({ page }) => {
@@ -830,6 +1086,59 @@ test("手动排序可拖动并持久化", async ({ page }, testInfo) => {
       { timeout: 10000 },
     )
     .toEqual(expected);
+});
+
+test("嵌套子任务排序与批量完成", async ({ page }) => {
+  const headers = await login(page);
+  const parent = await (
+    await page.request.post("/api/v1/tasks", {
+      headers,
+      data: { title: "嵌套项目" },
+    })
+  ).json();
+  const first = await (
+    await page.request.post("/api/v1/tasks", {
+      headers,
+      data: { title: "阶段一", parent_id: parent.id },
+    })
+  ).json();
+  const second = await (
+    await page.request.post("/api/v1/tasks", {
+      headers,
+      data: { title: "阶段二", parent_id: parent.id },
+    })
+  ).json();
+  const leaf = await (
+    await page.request.post("/api/v1/tasks", {
+      headers,
+      data: { title: "步骤一", parent_id: first.id },
+    })
+  ).json();
+
+  await page.goto(`/tasks/${parent.id}`);
+  await expect(page.getByRole("link", { name: "阶段一" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "阶段二" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "步骤一" })).toBeVisible();
+  const subtasks = page.locator(".ant-card").filter({ hasText: "子任务" });
+  await subtasks.getByLabel("下移子任务 阶段一").click();
+  await expect
+    .poll(async () => {
+      const tasks = await (await page.request.get("/api/v1/tasks")).json();
+      const byId = Object.fromEntries(tasks.map((task: { id: string }) => [task.id, task]));
+      return [byId[first.id].subtask_order, byId[second.id].subtask_order];
+    })
+    .toEqual([2, 1]);
+
+  await subtasks.getByRole("button", { name: "全部完成", exact: true }).click();
+  await expect(page.getByText("已完成 3 个子任务")).toBeVisible();
+  await expect(
+    subtasks.getByText("子任务 3/3"),
+  ).toBeVisible();
+  const tasks = await (await page.request.get("/api/v1/tasks")).json();
+  const byId = Object.fromEntries(tasks.map((task: { id: string }) => [task.id, task]));
+  expect(byId[first.id].status).toBe("done");
+  expect(byId[second.id].status).toBe("done");
+  expect(byId[leaf.id].status).toBe("done");
 });
 
 test("详情页内联子任务、完成进度与恢复", async ({ page }) => {

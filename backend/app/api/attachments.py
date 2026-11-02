@@ -15,6 +15,13 @@ router = APIRouter(prefix="/api/v1", tags=["attachments"])
 
 MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
 MAX_ATTACHMENTS_PER_TASK = 20
+INLINE_MEDIA_TYPES = {
+    "image/png",
+    "image/jpeg",
+    "image/webp",
+    "image/gif",
+    "application/pdf",
+}
 
 
 def safe_filename(value: str | None) -> str:
@@ -101,12 +108,25 @@ def upload_attachment(
 
 @router.get("/attachments/{attachment_id}")
 def download_attachment(
-    attachment_id: str, request: Request, db: DB, user: UserDep
+    attachment_id: str,
+    request: Request,
+    db: DB,
+    user: UserDep,
+    inline: bool = False,
 ) -> FileResponse:
     attachment = owned(db, TaskAttachment, attachment_id, user)
     path = attachment_path(request, attachment)
     if not path.is_file():
         raise HTTPException(404, "附件文件不可用")
+    if inline and attachment.media_type in INLINE_MEDIA_TYPES:
+        return FileResponse(
+            path,
+            media_type=attachment.media_type,
+            headers={
+                "Content-Disposition": "inline",
+                "X-Content-Type-Options": "nosniff",
+            },
+        )
     return FileResponse(
         path,
         media_type=attachment.media_type or "application/octet-stream",

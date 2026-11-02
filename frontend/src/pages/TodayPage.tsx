@@ -246,7 +246,13 @@ export default function TodayPage({ profile }: { profile: Profile }) {
             )}
             <span>{priorityLabel(task.priority)}</span>
             {task.recurrence && (
-              <Tag>{recurrenceLabel(task.recurrence)}</Tag>
+              <Tag>
+                {recurrenceLabel(
+                  task.recurrence,
+                  task.recurrence_interval,
+                  task.recurrence_from_completion,
+                )}
+              </Tag>
             )}
             {task.status === "in_progress" && <Tag color="blue">进行中</Tag>}
             <Dropdown

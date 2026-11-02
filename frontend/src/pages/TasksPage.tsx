@@ -42,10 +42,13 @@ import { api } from "../api";
 import type {
   Draft,
   Profile,
+  SavedFilter,
+  SavedFilterPayload,
   TagRecord,
   Task,
   TaskInput,
   TaskList,
+  TaskListGroup,
 } from "../api";
 import { displayTime, toLocal } from "../time";
 import { priorities, priorityLabel } from "../semantics";
@@ -55,6 +58,7 @@ import {
   quickDeadlineOptions,
   recurrenceLabel,
   toTaskInput,
+  type QuickDeadline,
 } from "../tasks";
 
 const states = [
@@ -106,6 +110,11 @@ export default function TasksPage({ profile }: { profile: Profile }) {
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkTagOpen, setBulkTagOpen] = useState(false);
+  const [bulkTagValues, setBulkTagValues] = useState<string[]>([]);
+  const [savedFilterId, setSavedFilterId] = useState<string | undefined>();
+  const [saveFilterOpen, setSaveFilterOpen] = useState(false);
+  const [filterName, setFilterName] = useState("");
   const [isWide, setIsWide] = useState(
     () =>
       typeof window !== "undefined" &&
@@ -115,6 +124,17 @@ export default function TasksPage({ profile }: { profile: Profile }) {
     isNew || params.has("new") ? { kind: "task" } : null,
   );
   const [form] = Form.useForm();
+  const recurrenceValue = Form.useWatch("recurrence", form);
+  const intervalUnit =
+    recurrenceValue === "daily"
+      ? "天"
+      : recurrenceValue === "weekly"
+        ? "周"
+        : recurrenceValue === "monthly"
+          ? "月"
+          : recurrenceValue === "yearly"
+            ? "年"
+            : "次";
   const drawerRequested = params.get("drawer") === "1";
   const drawerOpen = !!id && drawerRequested && isWide;
   const detailPage = !!id && !drawerOpen;
@@ -205,6 +225,14 @@ export default function TasksPage({ profile }: { profile: Profile }) {
   const tags = useQuery({
     queryKey: ["tags"],
     queryFn: () => api<TagRecord[]>("/tags"),
+  });
+  const listGroups = useQuery({
+    queryKey: ["task-list-groups"],
+    queryFn: () => api<TaskListGroup[]>("/task-list-groups"),
+  });
+  const savedFilters = useQuery({
+    queryKey: ["saved-filters"],
+    queryFn: () => api<SavedFilter[]>("/saved-filters"),
   });
   useEffect(() => {
     if (
@@ -326,17 +354,85 @@ export default function TasksPage({ profile }: { profile: Profile }) {
     onSuccess: () => refresh(),
     onError: (e: unknown) => void message.error(errorText(e)),
   });
-  type BulkAction = "complete" | "reopen" | "trash" | "move";
+  type BulkAction =
+    | "complete"
+    | "reopen"
+    | "trash"
+    | "move"
+    | "deadline"
+    | "add_tags"
+    | "remove_tags";
+  type TaskSnapshot = { id: string; input: TaskInput };
+  type BulkUndo =
+    | { kind: "complete" | "reopen" | "trash"; tasks: Task[] }
+    | { kind: "move" | "tags"; snapshots: TaskSnapshot[] }
+    | {
+        kind: "deadline";
+        snapshots: {
+          id: string;
+          deadline_at: string | null;
+          deadline_all_day: boolean;
+        }[];
+      };
+  type BulkPayload = {
+    tasks: Task[];
+    action: BulkAction;
+    list_id?: string | null;
+    deadline_at?: string | null;
+    deadline_all_day?: boolean;
+    tags?: string[];
+    undo: BulkUndo;
+  };
+  const undoBulk = useMutation({
+    mutationFn: async (undo: BulkUndo) => {
+      let failed = 0;
+      let firstError = "";
+      const run = async (fn: () => Promise<unknown>) => {
+        try {
+          await fn();
+        } catch (e) {
+          failed += 1;
+          if (!firstError) firstError = errorText(e);
+        }
+      };
+      if ("tasks" in undo) {
+        for (const task of undo.tasks) {
+          await run(() => {
+            if (undo.kind === "complete")
+              return api(`/tasks/${task.id}/reopen`, "POST");
+            if (undo.kind === "reopen")
+              return api(`/tasks/${task.id}/complete`, "POST");
+            return api(`/tasks/${task.id}/restore`, "POST");
+          });
+        }
+      } else if (undo.kind === "deadline") {
+        for (const snapshot of undo.snapshots) {
+          await run(() =>
+            api(`/tasks/${snapshot.id}/deadline`, "PATCH", {
+              deadline_at: snapshot.deadline_at,
+              deadline_all_day: snapshot.deadline_all_day,
+            }),
+          );
+        }
+      } else {
+        for (const snapshot of undo.snapshots) {
+          await run(() => api(`/tasks/${snapshot.id}`, "PUT", snapshot.input));
+        }
+      }
+      if (failed) throw new Error(`撤销时失败 ${failed} 项：${firstError}`);
+    },
+    onSuccess: () => {
+      refresh();
+      void message.success("已撤销批量操作");
+    },
+    onError: (e: Error) => {
+      refresh();
+      void message.error(e.message);
+    },
+  });
   const bulk = useMutation({
-    mutationFn: async ({
-      tasks,
-      action,
-      list_id,
-    }: {
-      tasks: Task[];
-      action: BulkAction;
-      list_id: string | null;
-    }) => {
+    mutationFn: async (payload: BulkPayload) => {
+      const { tasks, action } = payload;
       let failed = 0;
       let firstError = "";
       for (const task of tasks) {
@@ -346,15 +442,31 @@ export default function TasksPage({ profile }: { profile: Profile }) {
           else if (action === "reopen")
             await api(`/tasks/${task.id}/reopen`, "POST");
           else if (action === "trash")
-            await api(
-              `/tasks/${task.id}/trash?confirm_impact=true`,
-              "POST",
-            );
-          else
+            await api(`/tasks/${task.id}/trash?confirm_impact=true`, "POST");
+          else if (action === "move")
             await api(`/tasks/${task.id}`, "PUT", {
               ...toTaskInput(task),
-              list_id,
+              list_id: payload.list_id ?? null,
             });
+          else if (action === "deadline")
+            await api(`/tasks/${task.id}/deadline`, "PATCH", {
+              deadline_at: payload.deadline_at ?? null,
+              deadline_all_day: payload.deadline_all_day ?? false,
+            });
+          else if (action === "add_tags") {
+            const nextTags = new Set(task.tags);
+            for (const tag of payload.tags ?? []) nextTags.add(tag);
+            await api(`/tasks/${task.id}`, "PUT", {
+              ...toTaskInput(task),
+              tags: [...nextTags],
+            });
+          } else {
+            const remove = new Set(payload.tags ?? []);
+            await api(`/tasks/${task.id}`, "PUT", {
+              ...toTaskInput(task),
+              tags: task.tags.filter((tag) => !remove.has(tag)),
+            });
+          }
         } catch (e) {
           failed += 1;
           if (!firstError) firstError = errorText(e);
@@ -367,10 +479,25 @@ export default function TasksPage({ profile }: { profile: Profile }) {
       }
       return tasks.length;
     },
-    onSuccess: (count) => {
+    onSuccess: (count, payload) => {
       refresh();
       setSelectedIds(new Set());
-      void message.success(`已处理 ${count} 项`);
+      message.open({
+        type: "success",
+        duration: 8,
+        content: (
+          <Space>
+            <span>已处理 {count} 项</span>
+            <Button
+              type="link"
+              size="small"
+              onClick={() => undoBulk.mutate(payload.undo)}
+            >
+              撤销
+            </Button>
+          </Space>
+        ),
+      });
     },
     onError: (e: Error) => {
       refresh();
@@ -378,11 +505,52 @@ export default function TasksPage({ profile }: { profile: Profile }) {
       void message.error(e.message);
     },
   });
+  const saveFilter = useMutation({
+    mutationFn: (body: {
+      name: string;
+      payload: SavedFilterPayload;
+    }) => api<SavedFilter>("/saved-filters", "POST", body),
+    onSuccess: (saved) => {
+      setSavedFilterId(saved.id);
+      setSaveFilterOpen(false);
+      setFilterName("");
+      void client.invalidateQueries({ queryKey: ["saved-filters"] });
+      void message.success("筛选已保存");
+    },
+    onError: (e: Error) => void message.error(e.message),
+  });
+  const deleteFilter = useMutation({
+    mutationFn: (filterId: string) =>
+      api(`/saved-filters/${filterId}`, "DELETE"),
+    onSuccess: () => {
+      setSavedFilterId(undefined);
+      void client.invalidateQueries({ queryKey: ["saved-filters"] });
+      void message.success("筛选已删除");
+    },
+    onError: (e: Error) => void message.error(e.message),
+  });
   const restoreTask = useMutation({
     mutationFn: (task: Task) => api(`/tasks/${task.id}/restore`, "POST"),
     onSuccess: () => {
       refresh();
       void message.success("任务已恢复");
+    },
+    onError: (e: unknown) => void message.error(errorText(e)),
+  });
+  const purgeTask = useMutation({
+    mutationFn: (task: Task) =>
+      api(`/tasks/${task.id}/permanent`, "DELETE"),
+    onSuccess: () => {
+      refresh();
+      void message.success("任务已永久删除");
+    },
+    onError: (e: unknown) => void message.error(errorText(e)),
+  });
+  const purgeTrash = useMutation({
+    mutationFn: () => api<{ deleted: number }>("/tasks/trash/purge", "POST"),
+    onSuccess: (data) => {
+      refresh();
+      void message.success(`已永久删除 ${data.deleted} 项`);
     },
     onError: (e: unknown) => void message.error(errorText(e)),
   });
@@ -472,6 +640,15 @@ export default function TasksPage({ profile }: { profile: Profile }) {
       deadline_all_day: payload?.deadline_all_day ?? false,
       flagged: payload?.flagged ?? false,
       recurrence: payload?.recurrence ?? undefined,
+      recurrence_interval: payload?.recurrence_interval ?? 1,
+      recurrence_from_completion:
+        payload?.recurrence_from_completion ?? false,
+      recurrence_until: payload?.recurrence_until
+        ? DateTime.fromISO(payload.recurrence_until)
+            .setZone(profile.timezone)
+            .toFormat("yyyy-MM-dd")
+        : "",
+      recurrence_remaining: payload?.recurrence_remaining ?? undefined,
       tags: payload?.tags ?? [],
       list_id:
         payload?.list_id ??
@@ -509,6 +686,17 @@ export default function TasksPage({ profile }: { profile: Profile }) {
         ),
         deadline_all_day: values.deadline_all_day ?? false,
         recurrence: values.recurrence ?? null,
+        recurrence_interval: values.recurrence_interval ?? 1,
+        recurrence_from_completion:
+          values.recurrence_from_completion ?? false,
+        recurrence_until: values.recurrence_until
+          ? DateTime.fromISO(values.recurrence_until, {
+              zone: profile.timezone,
+            })
+              .endOf("day")
+              .toISO()
+          : null,
+        recurrence_remaining: values.recurrence_remaining ?? null,
         task_type: values.task_type?.trim() || null,
         estimate_minutes: values.estimate_minutes ?? null,
         parent_id: values.parent_id ?? null,
@@ -588,6 +776,49 @@ export default function TasksPage({ profile }: { profile: Profile }) {
   const currentQuery = detailPage ? detailTaskQuery : listTasks;
   const listOf = (task: Task) =>
     (lists.data ?? []).find((list) => list.id === task.list_id);
+  const groupedListOptions = [
+    { value: "all", label: "全部清单" },
+    { value: "inbox", label: "收件箱（未分类）" },
+    ...(listGroups.data ?? []).map((group) => ({
+      label: group.name,
+      options: (lists.data ?? [])
+        .filter((list) => list.group_id === group.id)
+        .map((list) => ({ value: list.id, label: list.name })),
+    })),
+    {
+      label: "未分组",
+      options: (lists.data ?? [])
+        .filter((list) => !list.group_id)
+        .map((list) => ({ value: list.id, label: list.name })),
+    },
+  ];
+  const editorListOptions = [
+    ...(listGroups.data ?? []).map((group) => ({
+      label: group.name,
+      options: (lists.data ?? [])
+        .filter((list) => list.group_id === group.id)
+        .map((list) => ({ value: list.id, label: list.name })),
+    })),
+    {
+      label: "未分组",
+      options: (lists.data ?? [])
+        .filter((list) => !list.group_id)
+        .map((list) => ({ value: list.id, label: list.name })),
+    },
+  ];
+  const applySavedFilter = (filterId: string) => {
+    const saved = (savedFilters.data ?? []).find(
+      (item) => item.id === filterId,
+    );
+    if (!saved) return;
+    setSavedFilterId(filterId);
+    setView(saved.payload.view);
+    setListFilter(saved.payload.list_id ?? "all");
+    setTagFilter(saved.payload.tag ?? "all");
+    setStatus(saved.payload.status ?? "all");
+    setSearch(saved.payload.q ?? "");
+    setSort(saved.payload.sort);
+  };
   const visible = (detailPage ? (detailTask ? [detailTask] : []) : listItems)
     .sort((a, b) =>
       sort === "deadline"
@@ -655,9 +886,53 @@ export default function TasksPage({ profile }: { profile: Profile }) {
       else next.add(taskId);
       return next;
     });
-  const runBulk = (action: BulkAction, listId: string | null = null) => {
-    if (selectedTasks.length)
-      bulk.mutate({ tasks: selectedTasks, action, list_id: listId });
+  const runBulk = (
+    action: BulkAction,
+    options: {
+      listId?: string | null;
+      deadline?: QuickDeadline;
+      tags?: string[];
+    } = {},
+  ) => {
+    if (!selectedTasks.length) return;
+    let undo: BulkUndo;
+    if (action === "complete" || action === "reopen" || action === "trash") {
+      undo = { kind: action, tasks: selectedTasks };
+    } else if (action === "deadline") {
+      undo = {
+        kind: "deadline",
+        snapshots: selectedTasks.map((task) => ({
+          id: task.id,
+          deadline_at: task.deadline_at,
+          deadline_all_day: task.deadline_all_day,
+        })),
+      };
+    } else if (action === "move") {
+      undo = {
+        kind: "move",
+        snapshots: selectedTasks.map((task) => ({
+          id: task.id,
+          input: toTaskInput(task),
+        })),
+      };
+    } else {
+      undo = {
+        kind: "tags",
+        snapshots: selectedTasks.map((task) => ({
+          id: task.id,
+          input: toTaskInput(task),
+        })),
+      };
+    }
+    bulk.mutate({
+      tasks: selectedTasks,
+      action,
+      list_id: options.listId ?? null,
+      deadline_at: options.deadline?.deadline_at,
+      deadline_all_day: options.deadline?.deadline_all_day,
+      tags: options.tags,
+      undo,
+    });
   };
   const here = currentLocation(
     location.pathname,
@@ -736,14 +1011,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
             aria-label="筛选清单"
             value={listFilter}
             onChange={setListFilter}
-            options={[
-              { value: "all", label: "全部清单" },
-              { value: "inbox", label: "收件箱（未分类）" },
-              ...(lists.data ?? []).map((list) => ({
-                value: list.id,
-                label: list.name,
-              })),
-            ]}
+            options={groupedListOptions}
           />
           <Button onClick={() => setListManager(true)}>管理清单</Button>
           <Button onClick={() => setTagManager(true)}>管理标签</Button>
@@ -756,6 +1024,42 @@ export default function TasksPage({ profile }: { profile: Profile }) {
           >
             {selectionMode ? "退出批量" : "批量操作"}
           </Button>
+          {view === "trash" && (
+            <Button
+              danger
+              onClick={() =>
+                modal.confirm({
+                  title: "清空垃圾箱？",
+                  content:
+                    "垃圾箱中的任务、附件和关联记录将永久删除，无法恢复。",
+                  okText: "清空垃圾箱",
+                  cancelText: "取消",
+                  onOk: () => purgeTrash.mutate(),
+                })
+              }
+            >
+              清空垃圾箱
+            </Button>
+          )}
+          <Select
+            aria-label="已保存筛选"
+            value={savedFilterId}
+            onChange={applySavedFilter}
+            allowClear
+            placeholder="已保存筛选"
+            onClear={() => setSavedFilterId(undefined)}
+            options={(savedFilters.data ?? []).map((saved) => ({
+              value: saved.id,
+              label: saved.name,
+            }))}
+            style={{ minWidth: 140 }}
+          />
+          <Button onClick={() => setSaveFilterOpen(true)}>保存筛选</Button>
+          {savedFilterId && (
+            <Button danger onClick={() => deleteFilter.mutate(savedFilterId)}>
+              删除筛选
+            </Button>
+          )}
           <Select
             aria-label="筛选标签"
             value={tagFilter}
@@ -770,7 +1074,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
           />
           <Input.Search
             aria-label="搜索任务"
-            placeholder="搜索标题或描述"
+            placeholder="搜索标题、描述、标签、链接或附件名"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -821,6 +1125,32 @@ export default function TasksPage({ profile }: { profile: Profile }) {
             </Button>
             <Dropdown
               menu={{
+                items: quickDeadlineOptions(
+                  DateTime.now().setZone(profile.timezone),
+                ).map(({ key, label }) => ({ key, label })),
+                onClick: ({ key }) => {
+                  const option = quickDeadlineOptions(
+                    DateTime.now().setZone(profile.timezone),
+                  ).find((item) => item.key === key);
+                  if (option) runBulk("deadline", { deadline: option });
+                },
+              }}
+            >
+              <Button disabled={!selectedIds.size || bulk.isPending}>
+                改期
+              </Button>
+            </Dropdown>
+            <Button
+              disabled={!selectedIds.size || bulk.isPending}
+              onClick={() => {
+                setBulkTagValues([]);
+                setBulkTagOpen(true);
+              }}
+            >
+              标签
+            </Button>
+            <Dropdown
+              menu={{
                 items: [
                   { key: "inbox", label: "收件箱（未分类）" },
                   ...(lists.data ?? []).map((list) => ({
@@ -829,7 +1159,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
                   })),
                 ],
                 onClick: ({ key }) =>
-                  runBulk("move", key === "inbox" ? null : key),
+                  runBulk("move", { listId: key === "inbox" ? null : key }),
               }}
             >
               <Button disabled={!selectedIds.size || bulk.isPending}>
@@ -1137,21 +1467,42 @@ export default function TasksPage({ profile }: { profile: Profile }) {
                       · 预计 {task.estimate_minutes ?? "—"} 分钟 ·{" "}
                       {priorityLabel(task.priority)}
                       {task.recurrence &&
-                        ` · 重复：${recurrenceLabel(task.recurrence)}`}
+                        ` · 重复：${recurrenceLabel(task.recurrence, task.recurrence_interval, task.recurrence_from_completion)}`}
                       {task.completed_at &&
                         ` · 完成于 ${displayTime(task.completed_at, profile.timezone)}`}
                     </div>
                     <Space wrap>
                       {task.trashed_at ? (
-                        <Button
-                          onClick={() => restoreTask.mutate(task)}
-                          loading={
-                            restoreTask.isPending &&
-                            restoreTask.variables?.id === task.id
-                          }
-                        >
-                          恢复任务
-                        </Button>
+                        <>
+                          <Button
+                            onClick={() => restoreTask.mutate(task)}
+                            loading={
+                              restoreTask.isPending &&
+                              restoreTask.variables?.id === task.id
+                            }
+                          >
+                            恢复任务
+                          </Button>
+                          <Button
+                            danger
+                            loading={
+                              purgeTask.isPending &&
+                              purgeTask.variables?.id === task.id
+                            }
+                            onClick={() =>
+                              modal.confirm({
+                                title: "永久删除任务？",
+                                content:
+                                  "附件和关联记录会一并删除，无法恢复。",
+                                okText: "永久删除",
+                                cancelText: "取消",
+                                onOk: () => purgeTask.mutate(task),
+                              })
+                            }
+                          >
+                            永久删除
+                          </Button>
+                        </>
                       ) : (
                         <>
                           <Button
@@ -1302,6 +1653,8 @@ export default function TasksPage({ profile }: { profile: Profile }) {
             flagged: false,
             parallel_policy: "inherit",
             deadline_all_day: false,
+            recurrence_interval: 1,
+            recurrence_from_completion: false,
           }}
         >
           <Form.Item
@@ -1361,9 +1714,48 @@ export default function TasksPage({ profile }: { profile: Profile }) {
                 { value: "daily", label: "每天" },
                 { value: "weekly", label: "每周" },
                 { value: "monthly", label: "每月" },
+                { value: "yearly", label: "每年" },
+                { value: "weekdays", label: "工作日" },
               ]}
             />
           </Form.Item>
+          {recurrenceValue && (
+            <>
+              {recurrenceValue !== "weekdays" && (
+                <Form.Item
+                  name="recurrence_interval"
+                  label={`重复间隔（每 ${intervalUnit}）`}
+                >
+                  <InputNumber min={1} max={52} precision={0} />
+                </Form.Item>
+              )}
+              <Form.Item
+                name="recurrence_from_completion"
+                valuePropName="checked"
+              >
+                <Checkbox>按完成日计算下一次</Checkbox>
+              </Form.Item>
+              <div className="form-grid">
+                <Form.Item
+                  name="recurrence_until"
+                  label="重复结束日期（可选）"
+                >
+                  <Input type="date" />
+                </Form.Item>
+                <Form.Item
+                  name="recurrence_remaining"
+                  label="剩余次数（可选）"
+                >
+                  <InputNumber
+                    min={0}
+                    max={100000}
+                    precision={0}
+                    placeholder="不限"
+                  />
+                </Form.Item>
+              </div>
+            </>
+          )}
           <Form.Item name="estimate_minutes" label="预计用时（分钟，可留空）">
             <InputNumber min={1} max={100000} precision={0} />
           </Form.Item>
@@ -1374,10 +1766,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
             <Select
               allowClear
               placeholder="收件箱（未分类）"
-              options={(lists.data ?? []).map((list) => ({
-                value: list.id,
-                label: list.name,
-              }))}
+              options={editorListOptions}
             />
           </Form.Item>
           <Form.Item name="tags" label="标签">
@@ -1440,7 +1829,13 @@ export default function TasksPage({ profile }: { profile: Profile }) {
                 </Tag>
               )}
               {detailTask.recurrence && (
-                <Tag>{recurrenceLabel(detailTask.recurrence)}</Tag>
+                <Tag>
+                  {recurrenceLabel(
+                    detailTask.recurrence,
+                    detailTask.recurrence_interval,
+                    detailTask.recurrence_from_completion,
+                  )}
+                </Tag>
               )}
             </Space>
             <p className="meta">
@@ -1494,6 +1889,84 @@ export default function TasksPage({ profile }: { profile: Profile }) {
           <Empty description="任务不存在或已删除" />
         )}
       </Drawer>
+      <Modal
+        open={saveFilterOpen}
+        title="保存当前筛选"
+        onCancel={() => setSaveFilterOpen(false)}
+        okText="保存"
+        cancelText="取消"
+        onOk={() => {
+          if (!filterName.trim()) {
+            void message.error("请输入筛选名称");
+            return;
+          }
+          saveFilter.mutate({
+            name: filterName.trim(),
+            payload: {
+              view,
+              q: search.trim(),
+              status:
+                status === "all"
+                  ? null
+                  : (status as SavedFilterPayload["status"]),
+              list_id: listFilter === "all" ? null : listFilter,
+              tag: tagFilter === "all" ? null : tagFilter,
+              sort: sort as SavedFilterPayload["sort"],
+            },
+          });
+        }}
+      >
+        <Input
+          aria-label="筛选名称"
+          value={filterName}
+          onChange={(e) => setFilterName(e.target.value)}
+          placeholder="例如：本周数学作业"
+          maxLength={100}
+        />
+      </Modal>
+      <Modal
+        open={bulkTagOpen}
+        title="批量标签"
+        onCancel={() => setBulkTagOpen(false)}
+        footer={
+          <Space>
+            <Button
+              disabled={!bulkTagValues.length}
+              onClick={() => {
+                if (!bulkTagValues.length) return;
+                runBulk("remove_tags", { tags: bulkTagValues });
+                setBulkTagOpen(false);
+              }}
+            >
+              移除标签
+            </Button>
+            <Button
+              type="primary"
+              disabled={!bulkTagValues.length}
+              onClick={() => {
+                if (!bulkTagValues.length) return;
+                runBulk("add_tags", { tags: bulkTagValues });
+                setBulkTagOpen(false);
+              }}
+            >
+              添加标签
+            </Button>
+            <Button onClick={() => setBulkTagOpen(false)}>取消</Button>
+          </Space>
+        }
+      >
+        <Select
+          mode="tags"
+          value={bulkTagValues}
+          onChange={setBulkTagValues}
+          options={(tags.data ?? []).map((tag) => ({
+            value: tag.name,
+            label: tag.name,
+          }))}
+          placeholder="输入或选择标签"
+          style={{ width: "100%" }}
+        />
+      </Modal>
       <TaskListManager
         open={listManager}
         onClose={() => setListManager(false)}

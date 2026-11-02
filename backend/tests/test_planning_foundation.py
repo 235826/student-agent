@@ -39,6 +39,10 @@ def update_task(client, record, **kwargs):
         "estimate_minutes",
         "task_type",
         "recurrence",
+        "recurrence_interval",
+        "recurrence_from_completion",
+        "recurrence_until",
+        "recurrence_remaining",
         "list_id",
         "tags",
         "parent_id",
@@ -330,7 +334,7 @@ def test_task_filters_and_views(authenticated):
         return {item["id"] for item in response.json()}
 
     assert ids(q="微分") == {math["id"]}
-    assert ids(q="数学") == {math["id"]}
+    assert ids(q="数学") == {math["id"], done["id"]}
     assert ids(view="scheduled") == {math["id"]}
     assert ids(view="unscheduled") == {reading["id"], inbox["id"]}
     assert ids(view="done") == {done["id"]}
@@ -359,6 +363,32 @@ def test_task_pagination(authenticated):
     assert c.get("/api/v1/tasks", params={"limit": 0}).status_code == 422
     assert c.get("/api/v1/tasks", params={"limit": 201}).status_code == 422
     assert c.get("/api/v1/tasks", params={"offset": -1}).status_code == 422
+
+
+def test_task_search_includes_tags_links_and_attachments(authenticated):
+    c = authenticated
+    record = task(
+        c,
+        "带资料任务",
+        tags=["数学"],
+        links=["https://example.com/notes"],
+    )
+    other = task(c, "无关任务")
+    upload = c.post(
+        f"/api/v1/tasks/{record['id']}/attachments",
+        files={"file": ("作业说明.txt", b"hello", "text/plain")},
+    )
+    assert upload.status_code == 201, upload.text
+
+    def search(value: str) -> set[str]:
+        response = c.get("/api/v1/tasks", params={"q": value})
+        assert response.status_code == 200, response.text
+        return {item["id"] for item in response.json()}
+
+    assert search("数学") == {record["id"]}
+    assert search("example.com") == {record["id"]}
+    assert search("作业说明") == {record["id"]}
+    assert search("无关任务") == {other["id"]}
 
 
 def test_task_detail_titles_and_get_task(authenticated):
@@ -557,6 +587,251 @@ def test_completion_stats(authenticated):
     assert cleared["today"] == 0
     assert cleared["estimate_minutes"] == 0
     assert cleared["actual_minutes"] == 0
+
+
+def test_permanent_delete_cleans_relations_and_files(authenticated, settings):
+    c = authenticated
+    parent = task(c, "待清理", tags=["数学"])
+    child = task(c, "保留子任务", parent_id=parent["id"])
+    upload = c.post(
+        f"/api/v1/tasks/{parent['id']}/attachments",
+        files={"file": ("note.txt", b"hello", "text/plain")},
+    )
+    assert upload.status_code == 201
+    assert c.delete(f"/api/v1/tasks/{parent['id']}/permanent").status_code == 409
+    assert c.post(f"/api/v1/tasks/{parent['id']}/trash?confirm_impact=true").status_code == 200
+    assert c.delete(f"/api/v1/tasks/{parent['id']}/permanent").status_code == 204
+    assert c.get(f"/api/v1/tasks/{parent['id']}").status_code == 404
+    remaining = c.get("/api/v1/tasks").json()
+    assert [item["id"] for item in remaining] == [child["id"]]
+    assert remaining[0]["parent_id"] is None
+    assert not [path for path in settings.attachment_dir.rglob("*") if path.is_file()]
+
+
+def test_purge_trash_and_auto_cleanup(authenticated):
+    c = authenticated
+    old = task(c, "旧垃圾")
+    c.post(f"/api/v1/tasks/{old['id']}/trash")
+    with Session(c.app.state.engine) as db:
+        record = db.get(Task, old["id"])
+        assert record is not None
+        record.trashed_at = int(datetime.now(UTC).timestamp() * 1000) - 31 * 24 * 60 * 60 * 1000
+        db.commit()
+
+    trigger = task(c, "触发清理")
+    c.post(f"/api/v1/tasks/{trigger['id']}/trash")
+    trash = c.get("/api/v1/tasks", params={"view": "trash"}).json()
+    assert [item["id"] for item in trash] == [trigger["id"]]
+
+    other = task(c, "另一个垃圾")
+    c.post(f"/api/v1/tasks/{other['id']}/trash")
+    purged = c.post("/api/v1/tasks/trash/purge")
+    assert purged.status_code == 200, purged.text
+    assert purged.json() == {"deleted": 2}
+    assert c.get("/api/v1/tasks", params={"view": "trash"}).json() == []
+
+
+def test_subtask_order_and_reorder(authenticated):
+    c = authenticated
+    parent = task(c, "项目")
+    first = task(c, "阶段一", parent_id=parent["id"])
+    second = task(c, "阶段二", parent_id=parent["id"])
+    third = task(c, "阶段三", parent_id=parent["id"])
+    assert [first["subtask_order"], second["subtask_order"], third["subtask_order"]] == [
+        1,
+        2,
+        3,
+    ]
+
+    reordered = c.post(
+        f"/api/v1/tasks/{parent['id']}/subtasks/reorder",
+        json={"task_ids": [third["id"], first["id"], second["id"]]},
+    )
+    assert reordered.status_code == 200, reordered.text
+    assert [item["id"] for item in reordered.json()] == [
+        third["id"],
+        first["id"],
+        second["id"],
+    ]
+    assert [item["subtask_order"] for item in reordered.json()] == [1, 2, 3]
+
+    other = task(c, "另一个任务")
+    assert (
+        c.post(
+            f"/api/v1/tasks/{parent['id']}/subtasks/reorder",
+            json={"task_ids": [other["id"]]},
+        ).status_code
+        == 404
+    )
+    assert (
+        c.post(
+            f"/api/v1/tasks/{parent['id']}/subtasks/reorder",
+            json={"task_ids": [first["id"], first["id"]]},
+        ).status_code
+        == 422
+    )
+
+
+def test_recurring_interval_weekdays_and_yearly(authenticated):
+    c = authenticated
+    zone = ZoneInfo("Asia/Shanghai")
+    due = datetime(2030, 5, 10, 9, 0, tzinfo=zone)
+
+    biweekly = task(
+        c,
+        "双周任务",
+        recurrence="weekly",
+        recurrence_interval=2,
+        deadline_at=due.isoformat(),
+    )
+    c.post(f"/api/v1/tasks/{biweekly['id']}/complete")
+    next_biweekly = next(
+        item
+        for item in c.get("/api/v1/tasks").json()
+        if item["title"] == "双周任务" and item["status"] == "todo"
+    )
+    assert datetime.fromisoformat(next_biweekly["deadline_at"].replace("Z", "+00:00")).astimezone(
+        zone
+    ) == due + timedelta(weeks=2)
+
+    now_local = datetime.now(UTC).astimezone(zone)
+    days = (4 - now_local.weekday()) % 7
+    friday = (now_local + timedelta(days=days)).replace(hour=9, minute=0, second=0, microsecond=0)
+    if friday <= now_local:
+        friday += timedelta(days=7)
+    weekdays = task(
+        c,
+        "工作日任务",
+        recurrence="weekdays",
+        deadline_at=friday.isoformat(),
+    )
+    c.post(f"/api/v1/tasks/{weekdays['id']}/complete")
+    next_weekday = next(
+        item
+        for item in c.get("/api/v1/tasks").json()
+        if item["title"] == "工作日任务" and item["status"] == "todo"
+    )
+    next_weekday_local = datetime.fromisoformat(
+        next_weekday["deadline_at"].replace("Z", "+00:00")
+    ).astimezone(zone)
+    assert next_weekday_local == friday + timedelta(days=3)
+    assert next_weekday_local.weekday() == 0
+
+    yearly = task(
+        c,
+        "年度任务",
+        recurrence="yearly",
+        deadline_at=due.isoformat(),
+    )
+    c.post(f"/api/v1/tasks/{yearly['id']}/complete")
+    next_yearly = next(
+        item
+        for item in c.get("/api/v1/tasks").json()
+        if item["title"] == "年度任务" and item["status"] == "todo"
+    )
+    assert datetime.fromisoformat(next_yearly["deadline_at"].replace("Z", "+00:00")).astimezone(
+        zone
+    ) == due.replace(year=2031)
+
+
+def test_recurring_until_remaining_and_from_completion(authenticated):
+    c = authenticated
+    zone = ZoneInfo("Asia/Shanghai")
+    now_local = datetime.now(UTC).astimezone(zone)
+    due = (now_local + timedelta(days=2)).replace(hour=9, minute=0, second=0, microsecond=0)
+
+    stopped = task(
+        c,
+        "到截止",
+        recurrence="daily",
+        deadline_at=due.isoformat(),
+        recurrence_until=due.isoformat(),
+    )
+    c.post(f"/api/v1/tasks/{stopped['id']}/complete")
+    assert not [
+        item
+        for item in c.get("/api/v1/tasks").json()
+        if item["title"] == "到截止" and item["status"] == "todo"
+    ]
+
+    limited = task(
+        c,
+        "限次数",
+        recurrence="daily",
+        deadline_at=due.isoformat(),
+        recurrence_remaining=1,
+    )
+    c.post(f"/api/v1/tasks/{limited['id']}/complete")
+    next_limited = next(
+        item
+        for item in c.get("/api/v1/tasks").json()
+        if item["title"] == "限次数" and item["status"] == "todo"
+    )
+    assert next_limited["recurrence_remaining"] == 0
+    c.post(f"/api/v1/tasks/{next_limited['id']}/complete")
+    assert len([item for item in c.get("/api/v1/tasks").json() if item["title"] == "限次数"]) == 2
+
+    from_completion = task(
+        c,
+        "按完成日",
+        recurrence="daily",
+        deadline_at=due.isoformat(),
+        recurrence_from_completion=True,
+    )
+    c.post(f"/api/v1/tasks/{from_completion['id']}/complete")
+    next_completion = next(
+        item
+        for item in c.get("/api/v1/tasks").json()
+        if item["title"] == "按完成日" and item["status"] == "todo"
+    )
+    next_completion_local = datetime.fromisoformat(
+        next_completion["deadline_at"].replace("Z", "+00:00")
+    ).astimezone(zone)
+    assert next_completion_local.date() == (now_local + timedelta(days=1)).date()
+    assert next_completion_local.hour == 9
+
+
+def test_list_groups_and_saved_filters(authenticated):
+    c = authenticated
+    group = post(c, "/task-list-groups", {"name": "学习"})
+    assert c.post("/api/v1/task-list-groups", json={"name": "学习"}).status_code == 409
+    renamed = c.put(f"/api/v1/task-list-groups/{group['id']}", json={"name": "课程"})
+    assert renamed.status_code == 200 and renamed.json()["name"] == "课程"
+
+    task_list = post(
+        c,
+        "/task-lists",
+        {"name": "数学", "group_id": group["id"]},
+    )
+    assert task_list["group_id"] == group["id"]
+
+    saved = post(
+        c,
+        "/saved-filters",
+        {
+            "name": "今日作业",
+            "payload": {"view": "today", "q": "作业", "sort": "deadline"},
+        },
+    )
+    assert saved["payload"]["view"] == "today"
+    assert saved["payload"]["q"] == "作业"
+    listed = c.get("/api/v1/saved-filters").json()
+    assert [item["name"] for item in listed] == ["今日作业"]
+    updated = c.put(
+        f"/api/v1/saved-filters/{saved['id']}",
+        json={"name": "今日作业2", "payload": {"view": "all"}},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["name"] == "今日作业2"
+    assert updated.json()["payload"]["view"] == "all"
+    assert c.delete(f"/api/v1/saved-filters/{saved['id']}").status_code == 204
+    assert c.get("/api/v1/saved-filters").json() == []
+
+    assert c.delete(f"/api/v1/task-list-groups/{group['id']}").status_code == 204
+    stored = next(
+        item for item in c.get("/api/v1/task-lists").json() if item["id"] == task_list["id"]
+    )
+    assert stored["group_id"] is None
 
 
 def test_task_flag_toggle_and_preserve(authenticated):

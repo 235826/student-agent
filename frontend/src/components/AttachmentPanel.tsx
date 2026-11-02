@@ -1,8 +1,10 @@
+import { useState } from "react";
 import {
   App,
   Button,
   Card,
   List,
+  Modal,
   Popconfirm,
   Space,
   Upload,
@@ -16,9 +18,15 @@ function formatSize(bytes: number) {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
+const previewable = (mediaType: string) =>
+  ["image/png", "image/jpeg", "image/webp", "image/gif", "application/pdf"].includes(
+    mediaType,
+  );
+
 export default function AttachmentPanel({ taskId }: { taskId: string }) {
   const client = useQueryClient();
   const { message } = App.useApp();
+  const [preview, setPreview] = useState<Attachment | null>(null);
   const attachments = useQuery({
     queryKey: ["tasks", "attachments", taskId],
     queryFn: () => api<Attachment[]>(`/tasks/${taskId}/attachments`),
@@ -62,6 +70,17 @@ export default function AttachmentPanel({ taskId }: { taskId: string }) {
           renderItem={(attachment) => (
             <List.Item
               actions={[
+                ...(previewable(attachment.media_type)
+                  ? [
+                      <Button
+                        key="preview"
+                        type="link"
+                        onClick={() => setPreview(attachment)}
+                      >
+                        预览
+                      </Button>,
+                    ]
+                  : []),
                 <a
                   key="download"
                   href={`/api/v1/attachments/${attachment.id}`}
@@ -106,6 +125,29 @@ export default function AttachmentPanel({ taskId }: { taskId: string }) {
         <Button loading={upload.isPending}>上传附件</Button>
       </Upload>
       <p className="muted">单个附件不超过 20 MiB，每个任务最多 20 个。</p>
+      <Modal
+        open={!!preview}
+        title={preview?.filename}
+        footer={null}
+        onCancel={() => setPreview(null)}
+        width={900}
+        destroyOnHidden
+      >
+        {preview &&
+          (preview.media_type === "application/pdf" ? (
+            <iframe
+              className="attachment-preview-frame"
+              src={`/api/v1/attachments/${preview.id}?inline=true`}
+              title={preview.filename}
+            />
+          ) : (
+            <img
+              className="attachment-preview-image"
+              src={`/api/v1/attachments/${preview.id}?inline=true`}
+              alt={preview.filename}
+            />
+          ))}
+      </Modal>
     </Card>
   );
 }

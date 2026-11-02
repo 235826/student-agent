@@ -23,7 +23,7 @@ Timestamp = Annotated[datetime, BeforeValidator(from_epoch)]
 Title = Annotated[str, Field(min_length=1, max_length=200)]
 Status = Literal["todo", "in_progress", "done", "cancelled"]
 TaskView = Literal["all", "today", "scheduled", "unscheduled", "flagged", "done", "trash"]
-Recurrence = Literal["daily", "weekly", "monthly"]
+Recurrence = Literal["daily", "weekly", "monthly", "yearly", "weekdays"]
 Policy = Literal["none", "allow_selected"]
 TagName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=50)]
 Link = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2000)]
@@ -102,6 +102,10 @@ class TaskInput(Schema):
     estimate_minutes: Annotated[int, Field(gt=0, le=100000)] | None = None
     task_type: Annotated[str, Field(min_length=1, max_length=100)] | None = None
     recurrence: Recurrence | None = None
+    recurrence_interval: Annotated[int, Field(ge=1, le=52)] = 1
+    recurrence_from_completion: bool = False
+    recurrence_until: datetime | None = None
+    recurrence_remaining: Annotated[int, Field(ge=0, le=100000)] | None = None
     list_id: str | None = None
     tags: list[TagName] = Field(default_factory=list, max_length=20)
     parent_id: str | None = None
@@ -120,11 +124,11 @@ class TaskInput(Schema):
                 result.append(value)
         return result
 
-    @field_validator("deadline_at")
+    @field_validator("deadline_at", "recurrence_until")
     @classmethod
     def aware(cls, value: datetime | None) -> datetime | None:
         if value is not None and value.utcoffset() is None:
-            raise ValueError("截止时间必须包含 UTC 偏移")
+            raise ValueError("时间必须包含 UTC 偏移")
         return value
 
 
@@ -139,7 +143,12 @@ class TaskOut(TaskInput):
     tags: list[str]
     flagged: bool
     recurrence: Recurrence | None
+    recurrence_interval: int
+    recurrence_from_completion: bool
+    recurrence_until: Timestamp | None
+    recurrence_remaining: int | None
     sort_order: int
+    subtask_order: int
     deadline_at: Timestamp | None
     completed_at: Timestamp | None
     trashed_at: Timestamp | None
@@ -165,6 +174,10 @@ class TaskSummaryOut(Schema):
 
 class TaskTitlesInput(Schema):
     ids: list[str] = Field(default_factory=list, max_length=1000)
+
+
+class PurgeOut(Schema):
+    deleted: int
 
 
 class CompletionDay(Schema):
@@ -196,9 +209,21 @@ class DeadlineInput(Schema):
 Color = Annotated[str, Field(pattern=r"^#[0-9a-fA-F]{6}$")]
 
 
+class TaskListGroupInput(Schema):
+    name: Annotated[str, Field(min_length=1, max_length=100)]
+
+
+class TaskListGroupOut(TaskListGroupInput):
+    id: str
+    sort_order: int
+    created_at: Timestamp
+    updated_at: Timestamp
+
+
 class TaskListInput(Schema):
     name: Annotated[str, Field(min_length=1, max_length=100)]
     color: Color = "#245c48"
+    group_id: str | None = None
 
 
 class TaskListOut(TaskListInput):
@@ -218,6 +243,29 @@ class AttachmentOut(Schema):
     media_type: str
     size_bytes: int
     created_at: Timestamp
+
+
+SortKey = Literal["status", "deadline", "priority", "completed", "manual"]
+
+
+class SavedFilterPayload(Schema):
+    view: TaskView = "all"
+    q: Annotated[str, Field(max_length=200)] = ""
+    status: Status | None = None
+    list_id: str | None = None
+    tag: Annotated[str, Field(max_length=50)] | None = None
+    sort: SortKey = "status"
+
+
+class SavedFilterInput(Schema):
+    name: Annotated[str, Field(min_length=1, max_length=100)]
+    payload: SavedFilterPayload
+
+
+class SavedFilterOut(SavedFilterInput):
+    id: str
+    created_at: Timestamp
+    updated_at: Timestamp
 
 
 class TagInput(Schema):

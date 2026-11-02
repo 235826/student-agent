@@ -163,29 +163,74 @@ def add_recurrence(local: datetime, recurrence: str, step: int) -> datetime:
         month = total % 12 + 1
         day = min(local.day, calendar.monthrange(year, month)[1])
         target = local.date().replace(year=year, month=month, day=day)
+    elif recurrence == "yearly":
+        year = local.year + step
+        day = min(local.day, calendar.monthrange(year, local.month)[1])
+        target = local.date().replace(year=year, day=day)
+    elif recurrence == "weekdays":
+        target = local.date()
+        remaining = step
+        while remaining:
+            target += timedelta(days=1)
+            if target.weekday() < 5:
+                remaining -= 1
     else:
         raise ValueError("unsupported recurrence")
     return local.replace(year=target.year, month=target.month, day=target.day)
 
 
-def next_deadline_ms(deadline_ms: int, recurrence: str, after_ms: int, user: User) -> int:
-    local = datetime.fromtimestamp(deadline_ms / 1000, ZoneInfo(user.timezone))
+def next_deadline_ms(
+    deadline_ms: int,
+    recurrence: str,
+    interval: int,
+    from_completion: bool,
+    after_ms: int,
+    until_ms: int | None,
+    user: User,
+) -> int | None:
+    zone = ZoneInfo(user.timezone)
+    original = datetime.fromtimestamp(deadline_ms / 1000, zone)
+    if from_completion:
+        completed = datetime.fromtimestamp(after_ms / 1000, zone)
+        base = completed.replace(
+            hour=original.hour,
+            minute=original.minute,
+            second=original.second,
+            microsecond=original.microsecond,
+        )
+    else:
+        base = original
     step = 1
     while step <= 10000:
-        candidate = add_recurrence(local, recurrence, step)
+        candidate = add_recurrence(
+            base,
+            recurrence,
+            step if recurrence == "weekdays" else step * interval,
+        )
         candidate_ms = int(candidate.timestamp() * 1000)
         if candidate_ms > after_ms:
+            if until_ms is not None and candidate_ms > until_ms:
+                return None
             return candidate_ms
         step += 1
-    raise ValueError("recurrence is too far in the past")
+    return None
 
 
 def next_task_values(db: Session, user: User, task: Task, after_ms: int) -> dict[str, Any] | None:
     if not task.recurrence or task.deadline_at is None:
         return None
-    try:
-        deadline = next_deadline_ms(task.deadline_at, task.recurrence, after_ms, user)
-    except ValueError:
+    if task.recurrence_remaining is not None and task.recurrence_remaining <= 0:
+        return None
+    deadline = next_deadline_ms(
+        task.deadline_at,
+        task.recurrence,
+        task.recurrence_interval or 1,
+        task.recurrence_from_completion,
+        after_ms,
+        task.recurrence_until,
+        user,
+    )
+    if deadline is None:
         return None
     parent_id = task.parent_id
     if parent_id:
@@ -203,6 +248,12 @@ def next_task_values(db: Session, user: User, task: Task, after_ms: int) -> dict
         "estimate_minutes": task.estimate_minutes,
         "task_type": task.task_type,
         "recurrence": task.recurrence,
+        "recurrence_interval": task.recurrence_interval,
+        "recurrence_from_completion": task.recurrence_from_completion,
+        "recurrence_until": task.recurrence_until,
+        "recurrence_remaining": (
+            task.recurrence_remaining - 1 if task.recurrence_remaining is not None else None
+        ),
         "list_id": task.list_id,
         "parent_id": parent_id,
         "parallel_policy": task.parallel_policy,
@@ -219,11 +270,24 @@ def generate_next_occurrence(db: Session, user: User, task: Task) -> Task | None
         .order_by(Task.sort_order.desc())
         .limit(1)
     )
+    subtask_order = 0
+    if values["parent_id"]:
+        last_subtask = db.scalar(
+            select(Task.subtask_order)
+            .where(
+                Task.workspace_id == user.workspace_id,
+                Task.parent_id == values["parent_id"],
+            )
+            .order_by(Task.subtask_order.desc())
+            .limit(1)
+        )
+        subtask_order = (last_subtask or 0) + 1
     next_task = Task(
         workspace_id=user.workspace_id,
         status="todo",
         recurrence_parent_id=task.id,
         sort_order=(last_order or 0) + 1,
+        subtask_order=subtask_order,
         **values,
     )
     db.add(next_task)
@@ -302,8 +366,16 @@ def apply_task(db: Session, user: User, body: TaskInput, task: Task | None = Non
         require_impact_confirmation(db, task, body.confirm_impact)
     data = body.model_dump(exclude={"predecessor_ids", "confirm_impact", "tags"})
     data["deadline_at"] = int(body.deadline_at.timestamp() * 1000) if body.deadline_at else None
+    data["recurrence_until"] = (
+        int(body.recurrence_until.timestamp() * 1000) if body.recurrence_until else None
+    )
     if not body.deadline_at:
         data["deadline_all_day"] = False
+    if not body.recurrence:
+        data["recurrence_interval"] = 1
+        data["recurrence_from_completion"] = False
+        data["recurrence_until"] = None
+        data["recurrence_remaining"] = None
     previous_status: str | None = None
     previous_completed_at: int | None = None
     became_done = False
@@ -316,6 +388,17 @@ def apply_task(db: Session, user: User, body: TaskInput, task: Task | None = Non
             .limit(1)
         )
         task.sort_order = (last_order or 0) + 1
+        if body.parent_id:
+            last_subtask = db.scalar(
+                select(Task.subtask_order)
+                .where(
+                    Task.workspace_id == user.workspace_id,
+                    Task.parent_id == body.parent_id,
+                )
+                .order_by(Task.subtask_order.desc())
+                .limit(1)
+            )
+            task.subtask_order = (last_subtask or 0) + 1
         if body.status == "done":
             task.completed_at = now_ms()
             became_done = True

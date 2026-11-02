@@ -1,3 +1,5 @@
+import base64
+
 from app.config import Settings
 
 
@@ -73,3 +75,28 @@ def test_attachment_limits_empty_and_trashed(authenticated, settings: Settings, 
         files={"file": ("three.txt", b"ok", "text/plain")},
     )
     assert trashed.status_code == 409
+
+
+def test_attachment_inline_preview_only_safe_types(authenticated):
+    c = authenticated
+    task = create_task(c, "预览附件")
+    png = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+    )
+    image = c.post(
+        f"/api/v1/tasks/{task['id']}/attachments",
+        files={"file": ("pixel.png", png, "image/png")},
+    )
+    assert image.status_code == 201, image.text
+    inline_image = c.get(f"/api/v1/attachments/{image.json()['id']}?inline=true")
+    assert inline_image.status_code == 200
+    assert inline_image.headers["content-disposition"] == "inline"
+    assert inline_image.headers["content-type"] == "image/png"
+
+    text = c.post(
+        f"/api/v1/tasks/{task['id']}/attachments",
+        files={"file": ("note.txt", b"hello", "text/plain")},
+    )
+    assert text.status_code == 201
+    inline_text = c.get(f"/api/v1/attachments/{text.json()['id']}?inline=true")
+    assert inline_text.headers["content-disposition"].startswith("attachment;")

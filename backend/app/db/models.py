@@ -57,12 +57,22 @@ class Owned(Record):
     workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id"), index=True)
 
 
+class TaskListGroup(Owned, Base):
+    __tablename__ = "task_list_groups"
+    __table_args__ = (UniqueConstraint("workspace_id", "name"),)
+    name: Mapped[str] = mapped_column(String(100))
+    sort_order: Mapped[int] = mapped_column(default=0)
+
+
 class TaskList(Owned, Base):
     __tablename__ = "task_lists"
     __table_args__ = (UniqueConstraint("workspace_id", "name"),)
     name: Mapped[str] = mapped_column(String(100))
     color: Mapped[str] = mapped_column(String(7), default="#245c48")
     sort_order: Mapped[int] = mapped_column(default=0)
+    group_id: Mapped[str | None] = mapped_column(
+        ForeignKey("task_list_groups.id"), index=True, nullable=True
+    )
 
 
 class Task(Owned, Base):
@@ -87,9 +97,16 @@ class Task(Owned, Base):
     estimate_minutes: Mapped[int | None]
     task_type: Mapped[str | None]
     recurrence: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    recurrence_interval: Mapped[int] = mapped_column(default=1, server_default="1")
+    recurrence_from_completion: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="0"
+    )
+    recurrence_until: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    recurrence_remaining: Mapped[int | None] = mapped_column(nullable=True)
     recurrence_parent_id: Mapped[str | None] = mapped_column(
         ForeignKey("tasks.id"), index=True, nullable=True
     )
+    subtask_order: Mapped[int] = mapped_column(default=0, server_default="0")
     completed_at: Mapped[int | None] = mapped_column(BigInteger, index=True)
     trashed_at: Mapped[int | None] = mapped_column(BigInteger, index=True)
     parent_id: Mapped[str | None] = mapped_column(ForeignKey("tasks.id"), index=True)
@@ -316,6 +333,13 @@ class ImportLink(Owned, Base):
     job_id: Mapped[str] = mapped_column(ForeignKey("import_jobs.id"))
     object_kind: Mapped[str]
     object_id: Mapped[str] = mapped_column(index=True)
+
+
+class SavedFilter(Owned, Base):
+    __tablename__ = "saved_filters"
+    __table_args__ = (UniqueConstraint("workspace_id", "name"),)
+    name: Mapped[str] = mapped_column(String(100))
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON)
 
 
 class WorkerHeartbeat(Base):
