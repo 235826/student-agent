@@ -75,6 +75,7 @@ from app.modules.records import owned, record_change, remove_record
 from app.modules.security import DB, UserDep
 from app.modules.task_management import (
     apply_task,
+    generate_next_occurrence,
     require_impact_confirmation,
     task_input,
     task_view,
@@ -537,6 +538,9 @@ def add_worklog(task_id: str, body: WorkLogInput, db: DB, user: UserDep) -> Work
                 task,
             )
             task.completed_at = now_ms()
+            task.status = "done"
+            if task.recurrence:
+                generate_next_occurrence(db, user, task)
         task.status = "done"
         record_change(db, user, "task.complete", task)
     return WorkLogOut.model_validate(log)

@@ -22,6 +22,7 @@ export function toTaskInput(
     deadline_all_day: task.deadline_all_day,
     estimate_minutes: task.estimate_minutes,
     task_type: task.task_type,
+    recurrence: task.recurrence,
     flagged: task.flagged,
     list_id: task.list_id,
     tags: task.tags,
@@ -76,6 +77,13 @@ export function deadlineInstant(value: string, allDay: boolean, zone: string) {
   const deadline = DateTime.fromISO(value, { zone });
   if (!deadline.isValid) throw new Error("请选择有效的截止日期");
   return deadline.endOf("day").toISO();
+}
+
+export function recurrenceLabel(value: string | null | undefined) {
+  if (value === "daily") return "每天";
+  if (value === "weekly") return "每周";
+  if (value === "monthly") return "每月";
+  return "";
 }
 
 export function deadlineLabel(

@@ -51,6 +51,7 @@ import {
   deadlineInstant,
   deadlineLabel,
   quickDeadlineOptions,
+  recurrenceLabel,
   toTaskInput,
 } from "../tasks";
 
@@ -254,7 +255,10 @@ export default function TasksPage({ profile }: { profile: Profile }) {
         duration: 8,
         content: (
           <Space wrap>
-            <span>已完成“{task.title}”</span>
+            <span>
+              已完成“{task.title}”
+              {task.recurrence ? "，下一次已生成" : ""}
+            </span>
             <Button
               type="link"
               size="small"
@@ -392,6 +396,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
       deadline_at: toLocal(payload?.deadline_at, profile.timezone),
       deadline_all_day: payload?.deadline_all_day ?? false,
       flagged: payload?.flagged ?? false,
+      recurrence: payload?.recurrence ?? undefined,
       tags: payload?.tags ?? [],
       list_id:
         payload?.list_id ??
@@ -424,6 +429,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
           profile.timezone,
         ),
         deadline_all_day: values.deadline_all_day ?? false,
+        recurrence: values.recurrence ?? null,
         task_type: values.task_type?.trim() || null,
         estimate_minutes: values.estimate_minutes ?? null,
         parent_id: values.parent_id ?? null,
@@ -445,6 +451,10 @@ export default function TasksPage({ profile }: { profile: Profile }) {
       }
       if (!body.title) {
         void message.error("正式任务需要填写标题");
+        return;
+      }
+      if (body.recurrence && !body.deadline_at) {
+        void message.error("重复任务需要设置截止时间");
         return;
       }
       const task = editor?.kind === "task" ? editor.task : undefined;
@@ -942,6 +952,8 @@ export default function TasksPage({ profile }: { profile: Profile }) {
                       )}{" "}
                       · 预计 {task.estimate_minutes ?? "—"} 分钟 ·{" "}
                       {priorityLabel(task.priority)}
+                      {task.recurrence &&
+                        ` · 重复：${recurrenceLabel(task.recurrence)}`}
                       {task.completed_at &&
                         ` · 完成于 ${displayTime(task.completed_at, profile.timezone)}`}
                     </div>
@@ -1130,6 +1142,21 @@ export default function TasksPage({ profile }: { profile: Profile }) {
             extra="仅显示日期，不展示具体时刻；清除截止时间时自动关闭。"
           >
             <Checkbox>仅日期（全天）</Checkbox>
+          </Form.Item>
+          <Form.Item
+            name="recurrence"
+            label="重复"
+            extra="重复任务需要设置截止时间；完成当前任务后自动生成下一次。"
+          >
+            <Select
+              allowClear
+              placeholder="不重复"
+              options={[
+                { value: "daily", label: "每天" },
+                { value: "weekly", label: "每周" },
+                { value: "monthly", label: "每月" },
+              ]}
+            />
           </Form.Item>
           <Form.Item name="estimate_minutes" label="预计用时（分钟，可留空）">
             <InputNumber min={1} max={100000} precision={0} />

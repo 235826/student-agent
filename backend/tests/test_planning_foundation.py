@@ -1,7 +1,9 @@
+import calendar
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 from alembic import command
 from alembic.config import Config
@@ -35,6 +37,7 @@ def update_task(client, record, **kwargs):
         "deadline_all_day",
         "estimate_minutes",
         "task_type",
+        "recurrence",
         "list_id",
         "tags",
         "parent_id",
@@ -379,6 +382,110 @@ def test_task_detail_titles_and_get_task(authenticated):
         child["id"]: "子任务",
         trashed["id"]: "已删除任务",
     }
+
+
+def test_recurring_task_generation_undo_and_edit(authenticated):
+    c = authenticated
+    habit_list = post(c, "/task-lists", {"name": "习惯"})
+    due = datetime.now(UTC).replace(microsecond=0) + timedelta(days=2)
+    record = task(
+        c,
+        "每日阅读",
+        recurrence="daily",
+        deadline_at=due.isoformat(),
+        tags=["阅读"],
+        list_id=habit_list["id"],
+        estimate_minutes=30,
+    )
+    done = c.post(f"/api/v1/tasks/{record['id']}/complete")
+    assert done.status_code == 200, done.text
+    tasks = c.get("/api/v1/tasks").json()
+    assert len(tasks) == 2
+    next_task = next(item for item in tasks if item["id"] != record["id"])
+    assert next_task["title"] == "每日阅读"
+    assert next_task["status"] == "todo"
+    assert next_task["recurrence"] == "daily"
+    assert next_task["tags"] == ["阅读"]
+    assert next_task["list_id"] == habit_list["id"]
+    assert next_task["estimate_minutes"] == 30
+    next_deadline = datetime.fromisoformat(next_task["deadline_at"].replace("Z", "+00:00"))
+    assert next_deadline == due + timedelta(days=1)
+
+    c.post(f"/api/v1/tasks/{record['id']}/complete")
+    assert len(c.get("/api/v1/tasks").json()) == 2
+
+    reopened = c.post(f"/api/v1/tasks/{record['id']}/reopen")
+    assert reopened.status_code == 200
+    tasks = c.get("/api/v1/tasks").json()
+    assert len(tasks) == 1 and tasks[0]["id"] == record["id"]
+    assert tasks[0]["status"] == "todo"
+
+    c.post(f"/api/v1/tasks/{record['id']}/complete")
+    tasks = c.get("/api/v1/tasks").json()
+    assert len(tasks) == 2
+    edited = next(item for item in tasks if item["id"] != record["id"])
+    update = update_task(c, edited, title="自定义下一次")
+    assert update.status_code == 200, update.text
+    c.post(f"/api/v1/tasks/{record['id']}/reopen")
+    titles = {item["title"] for item in c.get("/api/v1/tasks").json()}
+    assert titles == {"每日阅读", "自定义下一次"}
+
+
+def test_recurring_task_worklog_and_requires_deadline(authenticated):
+    c = authenticated
+    assert (
+        c.post("/api/v1/tasks", json={"title": "无截止重复", "recurrence": "daily"}).status_code
+        == 422
+    )
+    due = datetime.now(UTC).replace(microsecond=0) + timedelta(days=2)
+    record = task(
+        c,
+        "每周复盘",
+        recurrence="weekly",
+        deadline_at=due.isoformat(),
+    )
+    log = c.post(
+        f"/api/v1/tasks/{record['id']}/worklogs",
+        json={"actual_minutes": 30, "complete": True},
+    )
+    assert log.status_code == 201, log.text
+    tasks = c.get("/api/v1/tasks").json()
+    assert len(tasks) == 2
+    next_task = next(item for item in tasks if item["id"] != record["id"])
+    assert next_task["recurrence"] == "weekly"
+    next_deadline = datetime.fromisoformat(next_task["deadline_at"].replace("Z", "+00:00"))
+    assert next_deadline == due + timedelta(days=7)
+    assert update_task(c, record, deadline_at=None).status_code == 422
+
+
+def test_recurring_task_monthly_clamps_day(authenticated):
+    c = authenticated
+    zone = ZoneInfo("Asia/Shanghai")
+    now_local = datetime.now(UTC).astimezone(zone)
+    year = now_local.year
+    due_local = datetime(year, 1, 31, 9, 0, tzinfo=zone)
+    if due_local <= now_local:
+        year += 1
+        due_local = datetime(year, 1, 31, 9, 0, tzinfo=zone)
+    record = task(
+        c,
+        "月度报告",
+        recurrence="monthly",
+        deadline_at=due_local.isoformat(),
+    )
+    c.post(f"/api/v1/tasks/{record['id']}/complete")
+    tasks = c.get("/api/v1/tasks").json()
+    next_task = next(item for item in tasks if item["id"] != record["id"])
+    next_local = datetime.fromisoformat(next_task["deadline_at"].replace("Z", "+00:00")).astimezone(
+        zone
+    )
+    expected_day = calendar.monthrange(year, 2)[1]
+    assert (
+        next_local.year,
+        next_local.month,
+        next_local.day,
+        next_local.hour,
+    ) == (year, 2, expected_day, 9)
 
 
 def test_task_flag_toggle_and_preserve(authenticated):

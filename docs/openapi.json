@@ -8894,6 +8894,22 @@
             ],
             "title": "Task Type"
           },
+          "recurrence": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "daily",
+                  "weekly",
+                  "monthly"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recurrence"
+          },
           "list_id": {
             "anyOf": [
               {
@@ -10968,6 +10984,22 @@
             ],
             "title": "Task Type"
           },
+          "recurrence": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "daily",
+                  "weekly",
+                  "monthly"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recurrence"
+          },
           "list_id": {
             "anyOf": [
               {
@@ -11219,6 +11251,22 @@
             ],
             "title": "Task Type"
           },
+          "recurrence": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "daily",
+                  "weekly",
+                  "monthly"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recurrence"
+          },
           "list_id": {
             "anyOf": [
               {
@@ -11352,6 +11400,7 @@
           "title",
           "flagged",
           "deadline_at",
+          "recurrence",
           "tags",
           "predecessor_ids",
           "id",

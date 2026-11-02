@@ -1248,6 +1248,8 @@ export interface components {
             estimate_minutes?: number | null;
             /** Task Type */
             task_type?: string | null;
+            /** Recurrence */
+            recurrence?: ("daily" | "weekly" | "monthly") | null;
             /** List Id */
             list_id?: string | null;
             /** Tags */
@@ -2124,6 +2126,8 @@ export interface components {
             estimate_minutes?: number | null;
             /** Task Type */
             task_type?: string | null;
+            /** Recurrence */
+            recurrence?: ("daily" | "weekly" | "monthly") | null;
             /** List Id */
             list_id?: string | null;
             /** Tags */
@@ -2217,6 +2221,8 @@ export interface components {
             estimate_minutes?: number | null;
             /** Task Type */
             task_type?: string | null;
+            /** Recurrence */
+            recurrence: ("daily" | "weekly" | "monthly") | null;
             /** List Id */
             list_id?: string | null;
             /** Tags */

@@ -23,6 +23,7 @@ Timestamp = Annotated[datetime, BeforeValidator(from_epoch)]
 Title = Annotated[str, Field(min_length=1, max_length=200)]
 Status = Literal["todo", "in_progress", "done", "cancelled"]
 TaskView = Literal["all", "today", "scheduled", "unscheduled", "flagged", "done", "trash"]
+Recurrence = Literal["daily", "weekly", "monthly"]
 Policy = Literal["none", "allow_selected"]
 TagName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=50)]
 
@@ -98,6 +99,7 @@ class TaskInput(Schema):
     deadline_all_day: bool = False
     estimate_minutes: Annotated[int, Field(gt=0, le=100000)] | None = None
     task_type: Annotated[str, Field(min_length=1, max_length=100)] | None = None
+    recurrence: Recurrence | None = None
     list_id: str | None = None
     tags: list[TagName] = Field(default_factory=list, max_length=20)
     parent_id: str | None = None
@@ -122,6 +124,7 @@ class TaskOut(TaskInput):
     blocked_by_ids: list[str]
     tags: list[str]
     flagged: bool
+    recurrence: Recurrence | None
     sort_order: int
     deadline_at: Timestamp | None
     completed_at: Timestamp | None

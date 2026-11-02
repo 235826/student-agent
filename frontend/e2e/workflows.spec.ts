@@ -324,6 +324,74 @@ test("清单创建、任务归类、筛选与完成历史", async ({ page }) => 
   expect(task.list_id).toBe(lists[0].id);
 });
 
+test("重复任务完成后生成下一次并可撤销", async ({ page }) => {
+  const headers = await login(page);
+  const auth = await (await page.request.get("/api/v1/auth/me")).json();
+  const zone = auth.user.timezone;
+  const due = DateTime.now()
+    .setZone(zone)
+    .plus({ days: 2 })
+    .set({ hour: 9, minute: 0, second: 0, millisecond: 0 })
+    .toISO();
+  const response = await page.request.post("/api/v1/tasks", {
+    headers,
+    data: {
+      title: "每日任务",
+      recurrence: "daily",
+      deadline_at: due,
+      tags: ["习惯"],
+    },
+  });
+  expect(response.status()).toBe(201);
+  await page.goto("/tasks");
+  await expect(
+    page.getByRole("heading", { name: "每日任务" }),
+  ).toBeVisible();
+  await page.getByLabel("完成 每日任务").click();
+  await expect(page.getByText(/下一次已生成/)).toBeVisible();
+
+  await expect
+    .poll(
+      async () => {
+        const tasks = await (await page.request.get("/api/v1/tasks")).json();
+        return tasks.filter(
+          (task: { title: string }) => task.title === "每日任务",
+        ).length;
+      },
+      { timeout: 10000 },
+    )
+    .toBe(2);
+  const tasks = await (await page.request.get("/api/v1/tasks")).json();
+  const nextTask = tasks.find(
+    (task: { title: string; status: string }) =>
+      task.title === "每日任务" && task.status === "todo",
+  );
+  expect(nextTask.recurrence).toBe("daily");
+  expect(nextTask.tags).toEqual(["习惯"]);
+  expect(
+    DateTime.fromISO(nextTask.deadline_at)
+      .setZone(zone)
+      .toFormat("yyyy-MM-dd HH:mm"),
+  ).toBe(
+    DateTime.fromISO(due!).plus({ days: 1 }).toFormat("yyyy-MM-dd HH:mm"),
+  );
+
+  await page.getByLabel("恢复 每日任务").click();
+  await expect
+    .poll(
+      async () => {
+        const items = await (
+          await page.request.get("/api/v1/tasks")
+        ).json();
+        return items.filter(
+          (task: { title: string }) => task.title === "每日任务",
+        ).length;
+      },
+      { timeout: 10000 },
+    )
+    .toBe(1);
+});
+
 test("任务分页加载更多", async ({ page }) => {
   const headers = await login(page);
   for (let index = 1; index <= 51; index++) {

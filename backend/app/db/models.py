@@ -85,6 +85,10 @@ class Task(Owned, Base):
     deadline_all_day: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
     estimate_minutes: Mapped[int | None]
     task_type: Mapped[str | None]
+    recurrence: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    recurrence_parent_id: Mapped[str | None] = mapped_column(
+        ForeignKey("tasks.id"), index=True, nullable=True
+    )
     completed_at: Mapped[int | None] = mapped_column(BigInteger, index=True)
     trashed_at: Mapped[int | None] = mapped_column(BigInteger, index=True)
     parent_id: Mapped[str | None] = mapped_column(ForeignKey("tasks.id"), index=True)

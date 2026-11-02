@@ -29,7 +29,11 @@ import {
 import { displayTime } from "../time";
 import { withFrom } from "../navigation";
 import { eventTypeLabel, priorityLabel, staleInfo } from "../semantics";
-import { deadlineLabel, quickDeadlineOptions } from "../tasks";
+import {
+  deadlineLabel,
+  quickDeadlineOptions,
+  recurrenceLabel,
+} from "../tasks";
 import { parseQuickAdd, type ParsedQuickAdd } from "../nlp";
 
 export default function TodayPage({ profile }: { profile: Profile }) {
@@ -96,7 +100,10 @@ export default function TodayPage({ profile }: { profile: Profile }) {
         duration: 8,
         content: (
           <Space wrap>
-            <span>已完成“{task.title}”</span>
+            <span>
+              已完成“{task.title}”
+              {task.recurrence ? "，下一次已生成" : ""}
+            </span>
             <Button
               type="link"
               size="small"
@@ -148,12 +155,15 @@ export default function TodayPage({ profile }: { profile: Profile }) {
         complete: true,
       }),
     onSuccess: () => {
+      const recurring = !!completing?.recurrence;
       setCompleting(null);
       completeForm.resetFields();
       void client.invalidateQueries({ queryKey: ["tasks"] });
       void client.invalidateQueries({ queryKey: ["worklogs"] });
       void client.invalidateQueries({ queryKey: ["plans"] });
-      void message.success("任务已完成，实际耗时已记录");
+      void message.success(
+        `任务已完成，实际耗时已记录${recurring ? "，下一次已生成" : ""}`,
+      );
     },
     onError: (e) => void message.error(e.message),
   });
@@ -235,6 +245,9 @@ export default function TodayPage({ profile }: { profile: Profile }) {
               <span>未设置截止时间</span>
             )}
             <span>{priorityLabel(task.priority)}</span>
+            {task.recurrence && (
+              <Tag>{recurrenceLabel(task.recurrence)}</Tag>
+            )}
             {task.status === "in_progress" && <Tag color="blue">进行中</Tag>}
             <Dropdown
               menu={{

@@ -1,11 +1,23 @@
+import calendar
+from datetime import datetime, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from fastapi import HTTPException
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.api.schemas import TaskInput, TaskOut
-from app.db.models import Tag, Task, TaskDependency, TaskList, TaskTag, User, now_ms
+from app.db.models import (
+    Tag,
+    Task,
+    TaskDependency,
+    TaskList,
+    TaskTag,
+    User,
+    WorkLog,
+    now_ms,
+)
 from app.modules.records import owned
 
 
@@ -139,7 +151,149 @@ def sync_tags(db: Session, user: User, task: Task, names: list[str]) -> None:
         db.add(TaskTag(workspace_id=user.workspace_id, task_id=task.id, tag_id=tag.id))
 
 
+def add_recurrence(local: datetime, recurrence: str, step: int) -> datetime:
+    if recurrence == "daily":
+        target = local.date() + timedelta(days=step)
+    elif recurrence == "weekly":
+        target = local.date() + timedelta(days=7 * step)
+    elif recurrence == "monthly":
+        total = local.month - 1 + step
+        year = local.year + total // 12
+        month = total % 12 + 1
+        day = min(local.day, calendar.monthrange(year, month)[1])
+        target = local.date().replace(year=year, month=month, day=day)
+    else:
+        raise ValueError("unsupported recurrence")
+    return local.replace(year=target.year, month=target.month, day=target.day)
+
+
+def next_deadline_ms(deadline_ms: int, recurrence: str, after_ms: int, user: User) -> int:
+    local = datetime.fromtimestamp(deadline_ms / 1000, ZoneInfo(user.timezone))
+    step = 1
+    while step <= 10000:
+        candidate = add_recurrence(local, recurrence, step)
+        candidate_ms = int(candidate.timestamp() * 1000)
+        if candidate_ms > after_ms:
+            return candidate_ms
+        step += 1
+    raise ValueError("recurrence is too far in the past")
+
+
+def next_task_values(db: Session, user: User, task: Task, after_ms: int) -> dict[str, Any] | None:
+    if not task.recurrence or task.deadline_at is None:
+        return None
+    try:
+        deadline = next_deadline_ms(task.deadline_at, task.recurrence, after_ms, user)
+    except ValueError:
+        return None
+    parent_id = task.parent_id
+    if parent_id:
+        parent = db.get(Task, parent_id)
+        if parent is None or parent.trashed_at is not None or parent.status == "cancelled":
+            parent_id = None
+    return {
+        "title": task.title,
+        "description": task.description,
+        "priority": task.priority,
+        "flagged": task.flagged,
+        "deadline_at": deadline,
+        "deadline_all_day": task.deadline_all_day,
+        "estimate_minutes": task.estimate_minutes,
+        "task_type": task.task_type,
+        "recurrence": task.recurrence,
+        "list_id": task.list_id,
+        "parent_id": parent_id,
+        "parallel_policy": task.parallel_policy,
+    }
+
+
+def generate_next_occurrence(db: Session, user: User, task: Task) -> Task | None:
+    values = next_task_values(db, user, task, task.completed_at or now_ms())
+    if values is None:
+        return None
+    last_order = db.scalar(
+        select(Task.sort_order)
+        .where(Task.workspace_id == user.workspace_id)
+        .order_by(Task.sort_order.desc())
+        .limit(1)
+    )
+    next_task = Task(
+        workspace_id=user.workspace_id,
+        status="todo",
+        recurrence_parent_id=task.id,
+        sort_order=(last_order or 0) + 1,
+        **values,
+    )
+    db.add(next_task)
+    db.flush()
+    tag_names = list(
+        db.scalars(
+            select(Tag.name)
+            .join(TaskTag, TaskTag.tag_id == Tag.id)
+            .where(TaskTag.task_id == task.id)
+            .order_by(Tag.name)
+        )
+    )
+    sync_tags(db, user, next_task, tag_names)
+    db.flush()
+    return next_task
+
+
+def remove_generated_next(db: Session, user: User, task: Task, completed_at: int | None) -> None:
+    if not task.recurrence or task.deadline_at is None:
+        return
+    candidate = db.scalar(
+        select(Task)
+        .where(Task.recurrence_parent_id == task.id)
+        .order_by(Task.created_at.desc(), Task.id)
+        .limit(1)
+    )
+    if candidate is None or candidate.status != "todo" or candidate.trashed_at is not None:
+        return
+    expected = next_task_values(db, user, task, completed_at or task.completed_at or now_ms())
+    if expected is None:
+        return
+    if any(getattr(candidate, key) != value for key, value in expected.items()):
+        return
+    source_tags = list(
+        db.scalars(
+            select(Tag.name)
+            .join(TaskTag, TaskTag.tag_id == Tag.id)
+            .where(TaskTag.task_id == task.id)
+            .order_by(Tag.name)
+        )
+    )
+    candidate_tags = list(
+        db.scalars(
+            select(Tag.name)
+            .join(TaskTag, TaskTag.tag_id == Tag.id)
+            .where(TaskTag.task_id == candidate.id)
+            .order_by(Tag.name)
+        )
+    )
+    if source_tags != candidate_tags:
+        return
+    has_relations = any(
+        db.scalar(select(model.id).where(condition).limit(1))
+        for model, condition in (
+            (Task, Task.parent_id == candidate.id),
+            (Task, Task.recurrence_parent_id == candidate.id),
+            (TaskDependency, TaskDependency.predecessor_task_id == candidate.id),
+            (TaskDependency, TaskDependency.successor_task_id == candidate.id),
+            (WorkLog, WorkLog.task_id == candidate.id),
+        )
+    )
+    if has_relations:
+        candidate.trashed_at = now_ms()
+    else:
+        db.execute(delete(TaskTag).where(TaskTag.task_id == candidate.id))
+        db.delete(candidate)
+    db.flush()
+
+
 def apply_task(db: Session, user: User, body: TaskInput, task: Task | None = None) -> Task:
+    if body.recurrence and not body.deadline_at:
+        raise HTTPException(422, "重复任务需要设置截止时间")
     validate_links(db, user, body, task)
     if task and body.status == "cancelled" and task.status != "cancelled":
         require_impact_confirmation(db, task, body.confirm_impact)
@@ -147,6 +301,9 @@ def apply_task(db: Session, user: User, body: TaskInput, task: Task | None = Non
     data["deadline_at"] = int(body.deadline_at.timestamp() * 1000) if body.deadline_at else None
     if not body.deadline_at:
         data["deadline_all_day"] = False
+    previous_status: str | None = None
+    previous_completed_at: int | None = None
+    became_done = False
     if task is None:
         task = Task(workspace_id=user.workspace_id, **data)
         last_order = db.scalar(
@@ -158,15 +315,18 @@ def apply_task(db: Session, user: User, body: TaskInput, task: Task | None = Non
         task.sort_order = (last_order or 0) + 1
         if body.status == "done":
             task.completed_at = now_ms()
+            became_done = True
         db.add(task)
     else:
         previous_status = task.status
+        previous_completed_at = task.completed_at
         if task.parallel_policy != body.parallel_policy:
             task.policy_revision += 1
         for key, value in data.items():
             setattr(task, key, value)
         if body.status == "done" and previous_status != "done":
             task.completed_at = now_ms()
+            became_done = True
         elif body.status != "done":
             task.completed_at = None
     db.flush()
@@ -181,6 +341,10 @@ def apply_task(db: Session, user: User, body: TaskInput, task: Task | None = Non
             )
         )
     db.flush()
+    if became_done and task.recurrence:
+        generate_next_occurrence(db, user, task)
+    if previous_status == "done" and body.status != "done" and task.recurrence:
+        remove_generated_next(db, user, task, previous_completed_at)
     return task
 
 
