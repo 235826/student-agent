@@ -530,6 +530,35 @@ def test_task_links_dedupe_validation_and_recurrence(authenticated):
     assert next_task["links"] == ["https://example.com/week"]
 
 
+def test_completion_stats(authenticated):
+    c = authenticated
+    record = task(c, "统计任务", estimate_minutes=90)
+    assert c.post(f"/api/v1/tasks/{record['id']}/complete").status_code == 200
+    log = c.post(
+        f"/api/v1/tasks/{record['id']}/worklogs",
+        json={"actual_minutes": 45},
+    )
+    assert log.status_code == 201, log.text
+
+    stats = c.get("/api/v1/stats/completion", params={"days": 7})
+    assert stats.status_code == 200, stats.text
+    data = stats.json()
+    assert data["today"] == 1
+    assert data["week"] == 1
+    assert data["month"] == 1
+    assert data["estimate_minutes"] == 90
+    assert data["actual_minutes"] == 45
+    assert len(data["days"]) == 7
+    today = datetime.now(UTC).astimezone(ZoneInfo("Asia/Shanghai")).date().isoformat()
+    assert data["days"][-1] == {"date": today, "count": 1}
+
+    c.post(f"/api/v1/tasks/{record['id']}/reopen")
+    cleared = c.get("/api/v1/stats/completion", params={"days": 7}).json()
+    assert cleared["today"] == 0
+    assert cleared["estimate_minutes"] == 0
+    assert cleared["actual_minutes"] == 0
+
+
 def test_task_flag_toggle_and_preserve(authenticated):
     c = authenticated
     record = task(c, "重点任务", flagged=True)

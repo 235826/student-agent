@@ -324,6 +324,128 @@ test("清单创建、任务归类、筛选与完成历史", async ({ page }) => 
   expect(task.list_id).toBe(lists[0].id);
 });
 
+test("批量选择并完成任务", async ({ page }) => {
+  const headers = await login(page);
+  for (const title of ["批量任务A", "批量任务B"]) {
+    const response = await page.request.post("/api/v1/tasks", {
+      headers,
+      data: { title },
+    });
+    expect(response.status()).toBe(201);
+  }
+  await page.goto("/tasks");
+  await page.getByRole("button", { name: "批量操作", exact: true }).click();
+  await page.getByLabel("选择 批量任务A").check();
+  await page.getByLabel("选择 批量任务B").check();
+  const complete = page.getByRole("button", { name: /^完\s*成$/ });
+  await expect(complete).toBeEnabled();
+  await complete.click();
+  await expect(page.getByText("已处理 2 项")).toBeVisible();
+
+  const tasks = await (await page.request.get("/api/v1/tasks")).json();
+  const selected = tasks.filter((task: { title: string }) =>
+    ["批量任务A", "批量任务B"].includes(task.title),
+  );
+  expect(selected).toHaveLength(2);
+  expect(selected.every((task: { status: string }) => task.status === "done")).toBe(
+    true,
+  );
+});
+
+test("完成统计展示今日、估时与实耗", async ({ page }) => {
+  const headers = await login(page);
+  const created = await page.request.post("/api/v1/tasks", {
+    headers,
+    data: { title: "统计任务", estimate_minutes: 90 },
+  });
+  expect(created.status()).toBe(201);
+  const task = await created.json();
+  expect(
+    (
+      await page.request.post(`/api/v1/tasks/${task.id}/complete`, {
+        headers,
+      })
+    ).status(),
+  ).toBe(200);
+  expect(
+    (
+      await page.request.post(`/api/v1/tasks/${task.id}/worklogs`, {
+        headers,
+        data: { actual_minutes: 45 },
+      })
+    ).status(),
+  ).toBe(201);
+
+  await page.getByRole("link", { name: "统计", exact: true }).click();
+  await expect(page).toHaveURL(/\/stats$/);
+  await expect(
+    page.getByRole("heading", { name: "完成统计" }),
+  ).toBeVisible();
+  await expect(
+    page
+      .locator(".ant-statistic")
+      .filter({ hasText: "今天完成" })
+      .getByText("1", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page
+      .locator(".ant-statistic")
+      .filter({ hasText: "预计用时（分钟）" })
+      .getByText("90", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page
+      .locator(".ant-statistic")
+      .filter({ hasText: "实际用时（分钟）" })
+      .getByText("45", { exact: true }),
+  ).toBeVisible();
+});
+
+test("PWA 资源与离线提示", async ({ page }) => {
+  await login(page);
+  const manifest = await page.request.get("/manifest.webmanifest");
+  expect(manifest.status()).toBe(200);
+  expect((await manifest.json()).name).toBe("Student Agent");
+  const worker = await page.request.get("/sw.js");
+  expect(worker.status()).toBe(200);
+
+  await page.evaluate(() => window.dispatchEvent(new Event("offline")));
+  await expect(
+    page.getByText("当前处于离线状态，部分数据可能无法加载。"),
+  ).toBeVisible();
+  await page.evaluate(() => window.dispatchEvent(new Event("online")));
+  await expect(
+    page.getByText("当前处于离线状态，部分数据可能无法加载。"),
+  ).not.toBeVisible();
+});
+
+test("任务快速查看抽屉", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name === "mobile", "drawer is desktop-only");
+  const headers = await login(page);
+  const created = await page.request.post("/api/v1/tasks", {
+    headers,
+    data: { title: "抽屉任务" },
+  });
+  expect(created.status()).toBe(201);
+  const task = await created.json();
+  await page.goto("/tasks");
+  await page.getByRole("button", { name: "快速查看", exact: true }).click();
+
+  const drawer = page.locator(".ant-drawer-content");
+  await expect(
+    drawer.getByRole("heading", { name: "抽屉任务" }),
+  ).toBeVisible();
+  await expect(
+    page.locator(".task-card").filter({ hasText: "抽屉任务" }),
+  ).toBeVisible();
+
+  await drawer.getByRole("button", { name: "打开完整详情", exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`/tasks/${task.id}$`));
+  await expect(
+    page.locator(".task-card").getByRole("heading", { name: "抽屉任务" }),
+  ).toBeVisible();
+});
+
 test("任务附件上传、下载链接与删除", async ({ page }) => {
   const headers = await login(page);
   const created = await page.request.post("/api/v1/tasks", {
@@ -693,7 +815,7 @@ test("手动排序可拖动并持久化", async ({ page }, testInfo) => {
   if (testInfo.project.name === "mobile") {
     await cardA.getByLabel("下移 任务A").click();
   } else {
-    await cardA.getByLabel("拖动 任务A").dragTo(cardC);
+    await cardA.getByLabel("拖动 任务A").dragTo(cardC.locator(".description"));
   }
   await expect
     .poll(

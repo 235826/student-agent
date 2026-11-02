@@ -25,6 +25,7 @@ import {
   Button,
   Card,
   Checkbox,
+  Drawer,
   Dropdown,
   Empty,
   Form,
@@ -103,10 +104,30 @@ export default function TasksPage({ profile }: { profile: Profile }) {
   const [listManager, setListManager] = useState(false);
   const [tagManager, setTagManager] = useState(false);
   const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [isWide, setIsWide] = useState(
+    () =>
+      typeof window !== "undefined" &&
+      window.matchMedia("(min-width: 701px)").matches,
+  );
   const [editor, setEditor] = useState<Editor | null>(
     isNew || params.has("new") ? { kind: "task" } : null,
   );
   const [form] = Form.useForm();
+  const drawerRequested = params.get("drawer") === "1";
+  const drawerOpen = !!id && drawerRequested && isWide;
+  const detailPage = !!id && !drawerOpen;
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const query = window.matchMedia("(min-width: 701px)");
+    const update = () => setIsWide(query.matches);
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, []);
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [view, listFilter, tagFilter, status, debouncedSearch]);
   useEffect(() => {
     const value = search.trim();
     const timer = setTimeout(
@@ -154,7 +175,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
     initialPageParam: 0,
     getNextPageParam: (lastPage, _allPages, lastPageParam) =>
       lastPage.length > PAGE_SIZE ? lastPageParam + PAGE_SIZE : undefined,
-    enabled: !inbox && !id,
+    enabled: !inbox && (!id || drawerOpen),
     placeholderData: (previous) => previous,
   });
   const detailTaskQuery = useQuery({
@@ -305,6 +326,58 @@ export default function TasksPage({ profile }: { profile: Profile }) {
     onSuccess: () => refresh(),
     onError: (e: unknown) => void message.error(errorText(e)),
   });
+  type BulkAction = "complete" | "reopen" | "trash" | "move";
+  const bulk = useMutation({
+    mutationFn: async ({
+      tasks,
+      action,
+      list_id,
+    }: {
+      tasks: Task[];
+      action: BulkAction;
+      list_id: string | null;
+    }) => {
+      let failed = 0;
+      let firstError = "";
+      for (const task of tasks) {
+        try {
+          if (action === "complete")
+            await api(`/tasks/${task.id}/complete`, "POST");
+          else if (action === "reopen")
+            await api(`/tasks/${task.id}/reopen`, "POST");
+          else if (action === "trash")
+            await api(
+              `/tasks/${task.id}/trash?confirm_impact=true`,
+              "POST",
+            );
+          else
+            await api(`/tasks/${task.id}`, "PUT", {
+              ...toTaskInput(task),
+              list_id,
+            });
+        } catch (e) {
+          failed += 1;
+          if (!firstError) firstError = errorText(e);
+        }
+      }
+      if (failed) {
+        throw new Error(
+          `已处理 ${tasks.length - failed} 项，失败 ${failed} 项：${firstError}`,
+        );
+      }
+      return tasks.length;
+    },
+    onSuccess: (count) => {
+      refresh();
+      setSelectedIds(new Set());
+      void message.success(`已处理 ${count} 项`);
+    },
+    onError: (e: Error) => {
+      refresh();
+      setSelectedIds(new Set());
+      void message.error(e.message);
+    },
+  });
   const restoreTask = useMutation({
     mutationFn: (task: Task) => api(`/tasks/${task.id}/restore`, "POST"),
     onSuccess: () => {
@@ -346,7 +419,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
         ? page.slice(0, PAGE_SIZE)
         : page,
     ) ?? [];
-  const baseTasks = id
+  const baseTasks = detailPage
     ? detailTaskQuery.data
       ? [detailTaskQuery.data]
       : []
@@ -512,10 +585,10 @@ export default function TasksPage({ profile }: { profile: Profile }) {
           },
         }),
     });
-  const currentQuery = id ? detailTaskQuery : listTasks;
+  const currentQuery = detailPage ? detailTaskQuery : listTasks;
   const listOf = (task: Task) =>
     (lists.data ?? []).find((list) => list.id === task.list_id);
-  const visible = (id ? (detailTask ? [detailTask] : []) : listItems)
+  const visible = (detailPage ? (detailTask ? [detailTask] : []) : listItems)
     .sort((a, b) =>
       sort === "deadline"
         ? (a.deadline_at ?? "9999").localeCompare(b.deadline_at ?? "9999")
@@ -552,7 +625,8 @@ export default function TasksPage({ profile }: { profile: Profile }) {
     status === "all" &&
     !search.trim() &&
     tagFilter === "all" &&
-    !listTasks.hasNextPage;
+    !listTasks.hasNextPage &&
+    !selectionMode;
   const dropTask = (target: Task) => {
     if (!canReorder || !draggingId || draggingId === target.id) return;
     const from = visible.findIndex((task) => task.id === draggingId);
@@ -572,6 +646,18 @@ export default function TasksPage({ profile }: { profile: Profile }) {
     const next = [...visible];
     [next[from], next[to]] = [next[to], next[from]];
     reorder.mutate(next.map((item) => item.id));
+  };
+  const selectedTasks = visible.filter((task) => selectedIds.has(task.id));
+  const toggleSelected = (taskId: string) =>
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(taskId)) next.delete(taskId);
+      else next.add(taskId);
+      return next;
+    });
+  const runBulk = (action: BulkAction, listId: string | null = null) => {
+    if (selectedTasks.length)
+      bulk.mutate({ tasks: selectedTasks, action, list_id: listId });
   };
   const here = currentLocation(
     location.pathname,
@@ -608,7 +694,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
     <>
       <header>
         <div>
-          <h1>{inbox ? "收件箱" : id ? "任务详情" : "任务"}</h1>
+          <h1>{inbox ? "收件箱" : detailPage ? "任务详情" : "任务"}</h1>
           <p className="muted">
             {inbox
               ? "集中处理导入材料与任务草稿。"
@@ -619,13 +705,13 @@ export default function TasksPage({ profile }: { profile: Profile }) {
           <Button type="primary" onClick={() => open({ kind: "draft" })}>
             新建任务草稿
           </Button>
-        ) : !id ? (
+        ) : !detailPage ? (
           <Button type="primary" onClick={() => open({ kind: "task" })}>
             新建任务
           </Button>
         ) : null}
       </header>
-      {!inbox && !id && (
+      {!inbox && !detailPage && (
         <Space className="toolbar" wrap>
           {views.map(([key, label]) => (
             <Button
@@ -638,13 +724,13 @@ export default function TasksPage({ profile }: { profile: Profile }) {
           ))}
         </Space>
       )}
-      {id && (
+      {detailPage && (
         <Space className="toolbar">
           <Link to={back.to}>{back.label}</Link>
           <Link to="/settings/rules?tab=check">查看相关并行规则</Link>
         </Space>
       )}
-      {!inbox && !id && (
+      {!inbox && !detailPage && (
         <Space wrap className="toolbar">
           <Select
             aria-label="筛选清单"
@@ -661,6 +747,15 @@ export default function TasksPage({ profile }: { profile: Profile }) {
           />
           <Button onClick={() => setListManager(true)}>管理清单</Button>
           <Button onClick={() => setTagManager(true)}>管理标签</Button>
+          <Button
+            type={selectionMode ? "primary" : "default"}
+            onClick={() => {
+              setSelectionMode((current) => !current);
+              setSelectedIds(new Set());
+            }}
+          >
+            {selectionMode ? "退出批量" : "批量操作"}
+          </Button>
           <Select
             aria-label="筛选标签"
             value={tagFilter}
@@ -705,6 +800,68 @@ export default function TasksPage({ profile }: { profile: Profile }) {
             </span>
           )}
         </Space>
+      )}
+      {!inbox && !detailPage && selectionMode && (
+        <Card className="toolbar">
+          <Space wrap>
+            <span>已选 {selectedIds.size} 项</span>
+            <Button
+              disabled={!selectedIds.size}
+              loading={bulk.isPending}
+              onClick={() => runBulk("complete")}
+            >
+              完成
+            </Button>
+            <Button
+              disabled={!selectedIds.size}
+              loading={bulk.isPending}
+              onClick={() => runBulk("reopen")}
+            >
+              恢复待办
+            </Button>
+            <Dropdown
+              menu={{
+                items: [
+                  { key: "inbox", label: "收件箱（未分类）" },
+                  ...(lists.data ?? []).map((list) => ({
+                    key: list.id,
+                    label: list.name,
+                  })),
+                ],
+                onClick: ({ key }) =>
+                  runBulk("move", key === "inbox" ? null : key),
+              }}
+            >
+              <Button disabled={!selectedIds.size || bulk.isPending}>
+                移动清单
+              </Button>
+            </Dropdown>
+            <Button
+              danger
+              disabled={!selectedIds.size}
+              loading={bulk.isPending}
+              onClick={() =>
+                modal.confirm({
+                  title: "移入垃圾箱",
+                  content: `将选中的 ${selectedIds.size} 个任务移入垃圾箱？有关联任务可能被阻塞。`,
+                  okText: "移入垃圾箱",
+                  cancelText: "取消",
+                  onOk: () => runBulk("trash"),
+                })
+              }
+            >
+              移入垃圾箱
+            </Button>
+            <Button
+              onClick={() => {
+                setSelectionMode(false);
+                setSelectedIds(new Set());
+              }}
+            >
+              退出批量
+            </Button>
+          </Space>
+        </Card>
       )}
       {inbox ? (
         <>
@@ -801,12 +958,12 @@ export default function TasksPage({ profile }: { profile: Profile }) {
               />
             </Card>
           ) : (
-            <div className="cards">
+            <div className={draggingId ? "cards dragging" : "cards"}>
               {visible.map((task, index) => {
                 const taskList = listOf(task);
                 return (
                 <Fragment key={task.id}>
-                  {!id &&
+                  {!detailPage &&
                     sort === "status" &&
                     (index === 0 ||
                       groupOf(visible[index - 1]) !== groupOf(task)) && (
@@ -829,6 +986,13 @@ export default function TasksPage({ profile }: { profile: Profile }) {
                   >
                     <div className="card-heading">
                       <div className="card-heading-main">
+                        {selectionMode && !task.trashed_at && (
+                          <Checkbox
+                            aria-label={`选择 ${task.title}`}
+                            checked={selectedIds.has(task.id)}
+                            onChange={() => toggleSelected(task.id)}
+                          />
+                        )}
                         {canReorder && (
                           <>
                             <span
@@ -868,7 +1032,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
                             </Button>
                           </>
                         )}
-                        {!task.trashed_at && (
+                        {!task.trashed_at && !selectionMode && (
                           <Checkbox
                             aria-label={
                               task.status === "done"
@@ -950,7 +1114,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
                         前置：{relations(task.predecessor_ids)}
                       </p>
                     )}
-                    {task.child_ids.length > 0 && !id && (
+                    {task.child_ids.length > 0 && !detailPage && (
                       <p className="muted">
                         子任务：{relations(task.child_ids)}
                       </p>
@@ -1014,6 +1178,15 @@ export default function TasksPage({ profile }: { profile: Profile }) {
                             {task.flagged ? "★" : "☆"}
                           </Button>
                           <SourceButton objectId={task.id} />
+                          {isWide && (
+                            <Button
+                              onClick={() =>
+                                navigate(`/tasks/${task.id}?drawer=1`)
+                              }
+                            >
+                              快速查看
+                            </Button>
+                          )}
                           <Button onClick={() => open({ kind: "task", task })}>
                             编辑
                           </Button>
@@ -1059,7 +1232,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
               })}
             </div>
           )}
-          {!id && listTasks.hasNextPage && (
+          {!detailPage && listTasks.hasNextPage && (
             <div className="toolbar" style={{ textAlign: "center" }}>
               <Button
                 loading={listTasks.isFetchingNextPage}
@@ -1069,7 +1242,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
               </Button>
             </div>
           )}
-          {id && detailTask && !detailTask.trashed_at && (
+          {detailPage && detailTask && !detailTask.trashed_at && (
             <>
               <SubtaskChecklist parent={detailTask} />
               <AttachmentPanel taskId={detailTask.id} />
@@ -1241,6 +1414,86 @@ export default function TasksPage({ profile }: { profile: Profile }) {
           </p>
         </Form>
       </Modal>
+      <Drawer
+        title="任务详情"
+        open={drawerOpen}
+        onClose={() => navigate(back.to)}
+        width={720}
+        destroyOnHidden
+      >
+        {detailTaskQuery.error ? (
+          <Alert type="error" message={errorText(detailTaskQuery.error)} />
+        ) : detailTaskQuery.isPending ? (
+          <Spin />
+        ) : detailTask ? (
+          <div className="quick-view">
+            <h2>{detailTask.title}</h2>
+            <Space wrap>
+              <Tag>
+                {states.find((state) => state.value === detailTask.status)?.label}
+              </Tag>
+              <Tag>{priorityLabel(detailTask.priority)}</Tag>
+              {detailTask.flagged && <Tag color="gold">已标记</Tag>}
+              {listOf(detailTask) && (
+                <Tag color={listOf(detailTask)!.color}>
+                  {listOf(detailTask)!.name}
+                </Tag>
+              )}
+              {detailTask.recurrence && (
+                <Tag>{recurrenceLabel(detailTask.recurrence)}</Tag>
+              )}
+            </Space>
+            <p className="meta">
+              截止：
+              {deadlineLabel(
+                detailTask.deadline_at,
+                detailTask.deadline_all_day,
+                profile.timezone,
+              )}{" "}
+              · 预计 {detailTask.estimate_minutes ?? "—"} 分钟
+              {detailTask.completed_at &&
+                ` · 完成于 ${displayTime(detailTask.completed_at, profile.timezone)}`}
+            </p>
+            {detailTask.description && (
+              <p className="description">{detailTask.description}</p>
+            )}
+            {detailTask.tags.length > 0 && (
+              <Space size={4} wrap className="toolbar">
+                {detailTask.tags.map((tag) => (
+                  <Tag key={tag}>{tag}</Tag>
+                ))}
+              </Space>
+            )}
+            {detailTask.links.length > 0 && (
+              <div className="task-links">
+                {detailTask.links.map((link) => (
+                  <a key={link} href={link} target="_blank" rel="noreferrer">
+                    {link}
+                  </a>
+                ))}
+              </div>
+            )}
+            <Space wrap className="toolbar">
+              <Button
+                onClick={() => open({ kind: "task", task: detailTask })}
+              >
+                编辑任务
+              </Button>
+              <Button onClick={() => navigate(`/tasks/${detailTask.id}`)}>
+                打开完整详情
+              </Button>
+            </Space>
+            {!detailTask.trashed_at && (
+              <>
+                <SubtaskChecklist parent={detailTask} />
+                <AttachmentPanel taskId={detailTask.id} />
+              </>
+            )}
+          </div>
+        ) : (
+          <Empty description="任务不存在或已删除" />
+        )}
+      </Drawer>
       <TaskListManager
         open={listManager}
         onClose={() => setListManager(false)}

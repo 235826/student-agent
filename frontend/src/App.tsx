@@ -1,4 +1,4 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import {
   NavLink,
   Navigate,
@@ -29,6 +29,7 @@ const TasksPage = lazy(() => import("./pages/TasksPage"));
 const EventsPage = lazy(() => import("./pages/EventsPage"));
 const CompatibilityPage = lazy(() => import("./pages/CompatibilityPage"));
 const EventTypesPage = lazy(() => import("./pages/EventTypesPage"));
+const StatsPage = lazy(() => import("./pages/StatsPage"));
 const errorText = (e: unknown) =>
   e instanceof Error ? e.message : "操作失败，请重试";
 function LegacyImports() {
@@ -73,6 +74,17 @@ function LegacyDetail({ prefix }: { prefix: string }) {
 export default function App() {
   const { pathname } = useLocation();
   const client = useQueryClient();
+  const [online, setOnline] = useState(navigator.onLine);
+  useEffect(() => {
+    const goOnline = () => setOnline(true);
+    const goOffline = () => setOnline(false);
+    window.addEventListener("online", goOnline);
+    window.addEventListener("offline", goOffline);
+    return () => {
+      window.removeEventListener("online", goOnline);
+      window.removeEventListener("offline", goOffline);
+    };
+  }, []);
   const me = useQuery({
     queryKey: ["me"],
     queryFn: async () => {
@@ -195,6 +207,12 @@ export default function App() {
         </nav>
         <div className="sidebar-bottom">
           <NavLink
+            to="/stats"
+            className={() => (pathname.startsWith("/stats") ? "active" : "")}
+          >
+            统计
+          </NavLink>
+          <NavLink
             to="/settings"
             className={() => (pathname.startsWith("/settings") ? "active" : "")}
           >
@@ -213,6 +231,12 @@ export default function App() {
         </div>
       </aside>
       <main className="content">
+        {!online && (
+          <Alert
+            type="warning"
+            message="当前处于离线状态，部分数据可能无法加载。"
+          />
+        )}
         {logout.error && (
           <Alert type="error" message={errorText(logout.error)} />
         )}
@@ -294,7 +318,8 @@ export default function App() {
               path="/series/:id"
               element={<LegacyDetail prefix="/calendar/series" />}
             />
-            <Route path="/settings/event-types" element={<EventTypesPage />} />
+            <Route path="/stats" element={<StatsPage />} />
+          <Route path="/settings/event-types" element={<EventTypesPage />} />
             <Route
               path="/settings/rules"
               element={<CompatibilityPage profile={profile} />}

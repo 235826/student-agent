@@ -595,6 +595,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/stats/completion": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Completion Stats */
+        get: operations["completion_stats_api_v1_stats_completion_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tasks/{task_id}": {
         parameters: {
             query?: never;
@@ -1183,6 +1200,28 @@ export interface components {
             allowed: boolean;
             /** Pairs */
             pairs: components["schemas"]["PairResult"][];
+        };
+        /** CompletionDay */
+        CompletionDay: {
+            /** Date */
+            date: string;
+            /** Count */
+            count: number;
+        };
+        /** CompletionStatsOut */
+        CompletionStatsOut: {
+            /** Today */
+            today: number;
+            /** Week */
+            week: number;
+            /** Month */
+            month: number;
+            /** Days */
+            days: components["schemas"]["CompletionDay"][];
+            /** Estimate Minutes */
+            estimate_minutes: number;
+            /** Actual Minutes */
+            actual_minutes: number;
         };
         /** ConfirmInput */
         ConfirmInput: {
@@ -6431,6 +6470,91 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TaskSummaryOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    completion_stats_api_v1_stats_completion_get: {
+        parameters: {
+            query?: {
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompletionStatsOut"];
                 };
             };
             /** @description Unauthorized */

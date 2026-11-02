@@ -156,6 +156,10 @@ header {
 .task-card.dragging {
   opacity: 0.5;
 }
+.cards.dragging .task-card .ant-btn,
+.cards.dragging .task-card a {
+  pointer-events: none;
+}
 .flag-button {
   color: #9aa79f;
   font-size: 16px;
@@ -188,6 +192,17 @@ header {
 }
 .task-links a {
   color: #245c48;
+}
+.quick-view h2 {
+  margin: 0 0 12px;
+  font-size: 24px;
+  overflow-wrap: anywhere;
+}
+.quick-view .ant-card {
+  margin-top: 16px;
+}
+.quick-view .toolbar {
+  margin-top: 12px;
 }
 .form-grid {
   display: grid;
@@ -633,4 +648,58 @@ header {
     align-items: stretch;
     flex-direction: column;
   }
+}
+
+.stats-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 16px;
+  margin-bottom: 22px;
+  max-width: 820px;
+}
+.stats-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  height: 180px;
+  padding-top: 12px;
+}
+.stats-bar {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.stats-bar-count {
+  height: 16px;
+  color: #77837c;
+  font-size: 11px;
+}
+.stats-bar-track {
+  flex: 1;
+  width: 100%;
+  display: flex;
+  align-items: flex-end;
+  overflow: hidden;
+  border-radius: 4px;
+  background: #f0f2ee;
+}
+.stats-bar-fill {
+  width: 100%;
+  min-height: 2px;
+  border-radius: 4px 4px 0 0;
+  background: #245c48;
+}
+.stats-bar-label {
+  margin-top: 4px;
+  color: #77837c;
+  font-size: 10px;
+  white-space: nowrap;
+}
+.stats-minutes {
+  display: flex;
+  gap: 32px;
+  flex-wrap: wrap;
 }

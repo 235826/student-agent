@@ -167,6 +167,20 @@ class TaskTitlesInput(Schema):
     ids: list[str] = Field(default_factory=list, max_length=1000)
 
 
+class CompletionDay(Schema):
+    date: str
+    count: int
+
+
+class CompletionStatsOut(Schema):
+    today: int
+    week: int
+    month: int
+    days: list[CompletionDay]
+    estimate_minutes: int
+    actual_minutes: int
+
+
 class DeadlineInput(Schema):
     deadline_at: datetime | None = None
     deadline_all_day: bool = False

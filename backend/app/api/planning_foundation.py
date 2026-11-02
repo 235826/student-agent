@@ -10,6 +10,8 @@ from sqlalchemy.orm import Session
 from app.api.schemas import (
     CompatibilityInput,
     CompatibilityOut,
+    CompletionDay,
+    CompletionStatsOut,
     ConfirmInput,
     CourseInput,
     CourseOut,
@@ -357,6 +359,75 @@ def task_summary(db: DB, user: UserDep) -> TaskSummaryOut:
             Task.workspace_id == user.workspace_id,
             Task.trashed_at.is_not(None),
         ),
+    )
+
+
+@router.get("/stats/completion", response_model=CompletionStatsOut)
+def completion_stats(
+    db: DB,
+    user: UserDep,
+    days: int = Query(default=14, ge=1, le=90),
+) -> CompletionStatsOut:
+    now = datetime.now(UTC)
+    zone = ZoneInfo(user.timezone)
+    local = now.astimezone(zone)
+    today_start = local.replace(hour=0, minute=0, second=0, microsecond=0)
+    week_start = today_start - timedelta(days=local.weekday())
+    month_start = today_start.replace(day=1)
+    range_start = today_start - timedelta(days=days - 1)
+    range_start_ms = int(range_start.timestamp() * 1000)
+    query_start = min(range_start, week_start, month_start)
+    now_ms = int(now.timestamp() * 1000)
+    rows = db.execute(
+        select(Task.id, Task.completed_at, Task.estimate_minutes).where(
+            Task.workspace_id == user.workspace_id,
+            Task.trashed_at.is_(None),
+            Task.completed_at.is_not(None),
+            Task.completed_at >= int(query_start.timestamp() * 1000),
+            Task.completed_at <= now_ms,
+        )
+    ).all()
+    counts: dict[str, int] = {}
+    estimate_minutes = 0
+    task_ids: list[str] = []
+    for task_id, completed_at, estimate in rows:
+        if completed_at is None:
+            continue
+        if completed_at < range_start_ms:
+            continue
+        task_ids.append(task_id)
+        estimate_minutes += estimate or 0
+        date = datetime.fromtimestamp(completed_at / 1000, zone).date().isoformat()
+        counts[date] = counts.get(date, 0) + 1
+    actual_minutes = 0
+    if task_ids:
+        actual_minutes = (
+            db.scalar(
+                select(func.coalesce(func.sum(WorkLog.actual_minutes), 0)).where(
+                    WorkLog.task_id.in_(task_ids)
+                )
+            )
+            or 0
+        )
+    days_out = [
+        CompletionDay(
+            date=(today_start.date() - timedelta(days=offset)).isoformat(),
+            count=counts.get((today_start.date() - timedelta(days=offset)).isoformat(), 0),
+        )
+        for offset in reversed(range(days))
+    ]
+
+    def since(boundary: datetime) -> int:
+        boundary_ms = int(boundary.timestamp() * 1000)
+        return sum(1 for _, completed_at, _ in rows if completed_at and completed_at >= boundary_ms)
+
+    return CompletionStatsOut(
+        today=since(today_start),
+        week=since(week_start),
+        month=since(month_start),
+        days=days_out,
+        estimate_minutes=estimate_minutes,
+        actual_minutes=actual_minutes,
     )
 
 
