@@ -324,6 +324,48 @@ test("清单创建、任务归类、筛选与完成历史", async ({ page }) => 
   expect(task.list_id).toBe(lists[0].id);
 });
 
+test("任务附件上传、下载链接与删除", async ({ page }) => {
+  const headers = await login(page);
+  const created = await page.request.post("/api/v1/tasks", {
+    headers,
+    data: { title: "附件任务" },
+  });
+  expect(created.status()).toBe(201);
+  const task = await created.json();
+  await page.goto(`/tasks/${task.id}`);
+  await expect(
+    page.getByRole("heading", { name: "附件任务" }),
+  ).toBeVisible();
+
+  await page.locator('input[type="file"]').setInputFiles({
+    name: "note.txt",
+    mimeType: "text/plain",
+    buffer: Buffer.from("hello"),
+  });
+  await expect(page.getByText("附件已上传")).toBeVisible();
+  await expect(page.getByText("note.txt", { exact: true })).toBeVisible();
+  const download = page.getByRole("link", { name: "下载", exact: true }).first();
+  expect(await download.getAttribute("href")).toMatch(
+    /\/api\/v1\/attachments\//,
+  );
+
+  const attachmentCard = page.locator(".ant-card").filter({ hasText: "附件" });
+  await attachmentCard
+    .getByRole("button", { name: /^删\s*除$/ })
+    .click();
+  await page
+    .locator(".ant-popconfirm")
+    .getByRole("button", { name: /^删\s*除$/ })
+    .click();
+  await expect(page.getByText("附件已删除")).toBeVisible();
+  await expect(page.getByText("note.txt", { exact: true })).not.toBeVisible();
+  expect(
+    await (
+      await page.request.get(`/api/v1/tasks/${task.id}/attachments`)
+    ).json(),
+  ).toEqual([]);
+});
+
 test("任务链接保存与展示", async ({ page }) => {
   await login(page);
   await page.getByRole("link", { name: "任务", exact: true }).click();

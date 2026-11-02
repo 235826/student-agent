@@ -198,6 +198,14 @@ class TaskListOrderInput(Schema):
     list_ids: list[str] = Field(min_length=1, max_length=500)
 
 
+class AttachmentOut(Schema):
+    id: str
+    filename: str
+    media_type: str
+    size_bytes: int
+    created_at: Timestamp
+
+
 class TagInput(Schema):
     name: TagName
 

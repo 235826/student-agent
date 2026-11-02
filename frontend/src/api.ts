@@ -1,6 +1,7 @@
 import type { components } from "./generated/api";
 export type Task = components["schemas"]["TaskOut"];
 export type TaskSummary = components["schemas"]["TaskSummaryOut"];
+export type Attachment = components["schemas"]["AttachmentOut"];
 export type TaskList = components["schemas"]["TaskListOut"];
 export type TaskListInput = components["schemas"]["TaskListInput"];
 export type TagRecord = components["schemas"]["TagOut"];

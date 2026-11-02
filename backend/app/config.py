@@ -21,3 +21,4 @@ class Settings(BaseSettings):
     llm_supports_images: bool = False
     llm_timeout_seconds: int = Field(default=60, ge=5, le=180)
     source_dir: Path = Path("../data/sources")
+    attachment_dir: Path = Path("../data/attachments")

@@ -17,6 +17,7 @@ services:
     environment:
       SA_DATABASE_URL: sqlite:////app/data/student_agent.db
       SA_SOURCE_DIR: /app/data/sources
+      SA_ATTACHMENT_DIR: /app/data/attachments
       SA_ALLOWED_ORIGINS: '["http://localhost:8080","http://127.0.0.1:8080"]'
       SA_COOKIE_SECURE: 'false'
     volumes:

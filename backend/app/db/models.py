@@ -185,6 +185,14 @@ class TaskTag(Owned, Base):
     tag_id: Mapped[str] = mapped_column(ForeignKey("tags.id"), index=True)
 
 
+class TaskAttachment(Owned, Base):
+    __tablename__ = "task_attachments"
+    task_id: Mapped[str] = mapped_column(ForeignKey("tasks.id"), index=True)
+    filename: Mapped[str] = mapped_column(String(255))
+    media_type: Mapped[str] = mapped_column(String(200), default="")
+    size_bytes: Mapped[int] = mapped_column(BigInteger)
+
+
 class TaskDependency(Owned, Base):
     __tablename__ = "task_dependencies"
     __table_args__ = (

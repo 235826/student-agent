@@ -2,6 +2,7 @@ import ImportRecords from "../components/ImportRecords";
 import TaskListManager from "../components/TaskListManager";
 import TagManager from "../components/TagManager";
 import SubtaskChecklist from "../components/SubtaskChecklist";
+import AttachmentPanel from "../components/AttachmentPanel";
 import {
   Link,
   useNavigate,
@@ -1069,7 +1070,10 @@ export default function TasksPage({ profile }: { profile: Profile }) {
             </div>
           )}
           {id && detailTask && !detailTask.trashed_at && (
-            <SubtaskChecklist parent={detailTask} />
+            <>
+              <SubtaskChecklist parent={detailTask} />
+              <AttachmentPanel taskId={detailTask.id} />
+            </>
           )}
         </>
       )}

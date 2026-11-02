@@ -11,6 +11,7 @@ from app.api.schemas import TaskInput, TaskOut
 from app.db.models import (
     Tag,
     Task,
+    TaskAttachment,
     TaskDependency,
     TaskList,
     TaskTag,
@@ -279,6 +280,7 @@ def remove_generated_next(db: Session, user: User, task: Task, completed_at: int
         for model, condition in (
             (Task, Task.parent_id == candidate.id),
             (Task, Task.recurrence_parent_id == candidate.id),
+            (TaskAttachment, TaskAttachment.task_id == candidate.id),
             (TaskDependency, TaskDependency.predecessor_task_id == candidate.id),
             (TaskDependency, TaskDependency.successor_task_id == candidate.id),
             (WorkLog, WorkLog.task_id == candidate.id),
