@@ -178,6 +178,17 @@ header {
   overflow-wrap: anywhere;
   color: #69776f;
 }
+.task-links {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 8px 0;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.task-links a {
+  color: #245c48;
+}
 .form-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;

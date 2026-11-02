@@ -324,6 +324,33 @@ test("清单创建、任务归类、筛选与完成历史", async ({ page }) => 
   expect(task.list_id).toBe(lists[0].id);
 });
 
+test("任务链接保存与展示", async ({ page }) => {
+  await login(page);
+  await page.getByRole("link", { name: "任务", exact: true }).click();
+  await page.getByRole("button", { name: "新建任务", exact: true }).click();
+  await page.getByLabel("任务标题").fill("资料任务");
+  await page
+    .getByLabel("相关链接")
+    .fill("https://example.com/a\nhttps://example.org/b");
+  await page.getByRole("button", { name: "创建任务", exact: true }).click();
+  await expect(page.getByRole("dialog")).not.toBeVisible();
+
+  const card = page
+    .locator(".task-card")
+    .filter({ has: page.getByRole("heading", { name: "资料任务" }) });
+  await expect(card.locator('a[href="https://example.com/a"]')).toBeVisible();
+  await expect(card.locator('a[href="https://example.org/b"]')).toBeVisible();
+
+  const tasks = await (await page.request.get("/api/v1/tasks")).json();
+  const task = tasks.find(
+    (item: { title: string }) => item.title === "资料任务",
+  );
+  expect(task.links).toEqual([
+    "https://example.com/a",
+    "https://example.org/b",
+  ]);
+});
+
 test("重复任务完成后生成下一次并可撤销", async ({ page }) => {
   const headers = await login(page);
   const auth = await (await page.request.get("/api/v1/auth/me")).json();

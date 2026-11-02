@@ -74,6 +74,7 @@ class Task(Owned, Base):
     )
     title: Mapped[str] = mapped_column(String(200))
     description: Mapped[str] = mapped_column(default="")
+    links: Mapped[list[str]] = mapped_column(JSON, default=list, server_default=text("'[]'"))
     status: Mapped[str] = mapped_column(default="todo", index=True)
     priority: Mapped[int] = mapped_column(default=2)
     flagged: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")

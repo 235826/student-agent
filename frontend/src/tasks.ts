@@ -16,6 +16,7 @@ export function toTaskInput(
   return {
     title: task.title,
     description: task.description,
+    links: task.links,
     status,
     priority: task.priority,
     deadline_at: task.deadline_at,

@@ -26,6 +26,7 @@ TaskView = Literal["all", "today", "scheduled", "unscheduled", "flagged", "done"
 Recurrence = Literal["daily", "weekly", "monthly"]
 Policy = Literal["none", "allow_selected"]
 TagName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=50)]
+Link = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2000)]
 
 
 class Schema(BaseModel):
@@ -92,6 +93,7 @@ class SetupStatus(Schema):
 class TaskInput(Schema):
     title: Title
     description: Annotated[str, Field(max_length=20000)] = ""
+    links: list[Link] = Field(default_factory=list, max_length=20)
     status: Status = "todo"
     priority: Annotated[int, Field(ge=1, le=4)] = 2
     flagged: bool = False
@@ -106,6 +108,17 @@ class TaskInput(Schema):
     predecessor_ids: list[str] = Field(default_factory=list, max_length=100)
     parallel_policy: Policy | None = None
     confirm_impact: bool = False
+
+    @field_validator("links")
+    @classmethod
+    def valid_links(cls, values: list[str]) -> list[str]:
+        result: list[str] = []
+        for value in values:
+            if not value.startswith(("http://", "https://")):
+                raise ValueError("链接必须以 http:// 或 https:// 开头")
+            if value not in result:
+                result.append(value)
+        return result
 
     @field_validator("deadline_at")
     @classmethod
@@ -122,6 +135,7 @@ class TaskOut(TaskInput):
     child_ids: list[str]
     blocked_by: list[str]
     blocked_by_ids: list[str]
+    links: list[str]
     tags: list[str]
     flagged: bool
     recurrence: Recurrence | None

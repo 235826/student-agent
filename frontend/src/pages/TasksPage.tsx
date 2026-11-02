@@ -388,6 +388,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
       ...payload,
       title: payload?.title ?? "",
       description: payload?.description ?? "",
+      links: (payload?.links ?? []).join("\n"),
       priority: payload?.priority ?? 2,
       status: payload?.status ?? "todo",
       predecessor_ids: payload?.predecessor_ids ?? [],
@@ -423,6 +424,10 @@ export default function TasksPage({ profile }: { profile: Profile }) {
           : {}),
         ...values,
         title: values.title?.trim() ?? "",
+        links: (values.links ?? "")
+          .split("\n")
+          .map((link: string) => link.trim())
+          .filter(Boolean),
         deadline_at: deadlineInstant(
           values.deadline_at ?? "",
           values.deadline_all_day ?? false,
@@ -920,6 +925,20 @@ export default function TasksPage({ profile }: { profile: Profile }) {
                         ))}
                       </Space>
                     )}
+                    {task.links.length > 0 && (
+                      <div className="task-links">
+                        {task.links.map((link) => (
+                          <a
+                            key={link}
+                            href={link}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            {link}
+                          </a>
+                        ))}
+                      </div>
+                    )}
                     {task.parent_id && (
                       <p className="muted">
                         父任务：{relations([task.parent_id])}
@@ -1118,6 +1137,16 @@ export default function TasksPage({ profile }: { profile: Profile }) {
           </Form.Item>
           <Form.Item name="description" label="任务描述">
             <Input.TextArea rows={3} maxLength={20000} />
+          </Form.Item>
+          <Form.Item
+            name="links"
+            label="相关链接"
+            extra="每行一个 http/https 链接，最多 20 个。"
+          >
+            <Input.TextArea
+              rows={3}
+              placeholder={"https://example.com/资料\nhttps://example.com/作业"}
+            />
           </Form.Item>
           <div className="form-grid">
             <Form.Item name="status" label="执行状态">

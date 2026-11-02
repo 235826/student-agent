@@ -194,6 +194,7 @@ def next_task_values(db: Session, user: User, task: Task, after_ms: int) -> dict
     return {
         "title": task.title,
         "description": task.description,
+        "links": task.links,
         "priority": task.priority,
         "flagged": task.flagged,
         "deadline_at": deadline,

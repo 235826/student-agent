@@ -8828,6 +8828,16 @@
             "title": "Description",
             "default": ""
           },
+          "links": {
+            "items": {
+              "type": "string",
+              "maxLength": 2000,
+              "minLength": 1
+            },
+            "type": "array",
+            "maxItems": 20,
+            "title": "Links"
+          },
           "status": {
             "type": "string",
             "enum": [
@@ -10918,6 +10928,16 @@
             "title": "Description",
             "default": ""
           },
+          "links": {
+            "items": {
+              "type": "string",
+              "maxLength": 2000,
+              "minLength": 1
+            },
+            "type": "array",
+            "maxItems": 20,
+            "title": "Links"
+          },
           "status": {
             "type": "string",
             "enum": [
@@ -11186,6 +11206,13 @@
             "title": "Description",
             "default": ""
           },
+          "links": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Links"
+          },
           "status": {
             "type": "string",
             "enum": [
@@ -11398,6 +11425,7 @@
         "type": "object",
         "required": [
           "title",
+          "links",
           "flagged",
           "deadline_at",
           "recurrence",

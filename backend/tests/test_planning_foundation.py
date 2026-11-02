@@ -30,6 +30,7 @@ def update_task(client, record, **kwargs):
     keys = [
         "title",
         "description",
+        "links",
         "status",
         "priority",
         "flagged",
@@ -486,6 +487,47 @@ def test_recurring_task_monthly_clamps_day(authenticated):
         next_local.day,
         next_local.hour,
     ) == (year, 2, expected_day, 9)
+
+
+def test_task_links_dedupe_validation_and_recurrence(authenticated):
+    c = authenticated
+    record = task(
+        c,
+        "资料",
+        links=[
+            "https://example.com/a",
+            "https://example.com/a",
+            "http://example.org",
+        ],
+    )
+    assert record["links"] == ["https://example.com/a", "http://example.org"]
+    assert (
+        c.post(
+            "/api/v1/tasks",
+            json={"title": "坏链接", "links": ["javascript:alert(1)"]},
+        ).status_code
+        == 422
+    )
+
+    updated = update_task(c, record, links=["https://docs.example.com"])
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["links"] == ["https://docs.example.com"]
+
+    due = datetime.now(UTC).replace(microsecond=0) + timedelta(days=2)
+    recurring = task(
+        c,
+        "每周资料",
+        recurrence="weekly",
+        deadline_at=due.isoformat(),
+        links=["https://example.com/week"],
+    )
+    c.post(f"/api/v1/tasks/{recurring['id']}/complete")
+    next_task = next(
+        item
+        for item in c.get("/api/v1/tasks").json()
+        if item["title"] == "每周资料" and item["status"] == "todo"
+    )
+    assert next_task["links"] == ["https://example.com/week"]
 
 
 def test_task_flag_toggle_and_preserve(authenticated):

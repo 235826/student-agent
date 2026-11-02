@@ -1221,6 +1221,8 @@ export interface components {
              * @default
              */
             description: string;
+            /** Links */
+            links?: string[];
             /**
              * Status
              * @default todo
@@ -2099,6 +2101,8 @@ export interface components {
              * @default
              */
             description: string;
+            /** Links */
+            links?: string[];
             /**
              * Status
              * @default todo
@@ -2197,6 +2201,8 @@ export interface components {
              * @default
              */
             description: string;
+            /** Links */
+            links: string[];
             /**
              * Status
              * @default todo
