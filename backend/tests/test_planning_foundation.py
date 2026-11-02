@@ -343,6 +343,20 @@ def test_task_filters_and_views(authenticated):
     ) == {math["id"]}
 
 
+def test_task_pagination(authenticated):
+    c = authenticated
+    for index in range(5):
+        task(c, f"分页{index}")
+    first = c.get("/api/v1/tasks", params={"limit": 2})
+    assert first.status_code == 200
+    assert [item["title"] for item in first.json()] == ["分页0", "分页1"]
+    second = c.get("/api/v1/tasks", params={"limit": 2, "offset": 2})
+    assert [item["title"] for item in second.json()] == ["分页2", "分页3"]
+    assert c.get("/api/v1/tasks", params={"limit": 0}).status_code == 422
+    assert c.get("/api/v1/tasks", params={"limit": 201}).status_code == 422
+    assert c.get("/api/v1/tasks", params={"offset": -1}).status_code == 422
+
+
 def test_task_detail_titles_and_get_task(authenticated):
     c = authenticated
     parent = task(c, "父任务")

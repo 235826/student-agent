@@ -324,6 +324,24 @@ test("清单创建、任务归类、筛选与完成历史", async ({ page }) => 
   expect(task.list_id).toBe(lists[0].id);
 });
 
+test("任务分页加载更多", async ({ page }) => {
+  const headers = await login(page);
+  for (let index = 1; index <= 51; index++) {
+    const response = await page.request.post("/api/v1/tasks", {
+      headers,
+      data: { title: `分页任务${String(index).padStart(2, "0")}` },
+    });
+    expect(response.status()).toBe(201);
+  }
+  await page.goto("/tasks");
+  await expect(page.locator(".task-card")).toHaveCount(50);
+  await page.getByRole("button", { name: "加载更多" }).click();
+  await expect(page.locator(".task-card")).toHaveCount(51);
+  await expect(
+    page.getByRole("button", { name: "加载更多" }),
+  ).not.toBeVisible();
+});
+
 test("服务端搜索与侧栏角标", async ({ page }) => {
   const headers = await login(page);
   const auth = await (await page.request.get("/api/v1/auth/me")).json();

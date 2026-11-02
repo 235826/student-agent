@@ -2,7 +2,7 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Any, Literal
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import ValidationError
 from sqlalchemy import and_, delete, func, or_, select, update
 from sqlalchemy.orm import Session
@@ -250,6 +250,8 @@ def list_tasks(
     flagged: bool | None = None,
     due_from: datetime | None = None,
     due_to: datetime | None = None,
+    limit: int | None = Query(default=None, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
 ) -> list[TaskOut]:
     scope: TaskView = "trash" if trashed else view
     now_ms, tomorrow_ms = task_day_bounds(user)
@@ -313,10 +315,10 @@ def list_tasks(
     if to_ms is not None:
         query = query.where(Task.deadline_at.is_not(None), Task.deadline_at <= to_ms)
 
-    return [
-        task_view(db, task)
-        for task in db.scalars(query.order_by(Task.sort_order, Task.created_at.desc(), Task.id))
-    ]
+    query = query.order_by(Task.sort_order, Task.created_at.desc(), Task.id).offset(offset)
+    if limit is not None:
+        query = query.limit(limit)
+    return [task_view(db, task) for task in db.scalars(query)]
 
 
 @router.get("/tasks/summary", response_model=TaskSummaryOut)

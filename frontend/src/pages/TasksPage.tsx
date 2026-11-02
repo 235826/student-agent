@@ -12,7 +12,12 @@ import {
 import SourceButton from "../components/SourceButton";
 import { Fragment, useEffect, useState } from "react";
 import { backTarget, currentLocation, withFrom } from "../navigation";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import {
   Alert,
   App,
@@ -60,6 +65,7 @@ const policies = [
   { value: "none", label: "明确禁止并行" },
   { value: "allow_selected", label: "接受已明确允许的组合" },
 ];
+const PAGE_SIZE = 50;
 const views = [
   ["all", "全部"],
   ["today", "今天"],
@@ -127,7 +133,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
   if (status !== "all") taskQuery.set("status", status);
   if (debouncedSearch) taskQuery.set("q", debouncedSearch);
   const taskQueryString = taskQuery.toString();
-  const listTasks = useQuery({
+  const listTasks = useInfiniteQuery({
     queryKey: [
       "tasks",
       "list",
@@ -137,7 +143,15 @@ export default function TasksPage({ profile }: { profile: Profile }) {
       status,
       debouncedSearch,
     ],
-    queryFn: () => api<Task[]>(`/tasks?${taskQueryString}`),
+    queryFn: ({ pageParam }) => {
+      const params = new URLSearchParams(taskQueryString);
+      params.set("limit", String(PAGE_SIZE + 1));
+      params.set("offset", String(pageParam));
+      return api<Task[]>(`/tasks?${params.toString()}`);
+    },
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, _allPages, lastPageParam) =>
+      lastPage.length > PAGE_SIZE ? lastPageParam + PAGE_SIZE : undefined,
     enabled: !inbox && !id,
     placeholderData: (previous) => previous,
   });
@@ -321,11 +335,17 @@ export default function TasksPage({ profile }: { profile: Profile }) {
     },
     onError: (e: unknown) => void message.error(errorText(e)),
   });
+  const listItems =
+    listTasks.data?.pages.flatMap((page, index, pages) =>
+      index < pages.length - 1 || listTasks.hasNextPage
+        ? page.slice(0, PAGE_SIZE)
+        : page,
+    ) ?? [];
   const baseTasks = id
     ? detailTaskQuery.data
       ? [detailTaskQuery.data]
       : []
-    : (listTasks.data ?? []);
+    : listItems;
   const knownTitles: Record<string, string> = Object.fromEntries(
     baseTasks.map((task) => [task.id, task.title]),
   );
@@ -479,7 +499,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
   const currentQuery = id ? detailTaskQuery : listTasks;
   const listOf = (task: Task) =>
     (lists.data ?? []).find((list) => list.id === task.list_id);
-  const visible = (id ? (detailTask ? [detailTask] : []) : (listTasks.data ?? []))
+  const visible = (id ? (detailTask ? [detailTask] : []) : listItems)
     .sort((a, b) =>
       sort === "deadline"
         ? (a.deadline_at ?? "9999").localeCompare(b.deadline_at ?? "9999")
@@ -515,7 +535,8 @@ export default function TasksPage({ profile }: { profile: Profile }) {
     view === "all" &&
     status === "all" &&
     !search.trim() &&
-    tagFilter === "all";
+    tagFilter === "all" &&
+    !listTasks.hasNextPage;
   const dropTask = (target: Task) => {
     if (!canReorder || !draggingId || draggingId === target.id) return;
     const from = visible.findIndex((task) => task.id === draggingId);
@@ -662,7 +683,9 @@ export default function TasksPage({ profile }: { profile: Profile }) {
           />
           {sort === "manual" && !canReorder && (
             <span className="muted">
-              清除搜索、状态或标签筛选后可拖动排序
+              {listTasks.hasNextPage
+                ? "加载全部任务后可拖动排序"
+                : "清除搜索、状态或标签筛选后可拖动排序"}
             </span>
           )}
         </Space>
@@ -1002,6 +1025,16 @@ export default function TasksPage({ profile }: { profile: Profile }) {
                 </Fragment>
                 );
               })}
+            </div>
+          )}
+          {!id && listTasks.hasNextPage && (
+            <div className="toolbar" style={{ textAlign: "center" }}>
+              <Button
+                loading={listTasks.isFetchingNextPage}
+                onClick={() => void listTasks.fetchNextPage()}
+              >
+                加载更多
+              </Button>
             </div>
           )}
           {id && detailTask && !detailTask.trashed_at && (

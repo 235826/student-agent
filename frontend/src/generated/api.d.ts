@@ -5834,6 +5834,8 @@ export interface operations {
                 flagged?: boolean | null;
                 due_from?: string | null;
                 due_to?: string | null;
+                limit?: number | null;
+                offset?: number;
             };
             header?: never;
             path?: never;
