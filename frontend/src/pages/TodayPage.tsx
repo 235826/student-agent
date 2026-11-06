@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Alert,
@@ -10,7 +10,6 @@ import {
   Form,
   Input,
   InputNumber,
-  Modal,
   Select,
   Space,
   Spin,
@@ -38,7 +37,12 @@ export default function TodayPage({ profile }: { profile: Profile }) {
   const [draft, setDraft] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [completing, setCompleting] = useState<Task | null>(null);
+  const completionRef = useRef<HTMLElement | null>(null);
   const [completeForm] = Form.useForm();
+  useEffect(() => {
+    if (!completing) return;
+    completionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [completing]);
   const plan = useQuery({
     queryKey: ["plans", "current"],
     queryFn: () => api<Plan | null>("/plans/current"),
@@ -474,32 +478,14 @@ export default function TodayPage({ profile }: { profile: Profile }) {
           </section>
         </>
       )}
-      <Modal
-        title={completing ? `完成“${completing.title}”` : "完成任务"}
-        open={!!completing}
-        onCancel={() => setCompleting(null)}
-        okText="完成并记录"
-        cancelText="取消"
-        confirmLoading={logWork.isPending}
-        footer={
-          <Space>
-            <Button onClick={() => setCompleting(null)}>取消</Button>
-            <Button
-              onClick={() => completing && complete.mutate(completing)}
-              loading={complete.isPending}
-            >
-              不记录，直接完成
+      {completing && (
+        <section className="section inline-editor" ref={completionRef}>
+          <div className="section-inline-heading">
+            <h3>完成“{completing.title}”</h3>
+            <Button type="text" onClick={() => setCompleting(null)}>
+              收起
             </Button>
-            <Button
-              type="primary"
-              loading={logWork.isPending}
-              onClick={() => completeForm.submit()}
-            >
-              完成并记录
-            </Button>
-          </Space>
-        }
-      >
+          </div>
         <Form
           form={completeForm}
           layout="vertical"
@@ -531,7 +517,27 @@ export default function TodayPage({ profile }: { profile: Profile }) {
             <Input.TextArea rows={3} maxLength={5000} />
           </Form.Item>
         </Form>
-      </Modal>
+          <div className="row-actions">
+            <Button type="text" onClick={() => setCompleting(null)}>
+              取消
+            </Button>
+            <Button
+              type="text"
+              onClick={() => completing && complete.mutate(completing)}
+              loading={complete.isPending}
+            >
+              不记录，直接完成
+            </Button>
+            <Button
+              type="primary"
+              loading={logWork.isPending}
+              onClick={() => completeForm.submit()}
+            >
+              完成并记录
+            </Button>
+          </div>
+        </section>
+      )}
     </>
   );
 }

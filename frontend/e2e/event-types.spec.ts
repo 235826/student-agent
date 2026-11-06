@@ -12,10 +12,7 @@ test("自定义事件类型可创建并用于事件", async ({ page }) => {
   await page.getByRole("button", { name: "新建事件类型" }).click();
   await page.getByLabel("类型名称").fill("社团活动");
   await page.getByLabel("颜色").fill("#9254de");
-  await page
-    .getByRole("dialog")
-    .getByRole("button", { name: /^确\s*定$/ })
-    .click();
+  await page.getByRole("button", { name: /^保\s*存$/ }).click();
   await expect(
     page.getByRole("heading", { name: "社团活动", exact: true }),
   ).toBeVisible();
@@ -31,10 +28,7 @@ test("自定义事件类型可创建并用于事件", async ({ page }) => {
     .filter({ hasText: "社团活动" })
     .click();
   await page.getByLabel("事件标题").fill("社团迎新");
-  await page
-    .getByRole("dialog")
-    .getByRole("button", { name: /^确\s*定$/ })
-    .click();
+  await page.getByRole("button", { name: "保存事件", exact: true }).click();
   await expect(
     page.getByText("社团活动", { exact: true }).first(),
   ).toBeVisible();

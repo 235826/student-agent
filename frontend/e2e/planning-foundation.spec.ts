@@ -51,10 +51,7 @@ test("草稿发布、重复课程单次变更与规则检查", async ({ page }, 
   await page.getByRole("link", { name: "日历", exact: true }).click();
   await page.getByRole("button", { name: "添加课程", exact: true }).click();
   await page.getByLabel("课程名称").fill(course);
-  await page
-    .getByRole("dialog")
-    .getByRole("button", { name: /^确\s*定$/ })
-    .click();
+  await page.getByRole("button", { name: "保存课程", exact: true }).click();
   await expect(page.getByText(course, { exact: true })).toBeVisible();
   await page.getByRole("link", { name: course, exact: true }).click();
   await expect(page).toHaveURL(/\/calendar\/courses\//);
@@ -76,8 +73,7 @@ test("草稿发布、重复课程单次变更与规则检查", async ({ page }, 
     .getByLabel("结束日期")
     .fill(seriesStart.plus({ weeks: 1 }).toFormat("yyyy-MM-dd"));
   await page
-    .getByRole("dialog")
-    .getByRole("button", { name: /^确\s*定$/ })
+    .getByRole("button", { name: "保存每周课程", exact: true })
     .click();
   await page.getByRole("link", { name: course, exact: true }).click();
   await page.getByRole("link", { name: /起 · 2 次课程/ }).click();
@@ -126,10 +122,7 @@ test("草稿发布、重复课程单次变更与规则检查", async ({ page }, 
   await page.getByRole("button", { name: "添加组合规则" }).click();
   await choose(page, "活动一对象", course);
   await page.getByLabel("活动二对象").fill(`reading-${info.project.name}`);
-  await page
-    .getByRole("dialog")
-    .getByRole("button", { name: /^确\s*定$/ })
-    .click();
+  await page.getByRole("button", { name: "保存规则", exact: true }).click();
   await expect(
     page.getByRole("heading", {
       name: `${course} ＋ 类型：reading-${info.project.name}`,

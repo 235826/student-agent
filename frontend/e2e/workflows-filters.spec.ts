@@ -29,8 +29,10 @@ test("清单文件夹与保存筛选", async ({ page }) => {
   await page.getByTitle("学习").click();
   await listRow.getByRole("button", { name: /^保\s*存$/ }).click();
   await expect(page.getByText("清单已更新")).toBeVisible();
-  await page.locator(".ant-modal-close").click();
-  await expect(page.getByRole("dialog")).not.toBeVisible();
+  await page.getByRole("button", { name: "收起" }).click();
+  await expect(
+    page.getByRole("heading", { name: "管理清单", exact: true }),
+  ).not.toBeVisible();
 
   const groups = await (
     await page.request.get("/api/v1/task-list-groups")
@@ -45,7 +47,7 @@ test("清单文件夹与保存筛选", async ({ page }) => {
   await page.getByRole("button", { name: "保存筛选", exact: true }).click();
   await page.getByLabel("筛选名称").fill("数学筛选");
   await page
-    .getByRole("dialog")
+    .locator(".inline-filter-save")
     .getByRole("button", { name: /^保\s*存$/ })
     .click();
   await expect(page.getByText("筛选已保存")).toBeVisible();
@@ -129,21 +131,24 @@ test("标签管理重命名、使用次数与删除", async ({ page }) => {
   await mathRow.getByRole("button", { name: /^保\s*存$/ }).click();
   await expect(page.getByText("标签已更新")).toBeVisible();
   await expect(page.getByLabel("高数 名称")).toBeVisible();
-  await page.locator(".ant-modal-close").click();
-  await expect(page.getByRole("dialog")).not.toBeVisible();
+  await page.getByRole("button", { name: "收起" }).click();
+  await expect(
+    page.getByRole("heading", { name: "管理标签", exact: true }),
+  ).not.toBeVisible();
 
   await page.getByRole("button", { name: "管理标签", exact: true }).click();
   const highRow = page
     .locator(".ant-list-item")
     .filter({ has: page.getByLabel("高数 名称") });
   await highRow.getByRole("button", { name: /^删\s*除$/ }).click();
-  await page
-    .locator(".ant-popconfirm")
-    .getByRole("button", { name: /^删\s*除$/ })
+  await highRow
+    .getByRole("button", { name: "确认删除", exact: true })
     .click();
   await expect(page.getByText("标签已删除")).toBeVisible();
-  await page.locator(".ant-modal-close").click();
-  await expect(page.getByRole("dialog")).not.toBeVisible();
+  await page.getByRole("button", { name: "收起" }).click();
+  await expect(
+    page.getByRole("heading", { name: "管理标签", exact: true }),
+  ).not.toBeVisible();
 
   const tasks = await (await page.request.get("/api/v1/tasks")).json();
   expect(

@@ -6,8 +6,6 @@ import {
   Form,
   Input,
   List,
-  Modal,
-  Popconfirm,
   Select,
   Space,
   Spin,
@@ -142,14 +140,16 @@ export default function TaskListManager({
     [next[from], next[to]] = [next[to], next[from]];
     reorder.mutate(next.map((item) => item.id));
   };
+  const [confirming, setConfirming] = useState<string | null>(null);
+  if (!open) return null;
   return (
-    <Modal
-      title="管理清单"
-      open={open}
-      onCancel={onClose}
-      footer={null}
-      destroyOnHidden
-    >
+    <section className="section">
+      <div className="section-inline-heading">
+        <h3>管理清单</h3>
+        <Button type="text" onClick={onClose}>
+          收起
+        </Button>
+      </div>
       <h4>文件夹</h4>
       <Form
         form={groupForm}
@@ -191,18 +191,37 @@ export default function TaskListManager({
                 >
                   保存
                 </Button>,
-                <Popconfirm
-                  key="delete"
-                  title="删除文件夹？"
-                  description="其中的清单会移出文件夹，不会被删除。"
-                  okText="删除"
-                  cancelText="取消"
-                  onConfirm={() => removeGroup.mutate(group.id)}
-                >
-                  <Button type="link" danger>
+                confirming === `group:${group.id}` ? (
+                  <>
+                    <Button
+                      key="confirm-delete"
+                      type="link"
+                      danger
+                      onClick={() => {
+                        setConfirming(null);
+                        removeGroup.mutate(group.id);
+                      }}
+                    >
+                      确认删除
+                    </Button>,
+                    <Button
+                      key="cancel-delete"
+                      type="link"
+                      onClick={() => setConfirming(null)}
+                    >
+                      取消
+                    </Button>,
+                  </>
+                ) : (
+                  <Button
+                    key="delete"
+                    type="link"
+                    danger
+                    onClick={() => setConfirming(`group:${group.id}`)}
+                  >
                     删除
                   </Button>
-                </Popconfirm>,
+                ),
               ]}
             >
               <Input
@@ -295,24 +314,40 @@ export default function TaskListManager({
                   >
                     保存
                   </Button>,
-                  <Popconfirm
-                    key="delete"
-                    title="删除清单？"
-                    description="其中的任务会移入收件箱。"
-                    okText="删除"
-                    cancelText="取消"
-                    onConfirm={() => remove.mutate(list.id)}
-                  >
+                  confirming === `list:${list.id}` ? (
+                    <>
+                      <Button
+                        key="confirm-delete"
+                        type="link"
+                        danger
+                        loading={
+                          remove.isPending && remove.variables === list.id
+                        }
+                        onClick={() => {
+                          setConfirming(null);
+                          remove.mutate(list.id);
+                        }}
+                      >
+                        确认删除
+                      </Button>,
+                      <Button
+                        key="cancel-delete"
+                        type="link"
+                        onClick={() => setConfirming(null)}
+                      >
+                        取消
+                      </Button>,
+                    </>
+                  ) : (
                     <Button
+                      key="delete"
                       type="link"
                       danger
-                      loading={
-                        remove.isPending && remove.variables === list.id
-                      }
+                      onClick={() => setConfirming(`list:${list.id}`)}
                     >
                       删除
                     </Button>
-                  </Popconfirm>,
+                  ),
                 ]}
               >
                 <Space wrap>
@@ -351,6 +386,6 @@ export default function TaskListManager({
           }}
         />
       )}
-    </Modal>
+    </section>
   );
 }

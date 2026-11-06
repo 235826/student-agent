@@ -123,7 +123,7 @@ test("系列批量修改、事件删除与空课程清理", async ({ page }) => 
     .getByRole("dialog")
     .getByRole("button", { name: /^确\s*定$/ })
     .click();
-  await expect(page).toHaveURL(/\/calendar$/);
+  await expect(page).toHaveURL(/\/calendar(\?|$)/);
   expect(await (await page.request.get("/api/v1/courses")).json()).toEqual([]);
   expect(await (await page.request.get("/api/v1/events")).json()).toEqual([]);
 });
@@ -210,10 +210,7 @@ test("事件备注范围、课程重命名与周次 URL", async ({ page }) => {
     .filter({ hasText: "备注应用范围" });
   await noteScope.getByText("仅本次").click();
   await page.getByLabel("备注（短，显示在卡片和日历）").fill("单次备注");
-  await page
-    .getByRole("dialog")
-    .getByRole("button", { name: /^确\s*定$/ })
-    .click();
+  await page.getByRole("button", { name: "保存事件", exact: true }).click();
   await expect(page.getByText("系列备注；单次备注").first()).toBeVisible();
   await page.getByRole("link", { name: "返回日历", exact: true }).click();
   await expect(page).toHaveURL(
@@ -238,20 +235,13 @@ test("今日新建事件继承日期并在表单内联新建课程", async ({ pa
   await expect(page.getByLabel("结束时间")).not.toHaveValue("");
   await page.getByRole("button", { name: "新建课程", exact: true }).click();
   await page.getByLabel("课程名称").fill("内联课程");
-  await page
-    .getByRole("dialog")
-    .last()
-    .getByRole("button", { name: /^确\s*定$/ })
-    .click();
+  await page.getByRole("button", { name: "保存课程", exact: true }).click();
   await expect(page.getByLabel("事件标题")).toBeVisible();
   await expect(
     page.getByText("内联课程", { exact: true }).first(),
   ).toBeVisible();
   await page.getByLabel("事件标题").fill("内联课程事件");
-  await page
-    .getByRole("dialog")
-    .getByRole("button", { name: /^确\s*定$/ })
-    .click();
+  await page.getByRole("button", { name: "保存事件", exact: true }).click();
   await expect(page).toHaveURL(/\/$/);
   await page.getByRole("link", { name: "日历", exact: true }).click();
   await expect(

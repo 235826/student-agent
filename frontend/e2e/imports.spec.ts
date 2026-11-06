@@ -23,8 +23,7 @@ async function reviewAndPublish(page: Page, count: number) {
   ).toBeEnabled();
   await page.getByRole("button", { name: "确认创建", exact: true }).click();
   await page
-    .locator(".ant-popconfirm")
-    .getByRole("button", { name: /确\s*定/ })
+    .getByRole("button", { name: "再次点击确认创建", exact: true })
     .click();
   await expect(
     page.getByText(`已创建 ${count} 项；重复导入不会再次创建。`),

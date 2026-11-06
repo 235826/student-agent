@@ -9,7 +9,6 @@ import {
   Empty,
   Form,
   Input,
-  Modal,
   Select,
   Space,
   Tag,
@@ -442,14 +441,14 @@ export default function CompatibilityPage({ profile }: { profile: Profile }) {
           )}
         </>
       )}
-      <Modal
-        title={editing ? "编辑组合规则" : "添加组合规则"}
-        open={editing !== undefined}
-        onCancel={() => setEditing(undefined)}
-        onOk={() => form.submit()}
-        confirmLoading={write.isPending}
-        destroyOnHidden
-      >
+      {editing !== undefined && (
+        <section className="section">
+          <div className="section-inline-heading">
+            <h3>{editing ? "编辑组合规则" : "添加组合规则"}</h3>
+            <Button type="text" onClick={() => setEditing(undefined)}>
+              收起
+            </Button>
+          </div>
         <Form
           form={form}
           layout="vertical"
@@ -524,8 +523,12 @@ export default function CompatibilityPage({ profile }: { profile: Profile }) {
           <p className="muted">
             同级允许与禁止规则冲突时先禁止。明确覆盖只针对当前设置，后续新增或修改禁止设置需要重新确认。任务依赖不能通过并行规则绕过。
           </p>
+          <Button type="primary" htmlType="submit" loading={write.isPending}>
+            保存规则
+          </Button>
         </Form>
-      </Modal>
+        </section>
+      )}
     </>
   );
 }

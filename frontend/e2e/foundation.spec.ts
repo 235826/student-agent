@@ -55,7 +55,7 @@ test("账号、任务、事件、设置和手机布局闭环", async ({ page }, 
   await page.getByLabel("开始时间").fill(`${eventDay}T09:00`);
   await page.getByLabel("结束时间").fill(`${eventDay}T10:00`);
   await page.getByLabel("地点").fill("教学楼 A101");
-  await page.getByRole("button", { name: "确 定" }).click();
+  await page.getByRole("button", { name: "保存事件", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: `数据库课-${testInfo.project.name}` }),
   ).toBeVisible();
@@ -69,7 +69,7 @@ test("账号、任务、事件、设置和手机布局闭环", async ({ page }, 
     .getByRole("button", { name: "编辑事件" })
     .click();
   await page.getByLabel("地点").fill("教学楼 B202");
-  await page.getByRole("button", { name: "确 定" }).click();
+  await page.getByRole("button", { name: "保存事件", exact: true }).click();
   await expect(page.getByText("教学楼 B202").first()).toBeVisible();
   await page.getByRole("link", { name: "设置", exact: true }).click();
   await page.getByLabel("显示与排程时区").fill("Asia/Shanghai");

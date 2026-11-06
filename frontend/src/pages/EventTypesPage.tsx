@@ -8,7 +8,6 @@ import {
   Empty,
   Form,
   Input,
-  Modal,
   Space,
   Spin,
   Tag,
@@ -130,14 +129,14 @@ export default function EventTypesPage() {
           ))}
         </div>
       )}
-      <Modal
-        title={editing ? "编辑事件类型" : "新建事件类型"}
-        open={editing !== undefined}
-        onCancel={() => setEditing(undefined)}
-        onOk={() => form.submit()}
-        confirmLoading={save.isPending}
-        destroyOnHidden
-      >
+      {editing !== undefined && (
+        <section className="section">
+          <div className="section-inline-heading">
+            <h3>{editing ? "编辑事件类型" : "新建事件类型"}</h3>
+            <Button type="text" onClick={() => setEditing(undefined)}>
+              收起
+            </Button>
+          </div>
         <Form form={form} layout="vertical" onFinish={(values) => save.mutate(values)}>
           <Form.Item
             name="name"
@@ -157,8 +156,12 @@ export default function EventTypesPage() {
           <Form.Item name="color" label="颜色">
             <Input type="color" />
           </Form.Item>
+          <Button type="primary" htmlType="submit" loading={save.isPending}>
+            保存
+          </Button>
         </Form>
-      </Modal>
+        </section>
+      )}
     </>
   );
 }

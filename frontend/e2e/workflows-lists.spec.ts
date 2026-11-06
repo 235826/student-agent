@@ -8,8 +8,10 @@ test("清单创建、任务归类、筛选与完成历史", async ({ page }) => 
   await page.getByLabel("新清单名称").fill("课程");
   await page.getByRole("button", { name: "创建清单", exact: true }).click();
   await expect(page.getByText("清单已创建")).toBeVisible();
-  await page.locator(".ant-modal-close").click();
-  await expect(page.getByRole("dialog")).not.toBeVisible();
+  await page.getByRole("button", { name: "收起" }).click();
+  await expect(
+    page.getByRole("heading", { name: "管理清单", exact: true }),
+  ).not.toBeVisible();
 
   await page.getByRole("button", { name: "新建任务", exact: true }).click();
   await page.getByLabel("任务标题").fill("清单任务");

@@ -15,7 +15,6 @@ import {
   Checkbox,
   Input,
   InputNumber,
-  Popconfirm,
   Select,
   Space,
   Tag,
@@ -292,6 +291,9 @@ function DraftEditor({
     eventTypes.find((type) => type.system_key === hint)?.id;
   const [context, setContext] = useState(job.context);
   const [dirty, setDirty] = useState(false);
+  const [confirming, setConfirming] = useState<
+    "retry" | "publish" | "source" | null
+  >(null);
   const busy = ["queued", "running"].includes(job.status);
   const selected = items.filter((i) => i.selected);
   const blockers = selected.filter((i) => !i.reviewed || !i.title.trim());
@@ -393,14 +395,35 @@ function DraftEditor({
               maxLength={4000}
             />
           </label>
-          <Popconfirm
-            title="重新发送材料和说明给模型，并替换当前草稿？"
-            onConfirm={() =>
-              act("retry", { revision: job.revision, confirmed: true, context })
-            }
-          >
-            <Button disabled={action.isPending}>重新解析</Button>
-          </Popconfirm>
+          {confirming === "retry" ? (
+            <span className="row-actions">
+              <Button
+                type="text"
+                disabled={action.isPending}
+                onClick={() => {
+                  setConfirming(null);
+                  act("retry", {
+                    revision: job.revision,
+                    confirmed: true,
+                    context,
+                  });
+                }}
+              >
+                确认重新解析
+              </Button>
+              <Button type="text" onClick={() => setConfirming(null)}>
+                取消
+              </Button>
+            </span>
+          ) : (
+            <Button
+              type="text"
+              disabled={action.isPending}
+              onClick={() => setConfirming("retry")}
+            >
+              重新解析
+            </Button>
+          )}
         </>
       )}
       <p>
@@ -705,30 +728,36 @@ function DraftEditor({
           >
             保存校对
           </Button>
-          <Popconfirm
-            title="将所有选中且已校对的条目一次性写入任务和日历？"
-            onConfirm={() =>
+          <Button
+            type="primary"
+            disabled={
+              dirty ||
+              !items.some((c) => c.selected) ||
+              items.some(
+                (c) => c.selected && (!c.reviewed || !c.title.trim()),
+              ) ||
+              action.isPending
+            }
+            onClick={() => {
+              if (confirming !== "publish") {
+                setConfirming("publish");
+                return;
+              }
+              setConfirming(null);
               act("publish", {
                 revision: job.revision,
                 confirmed: true,
                 idempotency_key: crypto.randomUUID(),
-              })
-            }
+              });
+            }}
           >
-            <Button
-              type="primary"
-              disabled={
-                dirty ||
-                !items.some((c) => c.selected) ||
-                items.some(
-                  (c) => c.selected && (!c.reviewed || !c.title.trim()),
-                ) ||
-                action.isPending
-              }
-            >
-              确认创建
+            {confirming === "publish" ? "再次点击确认创建" : "确认创建"}
+          </Button>
+          {confirming === "publish" && (
+            <Button type="text" onClick={() => setConfirming(null)}>
+              取消
             </Button>
-          </Popconfirm>
+          )}
         </Space>
       )}
       {job.published_revision && (
@@ -745,14 +774,33 @@ function DraftEditor({
       )}
       {!job.source.deleted_at && (
         <div className="toolbar">
-          <Popconfirm
-            title="删除原始材料及导入草稿？已创建的任务和课程会保留。"
-            onConfirm={() => act("source", undefined, "DELETE")}
-          >
-            <Button danger disabled={action.isPending}>
+          {confirming === "source" ? (
+            <span className="row-actions">
+              <Button
+                type="text"
+                danger
+                disabled={action.isPending}
+                onClick={() => {
+                  setConfirming(null);
+                  act("source", undefined, "DELETE");
+                }}
+              >
+                确认删除来源
+              </Button>
+              <Button type="text" onClick={() => setConfirming(null)}>
+                取消
+              </Button>
+            </span>
+          ) : (
+            <Button
+              type="text"
+              danger
+              disabled={action.isPending}
+              onClick={() => setConfirming("source")}
+            >
               删除来源
             </Button>
-          </Popconfirm>
+          )}
         </div>
       )}
     </section>

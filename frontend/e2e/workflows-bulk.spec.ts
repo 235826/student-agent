@@ -56,12 +56,12 @@ test("批量改期、添加标签与撤销", async ({ page }) => {
   await page.getByLabel("选择 批量改期A").check();
   await page.getByLabel("选择 批量改期B").check();
   await bar.getByRole("button", { name: /^标\s*签$/ }).click();
-  const dialog = page.getByRole("dialog");
-  await dialog.getByRole("combobox").click();
-  await dialog.getByRole("combobox").fill("批量标签");
+  const bulkTag = page.locator(".bulk-bar .inline-filter-save");
+  await bulkTag.getByRole("combobox").click();
+  await bulkTag.getByRole("combobox").fill("批量标签");
   await page.keyboard.press("Enter");
-  await dialog.getByText("批量标签", { exact: true }).first().click();
-  await dialog
+  await bulkTag.getByText("批量标签", { exact: true }).first().click();
+  await bulkTag
     .getByRole("button", { name: "添加标签", exact: true })
     .click();
   await expect(page.getByText("已处理 2 项").last()).toBeVisible();

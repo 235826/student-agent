@@ -18,7 +18,6 @@ import {
   Empty,
   Form,
   Input,
-  Modal,
   Radio,
   Select,
   Space,
@@ -105,7 +104,12 @@ export default function EventsPage({ profile }: { profile: Profile }) {
   const [seriesForm] = Form.useForm();
   const [courseForm] = Form.useForm();
   const [typeForm] = Form.useForm();
+  const panelRef = useRef<HTMLDivElement | null>(null);
   const seriesKey = useRef("");
+  useEffect(() => {
+    if (editing === undefined && !seriesOpen && !courseOpen && !typeOpen) return;
+    panelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [editing, seriesOpen, courseOpen, typeOpen]);
   const kind = Form.useWatch("kind", form);
   const eventTypeId = Form.useWatch("event_type_id", form);
   const openNewEvent = (start?: string, end?: string, courseId?: string) => {
@@ -573,14 +577,15 @@ export default function EventsPage({ profile }: { profile: Profile }) {
           ))}
         </div>
       )}
-      <Modal
-        title={editing ? "编辑事件" : "添加事件"}
-        open={editing !== undefined}
-        onCancel={closeEditor}
-        onOk={() => form.submit()}
-        confirmLoading={write.isPending}
-        destroyOnHidden
-      >
+      <div ref={panelRef}>
+      {editing !== undefined && (
+        <section className="section inline-editor">
+          <div className="section-inline-heading">
+            <h3>{editing ? "编辑事件" : "添加事件"}</h3>
+            <Button type="text" onClick={closeEditor}>
+              收起
+            </Button>
+          </div>
         <Form
           form={form}
           initialValues={{
@@ -774,15 +779,29 @@ export default function EventsPage({ profile }: { profile: Profile }) {
               </details>
             )}
         </Form>
-      </Modal>
-      <Modal
-        title="新建事件类型"
-        open={typeOpen}
-        onCancel={() => setTypeOpen(false)}
-        onOk={() => typeForm.submit()}
-        confirmLoading={createEventType.isPending}
-        destroyOnHidden
-      >
+          <div className="row-actions">
+            <Button type="text" onClick={closeEditor}>
+              取消
+            </Button>
+            <Button
+              type="primary"
+              htmlType="submit"
+              loading={write.isPending}
+              onClick={() => form.submit()}
+            >
+              保存事件
+            </Button>
+          </div>
+        </section>
+      )}
+      {typeOpen && (
+        <section className="section inline-editor">
+          <div className="section-inline-heading">
+            <h3>新建事件类型</h3>
+            <Button type="text" onClick={() => setTypeOpen(false)}>
+              收起
+            </Button>
+          </div>
         <Form
           form={typeForm}
           layout="vertical"
@@ -806,18 +825,30 @@ export default function EventsPage({ profile }: { profile: Profile }) {
           <Form.Item name="color" label="颜色">
             <Input type="color" />
           </Form.Item>
+          <Button
+            type="primary"
+            htmlType="submit"
+            loading={createEventType.isPending}
+          >
+            保存事件类型
+          </Button>
         </Form>
-      </Modal>
-      <Modal
-        title="新建课程"
-        open={courseOpen}
-        onCancel={() => {
-          setCourseOpen(false);
-          setCourseTarget(null);
-        }}
-        onOk={() => courseForm.submit()}
-        confirmLoading={createCourse.isPending}
-      >
+        </section>
+      )}
+      {courseOpen && (
+        <section className="section inline-editor">
+          <div className="section-inline-heading">
+            <h3>新建课程</h3>
+            <Button
+              type="text"
+              onClick={() => {
+                setCourseOpen(false);
+                setCourseTarget(null);
+              }}
+            >
+              收起
+            </Button>
+          </div>
         <Form
           form={courseForm}
           layout="vertical"
@@ -833,15 +864,24 @@ export default function EventsPage({ profile }: { profile: Profile }) {
           <Form.Item name="semester" label="学期" initialValue="">
             <Input maxLength={100} />
           </Form.Item>
+          <Button
+            type="primary"
+            htmlType="submit"
+            loading={createCourse.isPending}
+          >
+            保存课程
+          </Button>
         </Form>
-      </Modal>
-      <Modal
-        title="建立每周课程"
-        open={seriesOpen}
-        onCancel={closeSeries}
-        onOk={() => seriesForm.submit()}
-        confirmLoading={write.isPending}
-      >
+        </section>
+      )}
+      {seriesOpen && (
+        <section className="section inline-editor">
+          <div className="section-inline-heading">
+            <h3>建立每周课程</h3>
+            <Button type="text" onClick={closeSeries}>
+              收起
+            </Button>
+          </div>
         <Form
           form={seriesForm}
           layout="vertical"
@@ -949,8 +989,17 @@ export default function EventsPage({ profile }: { profile: Profile }) {
             日期范围包含首尾两天，最多 366
             天。夏令时歧义会明确提示，确认保存后生成各次课程。
           </p>
+          <Button
+            type="primary"
+            htmlType="submit"
+            loading={write.isPending}
+          >
+            保存每周课程
+          </Button>
         </Form>
-      </Modal>
+        </section>
+      )}
+      </div>
     </>
   );
 }

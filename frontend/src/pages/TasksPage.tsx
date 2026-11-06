@@ -36,7 +36,6 @@ import {
   Form,
   Input,
   InputNumber,
-  Modal,
   Select,
   Space,
   Spin,
@@ -164,7 +163,12 @@ export default function TasksPage({ profile }: { profile: Profile }) {
   const [editor, setEditor] = useState<Editor | null>(
     isNew || params.has("new") ? { kind: "task" } : null,
   );
+  const editorRef = useRef<HTMLElement | null>(null);
   const [form] = Form.useForm();
+  useEffect(() => {
+    if (!editor) return;
+    editorRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [editor]);
   const recurrenceValue = Form.useWatch("recurrence", form);
   const intervalUnit =
     recurrenceValue === "daily"
@@ -876,6 +880,24 @@ export default function TasksPage({ profile }: { profile: Profile }) {
     });
     setSearch(saved.payload.q ?? "");
   };
+  const submitFilter = () => {
+    if (!filterName.trim()) {
+      void message.error("请输入筛选名称");
+      return;
+    }
+    saveFilter.mutate({
+      name: filterName.trim(),
+      payload: {
+        view,
+        q: search.trim(),
+        status:
+          status === "all" ? null : (status as SavedFilterPayload["status"]),
+        list_id: listFilter === "all" ? null : listFilter,
+        tag: tagFilter === "all" ? null : tagFilter,
+        sort: sort as SavedFilterPayload["sort"],
+      },
+    });
+  };
   const visible = (detailPage ? (detailTask ? [detailTask] : []) : listItems)
     .sort((a, b) =>
       sort === "deadline"
@@ -1115,6 +1137,24 @@ export default function TasksPage({ profile }: { profile: Profile }) {
             style={{ minWidth: 140 }}
           />
           <Button type="text" onClick={() => setSaveFilterOpen(true)}>保存筛选</Button>
+          {saveFilterOpen && (
+            <span className="inline-filter-save">
+              <Input
+                aria-label="筛选名称"
+                value={filterName}
+                onChange={(e) => setFilterName(e.target.value)}
+                placeholder="筛选名称"
+                maxLength={100}
+                onPressEnter={submitFilter}
+              />
+              <Button type="text" onClick={submitFilter}>
+                保存
+              </Button>
+              <Button type="text" onClick={() => setSaveFilterOpen(false)}>
+                取消
+              </Button>
+            </span>
+          )}
           {savedFilterId && (
             <Button danger onClick={() => deleteFilter.mutate(savedFilterId)}>
               删除筛选
@@ -1212,6 +1252,46 @@ export default function TasksPage({ profile }: { profile: Profile }) {
             >
               标签
             </Button>
+            {bulkTagOpen && (
+              <span className="inline-filter-save">
+                <Select
+                  mode="tags"
+                  value={bulkTagValues}
+                  onChange={setBulkTagValues}
+                  options={(tags.data ?? []).map((tag) => ({
+                    value: tag.name,
+                    label: tag.name,
+                  }))}
+                  placeholder="输入或选择标签"
+                  style={{ minWidth: 180 }}
+                />
+                <Button
+                  type="text"
+                  disabled={!bulkTagValues.length}
+                  onClick={() => {
+                    if (!bulkTagValues.length) return;
+                    runBulk("remove_tags", { tags: bulkTagValues });
+                    setBulkTagOpen(false);
+                  }}
+                >
+                  移除标签
+                </Button>
+                <Button
+                  type="text"
+                  disabled={!bulkTagValues.length}
+                  onClick={() => {
+                    if (!bulkTagValues.length) return;
+                    runBulk("add_tags", { tags: bulkTagValues });
+                    setBulkTagOpen(false);
+                  }}
+                >
+                  添加标签
+                </Button>
+                <Button type="text" onClick={() => setBulkTagOpen(false)}>
+                  取消
+                </Button>
+              </span>
+            )}
             <Dropdown
               menu={{
                 items: [
@@ -1258,6 +1338,215 @@ export default function TasksPage({ profile }: { profile: Profile }) {
           </Space>
         </div>
       )}
+      {editor && (
+        <section className="section inline-editor" ref={editorRef}>
+          <div className="section-inline-heading">
+            <h3>
+              {editor.kind === "draft"
+                ? editor.draft
+                  ? "编辑任务草稿"
+                  : "新建任务草稿"
+                : currentTask
+                  ? "编辑任务"
+                  : "新建任务"}
+            </h3>
+            <Button type="text" onClick={closeEditor}>
+              收起
+            </Button>
+          </div>
+        <Form
+          form={form}
+          layout="vertical"
+          initialValues={{
+            title: "",
+            status: "todo",
+            priority: 2,
+            flagged: false,
+            parallel_policy: "inherit",
+            deadline_all_day: false,
+            recurrence_interval: 1,
+            recurrence_from_completion: false,
+          }}
+        >
+          <Form.Item
+            name="title"
+            label="任务标题"
+            extra="创建正式任务必填；保存草稿可留空"
+            rules={[{ max: 200 }]}
+          >
+            <Input />
+          </Form.Item>
+          <Form.Item name="description" label="任务描述">
+            <Input.TextArea rows={3} maxLength={20000} />
+          </Form.Item>
+          <Form.Item
+            name="links"
+            label="相关链接"
+            extra="每行一个 http/https 链接，最多 20 个。"
+          >
+            <Input.TextArea
+              rows={3}
+              placeholder={"https://example.com/资料\nhttps://example.com/作业"}
+            />
+          </Form.Item>
+          <div className="form-grid">
+            <Form.Item name="status" label="执行状态">
+              <Select options={states} />
+            </Form.Item>
+            <Form.Item name="priority" label="优先级">
+              <Select options={priorities} />
+            </Form.Item>
+          </div>
+          <Form.Item name="flagged" valuePropName="checked">
+            <Checkbox>标记为重点</Checkbox>
+          </Form.Item>
+          <Form.Item
+            name="deadline_at"
+            label={`截止时间（${profile.timezone}）`}
+          >
+            <Input type="datetime-local" />
+          </Form.Item>
+          <Form.Item
+            name="deadline_all_day"
+            valuePropName="checked"
+            extra="仅显示日期，不展示具体时刻；清除截止时间时自动关闭。"
+          >
+            <Checkbox>仅日期（全天）</Checkbox>
+          </Form.Item>
+          <Form.Item
+            name="recurrence"
+            label="重复"
+            extra="重复任务需要设置截止时间；完成当前任务后自动生成下一次。"
+          >
+            <Select
+              allowClear
+              placeholder="不重复"
+              options={[
+                { value: "daily", label: "每天" },
+                { value: "weekly", label: "每周" },
+                { value: "monthly", label: "每月" },
+                { value: "yearly", label: "每年" },
+                { value: "weekdays", label: "工作日" },
+              ]}
+            />
+          </Form.Item>
+          {recurrenceValue && (
+            <>
+              {recurrenceValue !== "weekdays" && (
+                <Form.Item
+                  name="recurrence_interval"
+                  label={`重复间隔（每 ${intervalUnit}）`}
+                >
+                  <InputNumber min={1} max={52} precision={0} />
+                </Form.Item>
+              )}
+              <Form.Item
+                name="recurrence_from_completion"
+                valuePropName="checked"
+              >
+                <Checkbox>按完成日计算下一次</Checkbox>
+              </Form.Item>
+              <div className="form-grid">
+                <Form.Item
+                  name="recurrence_until"
+                  label="重复结束日期（可选）"
+                >
+                  <Input type="date" />
+                </Form.Item>
+                <Form.Item
+                  name="recurrence_remaining"
+                  label="剩余次数（可选）"
+                >
+                  <InputNumber
+                    min={0}
+                    max={100000}
+                    precision={0}
+                    placeholder="不限"
+                  />
+                </Form.Item>
+              </div>
+            </>
+          )}
+          <Form.Item name="estimate_minutes" label="预计用时（分钟，可留空）">
+            <InputNumber min={1} max={100000} precision={0} />
+          </Form.Item>
+          <Form.Item name="task_type" label="任务类型（可选）">
+            <Input placeholder="例如 reading / coding" maxLength={100} />
+          </Form.Item>
+          <Form.Item name="list_id" label="所属清单">
+            <Select
+              allowClear
+              placeholder="收件箱（未分类）"
+              options={editorListOptions}
+            />
+          </Form.Item>
+          <Form.Item name="tags" label="标签">
+            <Select
+              mode="tags"
+              tokenSeparators={[",", "，"]}
+              placeholder="输入标签后回车"
+              options={(tags.data ?? []).map((tag) => ({
+                value: tag.name,
+                label: tag.name,
+              }))}
+            />
+          </Form.Item>
+          <Form.Item name="parent_id" label="父任务（可选）">
+            <Select
+              allowClear
+              showSearch
+              optionFilterProp="label"
+              options={options}
+            />
+          </Form.Item>
+          <Form.Item name="predecessor_ids" label="前置任务">
+            <Select
+              mode="multiple"
+              optionFilterProp="label"
+              options={options}
+            />
+          </Form.Item>
+          <Form.Item name="parallel_policy" label="任务并行设置">
+            <Select options={policies} />
+          </Form.Item>
+          <p className="muted">
+            父子关系用于组织任务；执行先后由前置任务决定。允许并行仍须有匹配的组合规则。
+          </p>
+        </Form>
+          <div className="row-actions">
+            <Button type="text" onClick={closeEditor}>
+              取消
+            </Button>
+            {editor.kind === "task" && !currentTask && (
+              <Button
+                type="text"
+                disabled={draftSave.isPending}
+                onClick={() => void save(true)}
+              >
+                保存草稿
+              </Button>
+            )}
+            <Button
+              type="primary"
+              loading={
+                editor.kind === "draft" ? draftSave.isPending : mutation.isPending
+              }
+              onClick={() => void save(editor.kind === "draft")}
+            >
+              {editor.kind === "draft"
+                ? "保存草稿"
+                : currentTask
+                  ? "保存修改"
+                  : "创建任务"}
+            </Button>
+          </div>
+        </section>
+      )}
+      <TaskListManager
+        open={listManager}
+        onClose={() => setListManager(false)}
+      />
+      <TagManager open={tagManager} onClose={() => setTagManager(false)} />
       {inbox ? (
         <>
           <section className="section toolbar">
@@ -1703,291 +1992,6 @@ export default function TasksPage({ profile }: { profile: Profile }) {
           )}
         </>
       )}
-      <Modal
-        title={
-          editor?.kind === "draft"
-            ? editor.draft
-              ? "编辑任务草稿"
-              : "新建任务草稿"
-            : currentTask
-              ? "编辑任务"
-              : "新建任务"
-        }
-        open={!!editor}
-        onCancel={closeEditor}
-        destroyOnHidden
-        footer={
-          <Space>
-            <Button onClick={closeEditor}>取消</Button>
-            {editor?.kind === "task" && !currentTask && (
-              <Button
-                disabled={draftSave.isPending}
-                onClick={() => void save(true)}
-              >
-                保存草稿
-              </Button>
-            )}
-            <Button
-              type="primary"
-              loading={
-                editor?.kind === "draft"
-                  ? draftSave.isPending
-                  : mutation.isPending
-              }
-              onClick={() => void save(editor?.kind === "draft")}
-            >
-              {editor?.kind === "draft"
-                ? "保存草稿"
-                : currentTask
-                  ? "保存修改"
-                  : "创建任务"}
-            </Button>
-          </Space>
-        }
-      >
-        <Form
-          form={form}
-          layout="vertical"
-          initialValues={{
-            title: "",
-            status: "todo",
-            priority: 2,
-            flagged: false,
-            parallel_policy: "inherit",
-            deadline_all_day: false,
-            recurrence_interval: 1,
-            recurrence_from_completion: false,
-          }}
-        >
-          <Form.Item
-            name="title"
-            label="任务标题"
-            extra="创建正式任务必填；保存草稿可留空"
-            rules={[{ max: 200 }]}
-          >
-            <Input />
-          </Form.Item>
-          <Form.Item name="description" label="任务描述">
-            <Input.TextArea rows={3} maxLength={20000} />
-          </Form.Item>
-          <Form.Item
-            name="links"
-            label="相关链接"
-            extra="每行一个 http/https 链接，最多 20 个。"
-          >
-            <Input.TextArea
-              rows={3}
-              placeholder={"https://example.com/资料\nhttps://example.com/作业"}
-            />
-          </Form.Item>
-          <div className="form-grid">
-            <Form.Item name="status" label="执行状态">
-              <Select options={states} />
-            </Form.Item>
-            <Form.Item name="priority" label="优先级">
-              <Select options={priorities} />
-            </Form.Item>
-          </div>
-          <Form.Item name="flagged" valuePropName="checked">
-            <Checkbox>标记为重点</Checkbox>
-          </Form.Item>
-          <Form.Item
-            name="deadline_at"
-            label={`截止时间（${profile.timezone}）`}
-          >
-            <Input type="datetime-local" />
-          </Form.Item>
-          <Form.Item
-            name="deadline_all_day"
-            valuePropName="checked"
-            extra="仅显示日期，不展示具体时刻；清除截止时间时自动关闭。"
-          >
-            <Checkbox>仅日期（全天）</Checkbox>
-          </Form.Item>
-          <Form.Item
-            name="recurrence"
-            label="重复"
-            extra="重复任务需要设置截止时间；完成当前任务后自动生成下一次。"
-          >
-            <Select
-              allowClear
-              placeholder="不重复"
-              options={[
-                { value: "daily", label: "每天" },
-                { value: "weekly", label: "每周" },
-                { value: "monthly", label: "每月" },
-                { value: "yearly", label: "每年" },
-                { value: "weekdays", label: "工作日" },
-              ]}
-            />
-          </Form.Item>
-          {recurrenceValue && (
-            <>
-              {recurrenceValue !== "weekdays" && (
-                <Form.Item
-                  name="recurrence_interval"
-                  label={`重复间隔（每 ${intervalUnit}）`}
-                >
-                  <InputNumber min={1} max={52} precision={0} />
-                </Form.Item>
-              )}
-              <Form.Item
-                name="recurrence_from_completion"
-                valuePropName="checked"
-              >
-                <Checkbox>按完成日计算下一次</Checkbox>
-              </Form.Item>
-              <div className="form-grid">
-                <Form.Item
-                  name="recurrence_until"
-                  label="重复结束日期（可选）"
-                >
-                  <Input type="date" />
-                </Form.Item>
-                <Form.Item
-                  name="recurrence_remaining"
-                  label="剩余次数（可选）"
-                >
-                  <InputNumber
-                    min={0}
-                    max={100000}
-                    precision={0}
-                    placeholder="不限"
-                  />
-                </Form.Item>
-              </div>
-            </>
-          )}
-          <Form.Item name="estimate_minutes" label="预计用时（分钟，可留空）">
-            <InputNumber min={1} max={100000} precision={0} />
-          </Form.Item>
-          <Form.Item name="task_type" label="任务类型（可选）">
-            <Input placeholder="例如 reading / coding" maxLength={100} />
-          </Form.Item>
-          <Form.Item name="list_id" label="所属清单">
-            <Select
-              allowClear
-              placeholder="收件箱（未分类）"
-              options={editorListOptions}
-            />
-          </Form.Item>
-          <Form.Item name="tags" label="标签">
-            <Select
-              mode="tags"
-              tokenSeparators={[",", "，"]}
-              placeholder="输入标签后回车"
-              options={(tags.data ?? []).map((tag) => ({
-                value: tag.name,
-                label: tag.name,
-              }))}
-            />
-          </Form.Item>
-          <Form.Item name="parent_id" label="父任务（可选）">
-            <Select
-              allowClear
-              showSearch
-              optionFilterProp="label"
-              options={options}
-            />
-          </Form.Item>
-          <Form.Item name="predecessor_ids" label="前置任务">
-            <Select
-              mode="multiple"
-              optionFilterProp="label"
-              options={options}
-            />
-          </Form.Item>
-          <Form.Item name="parallel_policy" label="任务并行设置">
-            <Select options={policies} />
-          </Form.Item>
-          <p className="muted">
-            父子关系用于组织任务；执行先后由前置任务决定。允许并行仍须有匹配的组合规则。
-          </p>
-        </Form>
-      </Modal>
-      <Modal
-        open={saveFilterOpen}
-        title="保存当前筛选"
-        onCancel={() => setSaveFilterOpen(false)}
-        okText="保存"
-        cancelText="取消"
-        onOk={() => {
-          if (!filterName.trim()) {
-            void message.error("请输入筛选名称");
-            return;
-          }
-          saveFilter.mutate({
-            name: filterName.trim(),
-            payload: {
-              view,
-              q: search.trim(),
-              status:
-                status === "all"
-                  ? null
-                  : (status as SavedFilterPayload["status"]),
-              list_id: listFilter === "all" ? null : listFilter,
-              tag: tagFilter === "all" ? null : tagFilter,
-              sort: sort as SavedFilterPayload["sort"],
-            },
-          });
-        }}
-      >
-        <Input
-          aria-label="筛选名称"
-          value={filterName}
-          onChange={(e) => setFilterName(e.target.value)}
-          placeholder="例如：本周数学作业"
-          maxLength={100}
-        />
-      </Modal>
-      <Modal
-        open={bulkTagOpen}
-        title="批量标签"
-        onCancel={() => setBulkTagOpen(false)}
-        footer={
-          <Space>
-            <Button
-              disabled={!bulkTagValues.length}
-              onClick={() => {
-                if (!bulkTagValues.length) return;
-                runBulk("remove_tags", { tags: bulkTagValues });
-                setBulkTagOpen(false);
-              }}
-            >
-              移除标签
-            </Button>
-            <Button
-              type="primary"
-              disabled={!bulkTagValues.length}
-              onClick={() => {
-                if (!bulkTagValues.length) return;
-                runBulk("add_tags", { tags: bulkTagValues });
-                setBulkTagOpen(false);
-              }}
-            >
-              添加标签
-            </Button>
-            <Button onClick={() => setBulkTagOpen(false)}>取消</Button>
-          </Space>
-        }
-      >
-        <Select
-          mode="tags"
-          value={bulkTagValues}
-          onChange={setBulkTagValues}
-          options={(tags.data ?? []).map((tag) => ({
-            value: tag.name,
-            label: tag.name,
-          }))}
-          placeholder="输入或选择标签"
-          style={{ width: "100%" }}
-        />
-      </Modal>
-      <TaskListManager
-        open={listManager}
-        onClose={() => setListManager(false)}
-      />
-      <TagManager open={tagManager} onClose={() => setTagManager(false)} />
     </>
   );
 }

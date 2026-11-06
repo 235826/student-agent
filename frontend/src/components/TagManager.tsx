@@ -5,8 +5,6 @@ import {
   Empty,
   Input,
   List,
-  Modal,
-  Popconfirm,
   Space,
   Spin,
 } from "antd";
@@ -57,14 +55,16 @@ export default function TagManager({
     },
     onError: (e: unknown) => void message.error(errorText(e)),
   });
+  const [confirming, setConfirming] = useState<string | null>(null);
+  if (!open) return null;
   return (
-    <Modal
-      title="管理标签"
-      open={open}
-      onCancel={onClose}
-      footer={null}
-      destroyOnHidden
-    >
+    <section className="section">
+      <div className="section-inline-heading">
+        <h3>管理标签</h3>
+        <Button type="text" onClick={onClose}>
+          收起
+        </Button>
+      </div>
       {tags.error ? (
         <p className="danger-text">{errorText(tags.error)}</p>
       ) : tags.isPending ? (
@@ -90,22 +90,40 @@ export default function TagManager({
                   >
                     保存
                   </Button>,
-                  <Popconfirm
-                    key="delete"
-                    title="删除标签？"
-                    description={`将从 ${tag.usage_count} 个任务移除该标签。`}
-                    okText="删除"
-                    cancelText="取消"
-                    onConfirm={() => remove.mutate(tag.id)}
-                  >
+                  confirming === tag.id ? (
+                    <>
+                      <Button
+                        key="confirm-delete"
+                        type="link"
+                        danger
+                        loading={
+                          remove.isPending && remove.variables === tag.id
+                        }
+                        onClick={() => {
+                          setConfirming(null);
+                          remove.mutate(tag.id);
+                        }}
+                      >
+                        确认删除
+                      </Button>,
+                      <Button
+                        key="cancel-delete"
+                        type="link"
+                        onClick={() => setConfirming(null)}
+                      >
+                        取消
+                      </Button>,
+                    </>
+                  ) : (
                     <Button
+                      key="delete"
                       type="link"
                       danger
-                      loading={remove.isPending && remove.variables === tag.id}
+                      onClick={() => setConfirming(tag.id)}
                     >
                       删除
                     </Button>
-                  </Popconfirm>,
+                  ),
                 ]}
               >
                 <Space>
@@ -128,6 +146,6 @@ export default function TagManager({
           }}
         />
       )}
-    </Modal>
+    </section>
   );
 }
