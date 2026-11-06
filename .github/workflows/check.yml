@@ -1,7 +1,24 @@
 name: Checks
 on: [push, pull_request]
+concurrency:
+  group: checks-${{ github.event.pull_request.head.repo.full_name || github.repository }}-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
 jobs:
-  foundation:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.3
+        with:
+          version: '0.11.28'
+          python-version: '3.13'
+      - run: uv sync --frozen
+        working-directory: backend
+      - run: uv run ruff check . && uv run ruff format --check . && uv run mypy app && uv run pytest -q
+        working-directory: backend
+      - run: uv run alembic upgrade head && uv run alembic check
+        working-directory: backend
+  frontend:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -14,20 +31,59 @@ jobs:
         with:
           version: '0.11.28'
           python-version: '3.13'
+      - uses: actions/cache@v4
+        id: node-modules
+        with:
+          path: frontend/node_modules
+          key: node-modules-${{ runner.os }}-node24-${{ hashFiles('frontend/package-lock.json') }}
+      - if: steps.node-modules.outputs.cache-hit != 'true'
+        run: npm ci --no-audit --no-fund
+        working-directory: frontend
       - run: uv sync --frozen
         working-directory: backend
-      - run: uv run ruff check . && uv run ruff format --check . && uv run mypy app && uv run pytest -q
+      - run: uv run python -m scripts.export_openapi
         working-directory: backend
-      - run: uv run alembic upgrade head && uv run alembic check && uv run python -m scripts.export_openapi
-        working-directory: backend
-      - run: npm ci && npm run generate:api && npm run check && npm test && npm run build
+      - run: npm run generate:api && npm run check && npm test && npm run build
         working-directory: frontend
       - run: git diff --exit-code -- docs/openapi.json frontend/src/generated/api.d.ts
-      - run: npx playwright install --with-deps --no-shell chromium && npm run test:e2e
+  e2e:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - uses: astral-sh/setup-uv@v10.3.3
+        with:
+          version: '0.11.28'
+          python-version: '3.13'
+      - uses: actions/cache@v4
+        id: node-modules
+        with:
+          path: frontend/node_modules
+          key: node-modules-${{ runner.os }}-node24-${{ hashFiles('frontend/package-lock.json') }}
+      - if: steps.node-modules.outputs.cache-hit != 'true'
+        run: npm ci --no-audit --no-fund
         working-directory: frontend
-      - run: docker compose config --quiet && docker compose build
+      - run: uv sync --frozen
+        working-directory: backend
+      - run: npx playwright install --with-deps --no-shell chromium
+        working-directory: frontend
+      - run: npx playwright test --shard=${{ matrix.shard }}/6
+        working-directory: frontend
       - uses: actions/upload-artifact@v7
         if: failure()
         with:
-          name: browser-test-results
+          name: browser-test-results-${{ matrix.shard }}
           path: frontend/test-results/
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: docker compose config --quiet && docker compose build
