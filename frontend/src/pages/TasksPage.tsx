@@ -11,7 +11,13 @@ import {
   useSearchParams,
 } from "react-router-dom";
 import SourceButton from "../components/SourceButton";
-import { Fragment, useCallback, useEffect, useState } from "react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { backTarget, currentLocation, withFrom } from "../navigation";
 import {
   useInfiniteQuery,
@@ -101,21 +107,29 @@ export default function TasksPage({ profile }: { profile: Profile }) {
   const location = useLocation();
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
+  const paramsRef = useRef(params);
   const inbox = location.pathname === "/inbox";
   const isNew = location.pathname === "/tasks/new";
-  const setUrlValue = useCallback(
-    (key: string, value: string | null, fallback = "") => {
-      setParams(
-        (current) => {
-          const next = new URLSearchParams(current);
-          if (!value || value === fallback) next.delete(key);
-          else next.set(key, value);
-          return next;
-        },
-        { replace: true },
-      );
+  useEffect(() => {
+    paramsRef.current = params;
+  }, [params]);
+  const updateParams = useCallback(
+    (mutate: (next: URLSearchParams) => void) => {
+      const next = new URLSearchParams(paramsRef.current);
+      mutate(next);
+      paramsRef.current = next;
+      setParams(next, { replace: true });
     },
     [setParams],
+  );
+  const setUrlValue = useCallback(
+    (key: string, value: string | null, fallback = "") => {
+      updateParams((next) => {
+        if (!value || value === fallback) next.delete(key);
+        else next.set(key, value);
+      });
+    },
+    [updateParams],
   );
   const viewParam = params.get("view");
   const view: View = views.some(([key]) => key === viewParam)
@@ -204,9 +218,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
       });
       navigate(back.to, { replace: true });
     } else if (params.has("new")) {
-      const next = new URLSearchParams(params);
-      next.delete("new");
-      setParams(next, { replace: true });
+      updateParams((next) => next.delete("new"));
     }
   };
   const taskQuery = new URLSearchParams({ view });
@@ -860,24 +872,19 @@ export default function TasksPage({ profile }: { profile: Profile }) {
       (item) => item.id === filterId,
     );
     if (!saved) return;
-    setParams(
-      (current) => {
-        const next = new URLSearchParams(current);
-        const write = (key: string, value: string, fallback: string) => {
-          if (!value || value === fallback) next.delete(key);
-          else next.set(key, value);
-        };
-        write("view", saved.payload.view, "all");
-        write("list", saved.payload.list_id ?? "all", "all");
-        write("tag", saved.payload.tag ?? "all", "all");
-        write("status", saved.payload.status ?? "all", "all");
-        write("q", saved.payload.q ?? "", "");
-        write("sort", saved.payload.sort, "status");
-        next.set("saved", filterId);
-        return next;
-      },
-      { replace: true },
-    );
+    updateParams((next) => {
+      const write = (key: string, value: string, fallback: string) => {
+        if (!value || value === fallback) next.delete(key);
+        else next.set(key, value);
+      };
+      write("view", saved.payload.view, "all");
+      write("list", saved.payload.list_id ?? "all", "all");
+      write("tag", saved.payload.tag ?? "all", "all");
+      write("status", saved.payload.status ?? "all", "all");
+      write("q", saved.payload.q ?? "", "");
+      write("sort", saved.payload.sort, "status");
+      next.set("saved", filterId);
+    });
     setSearch(saved.payload.q ?? "");
   };
   const visible = (detailPage ? (detailTask ? [detailTask] : []) : listItems)

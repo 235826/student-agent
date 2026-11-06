@@ -920,6 +920,7 @@ test("清单文件夹与保存筛选", async ({ page }) => {
   await expect(page.getByText("筛选已保存")).toBeVisible();
 
   await search.fill("");
+  await expect(page).toHaveURL(/[?&]saved=/);
   const savedSelect = page
     .locator(".ant-select")
     .filter({ has: page.getByRole("combobox", { name: "已保存筛选" }) });
