@@ -11,7 +11,7 @@ import {
   useSearchParams,
 } from "react-router-dom";
 import SourceButton from "../components/SourceButton";
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import { backTarget, currentLocation, withFrom } from "../navigation";
 import {
   useInfiniteQuery,
@@ -82,6 +82,15 @@ const views = [
   ["done", "已完成"],
   ["trash", "垃圾箱"],
 ] as const;
+type View = (typeof views)[number][0];
+const statusValues = ["all", ...states.map((state) => state.value)];
+const sortValues = [
+  "status",
+  "deadline",
+  "priority",
+  "completed",
+  "manual",
+] as const;
 type Editor = { kind: "task"; task?: Task } | { kind: "draft"; draft?: Draft };
 type Write = { path: string; method?: string; body?: unknown };
 const errorText = (e: unknown) =>
@@ -94,17 +103,42 @@ export default function TasksPage({ profile }: { profile: Profile }) {
   const [params, setParams] = useSearchParams();
   const inbox = location.pathname === "/inbox";
   const isNew = location.pathname === "/tasks/new";
-  const [search, setSearch] = useState("");
-  const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [status, setStatus] = useState("all");
-  const [sort, setSort] = useState("status");
+  const setUrlValue = useCallback(
+    (key: string, value: string | null, fallback = "") => {
+      setParams(
+        (current) => {
+          const next = new URLSearchParams(current);
+          if (!value || value === fallback) next.delete(key);
+          else next.set(key, value);
+          return next;
+        },
+        { replace: true },
+      );
+    },
+    [setParams],
+  );
+  const viewParam = params.get("view");
+  const view: View = views.some(([key]) => key === viewParam)
+    ? (viewParam as View)
+    : "all";
+  const statusParam = params.get("status") ?? "all";
+  const status = statusValues.includes(statusParam) ? statusParam : "all";
+  const sortParam = params.get("sort") ?? "status";
+  const sort = (sortValues as readonly string[]).includes(sortParam)
+    ? sortParam
+    : "status";
+  const listFilter = params.get("list") ?? "all";
+  const tagFilter = params.get("tag") ?? "all";
+  const debouncedSearch = params.get("q") ?? "";
+  const savedFilterId = params.get("saved") ?? undefined;
+  const setView = (next: View) => setUrlValue("view", next, "all");
+  const setStatus = (next: string) => setUrlValue("status", next, "all");
+  const setSort = (next: string) => setUrlValue("sort", next, "status");
+  const setListFilter = (next: string) => setUrlValue("list", next, "all");
+  const setTagFilter = (next: string) => setUrlValue("tag", next, "all");
   const client = useQueryClient();
   const { message, modal } = App.useApp();
-  const [view, setView] = useState<
-    "all" | "today" | "scheduled" | "unscheduled" | "flagged" | "done" | "trash"
-  >("all");
-  const [listFilter, setListFilter] = useState("all");
-  const [tagFilter, setTagFilter] = useState("all");
+  const [search, setSearch] = useState(debouncedSearch);
   const [listManager, setListManager] = useState(false);
   const [tagManager, setTagManager] = useState(false);
   const [draggingId, setDraggingId] = useState<string | null>(null);
@@ -112,7 +146,6 @@ export default function TasksPage({ profile }: { profile: Profile }) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkTagOpen, setBulkTagOpen] = useState(false);
   const [bulkTagValues, setBulkTagValues] = useState<string[]>([]);
-  const [savedFilterId, setSavedFilterId] = useState<string | undefined>();
   const [saveFilterOpen, setSaveFilterOpen] = useState(false);
   const [filterName, setFilterName] = useState("");
   const [isWide, setIsWide] = useState(
@@ -150,12 +183,18 @@ export default function TasksPage({ profile }: { profile: Profile }) {
   }, [view, listFilter, tagFilter, status, debouncedSearch]);
   useEffect(() => {
     const value = search.trim();
+    if (value === debouncedSearch) return;
     const timer = setTimeout(
-      () => setDebouncedSearch(value),
+      () => setUrlValue("q", value, ""),
       value ? 300 : 0,
     );
     return () => clearTimeout(timer);
-  }, [search]);
+  }, [search, debouncedSearch, setUrlValue]);
+  useEffect(() => {
+    setSearch((current) =>
+      current.trim() === debouncedSearch ? current : debouncedSearch,
+    );
+  }, [debouncedSearch]);
   const closeEditor = () => {
     setEditor(null);
     if (isNew) {
@@ -241,16 +280,16 @@ export default function TasksPage({ profile }: { profile: Profile }) {
       lists.data &&
       !lists.data.some((list) => list.id === listFilter)
     )
-      setListFilter("all");
-  }, [listFilter, lists.data]);
+      setUrlValue("list", "all", "all");
+  }, [listFilter, lists.data, setUrlValue]);
   useEffect(() => {
     if (
       tagFilter !== "all" &&
       tags.data &&
       !tags.data.some((tag) => tag.name === tagFilter)
     )
-      setTagFilter("all");
-  }, [tagFilter, tags.data]);
+      setUrlValue("tag", "all", "all");
+  }, [tagFilter, tags.data, setUrlValue]);
   const writeOptions = {
     mutationFn: ({ path, method = "POST", body }: Write) =>
       api(path, method, body),
@@ -273,8 +312,18 @@ export default function TasksPage({ profile }: { profile: Profile }) {
       void client.invalidateQueries({ queryKey: ["plans"] });
       closeEditor();
       if (!inbox) {
-        void message.success("草稿已保存到收件箱");
-        navigate("/inbox");
+        message.open({
+          type: "success",
+          duration: 5,
+          content: (
+            <Space>
+              <span>草稿已保存到收件箱</span>
+              <a href="/inbox" onClick={() => message.destroy()}>
+                查看
+              </a>
+            </Space>
+          ),
+        });
       } else {
         void message.success("草稿已保存");
       }
@@ -511,7 +560,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
       payload: SavedFilterPayload;
     }) => api<SavedFilter>("/saved-filters", "POST", body),
     onSuccess: (saved) => {
-      setSavedFilterId(saved.id);
+      setUrlValue("saved", saved.id, "");
       setSaveFilterOpen(false);
       setFilterName("");
       void client.invalidateQueries({ queryKey: ["saved-filters"] });
@@ -523,7 +572,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
     mutationFn: (filterId: string) =>
       api(`/saved-filters/${filterId}`, "DELETE"),
     onSuccess: () => {
-      setSavedFilterId(undefined);
+      setUrlValue("saved", "", "");
       void client.invalidateQueries({ queryKey: ["saved-filters"] });
       void message.success("筛选已删除");
     },
@@ -811,13 +860,25 @@ export default function TasksPage({ profile }: { profile: Profile }) {
       (item) => item.id === filterId,
     );
     if (!saved) return;
-    setSavedFilterId(filterId);
-    setView(saved.payload.view);
-    setListFilter(saved.payload.list_id ?? "all");
-    setTagFilter(saved.payload.tag ?? "all");
-    setStatus(saved.payload.status ?? "all");
+    setParams(
+      (current) => {
+        const next = new URLSearchParams(current);
+        const write = (key: string, value: string, fallback: string) => {
+          if (!value || value === fallback) next.delete(key);
+          else next.set(key, value);
+        };
+        write("view", saved.payload.view, "all");
+        write("list", saved.payload.list_id ?? "all", "all");
+        write("tag", saved.payload.tag ?? "all", "all");
+        write("status", saved.payload.status ?? "all", "all");
+        write("q", saved.payload.q ?? "", "");
+        write("sort", saved.payload.sort, "status");
+        next.set("saved", filterId);
+        return next;
+      },
+      { replace: true },
+    );
     setSearch(saved.payload.q ?? "");
-    setSort(saved.payload.sort);
   };
   const visible = (detailPage ? (detailTask ? [detailTask] : []) : listItems)
     .sort((a, b) =>
@@ -1047,7 +1108,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
             onChange={applySavedFilter}
             allowClear
             placeholder="已保存筛选"
-            onClear={() => setSavedFilterId(undefined)}
+            onClear={() => setUrlValue("saved", "", "")}
             options={(savedFilters.data ?? []).map((saved) => ({
               value: saved.id,
               label: saved.name,
@@ -1378,7 +1439,9 @@ export default function TasksPage({ profile }: { profile: Profile }) {
                           />
                         )}
                         <h3>
-                          <Link to={`/tasks/${task.id}`}>{task.title}</Link>
+                          <Link to={withFrom(`/tasks/${task.id}`, here)}>
+                            {task.title}
+                          </Link>
                         </h3>
                       </div>
                       <Space size={4} wrap>
@@ -1532,7 +1595,9 @@ export default function TasksPage({ profile }: { profile: Profile }) {
                           {isWide && (
                             <Button
                               onClick={() =>
-                                navigate(`/tasks/${task.id}?drawer=1`)
+                                navigate(
+                                  withFrom(`/tasks/${task.id}?drawer=1`, here),
+                                )
                               }
                             >
                               快速查看
@@ -1874,7 +1939,11 @@ export default function TasksPage({ profile }: { profile: Profile }) {
               >
                 编辑任务
               </Button>
-              <Button onClick={() => navigate(`/tasks/${detailTask.id}`)}>
+              <Button
+                onClick={() =>
+                  navigate(withFrom(`/tasks/${detailTask.id}`, back.to))
+                }
+              >
                 打开完整详情
               </Button>
             </Space>

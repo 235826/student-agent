@@ -23,6 +23,9 @@ test("空标题草稿、正式任务校验与关系跳转", async ({ page }) => 
   await page.getByRole("button", { name: "保存草稿", exact: true }).click();
   await expect(page.getByRole("dialog")).not.toBeVisible();
   expect(await (await page.request.get("/api/v1/tasks")).json()).toEqual([]);
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByText("草稿已保存到收件箱")).toBeVisible();
+  await page.getByRole("link", { name: "收件箱", exact: true }).click();
   await expect(page).toHaveURL(/\/inbox$/);
   await expect(
     page.getByRole("heading", { name: "未命名草稿", exact: true }),
@@ -164,7 +167,13 @@ test("兼容性检查默认隐藏过去事件", async ({ page }) => {
     page.locator(".ant-select-item-option").filter({ hasText: "过去事件" }),
   ).toHaveCount(0);
   await page.keyboard.press("Escape");
-  await page.getByRole("checkbox", { name: "包含过去事件" }).check();
+  await page.getByRole("checkbox", { name: "包含过去事件" }).click();
+  await expect(page).toHaveURL(/tab=check/);
+  await expect(page).toHaveURL(/past=1/);
+  await page.reload();
+  await expect(
+    page.getByRole("checkbox", { name: "包含过去事件" }),
+  ).toBeChecked();
   await page.getByRole("combobox", { name: "选择待检查活动" }).click();
   await expect(
     page.locator(".ant-select-item-option").filter({ hasText: "过去事件" }),
@@ -200,6 +209,10 @@ test("事件备注范围、课程重命名与周次 URL", async ({ page }) => {
 
   await page.goto(`/calendar?week=2030-01-07`);
   await expect(page.getByText("系列备注").first()).toBeVisible();
+  await expect(page).toHaveURL(/view=(timeGridWeek|listWeek)/);
+  const calendarUrl = page.url();
+  await page.reload();
+  await expect(page).toHaveURL(calendarUrl);
 
   await page.goto(`/events/${first}?week=2030-01-07`);
   await expect(page.getByText("系列备注").first()).toBeVisible();
@@ -216,7 +229,9 @@ test("事件备注范围、课程重命名与周次 URL", async ({ page }) => {
     .click();
   await expect(page.getByText("系列备注；单次备注").first()).toBeVisible();
   await page.getByRole("link", { name: "返回日历", exact: true }).click();
-  await expect(page).toHaveURL(/\/calendar\?week=2030-01-07$/);
+  await expect(page).toHaveURL(
+    /\/calendar\?week=2030-01-07(&view=(timeGridWeek|listWeek))?$/,
+  );
 
   await page.request.put(`/api/v1/courses/${course.id}`, {
     headers,
@@ -453,9 +468,34 @@ test("任务快速查看抽屉", async ({ page }, testInfo) => {
   ).toBeVisible();
 
   await drawer.getByRole("button", { name: "打开完整详情", exact: true }).click();
-  await expect(page).toHaveURL(new RegExp(`/tasks/${task.id}$`));
+  await expect(page).toHaveURL(new RegExp(`/tasks/${task.id}(\\?|$)`));
   await expect(
     page.locator(".task-card").getByRole("heading", { name: "抽屉任务" }),
+  ).toBeVisible();
+});
+
+test("任务快速查看关闭后保留筛选 URL", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name === "mobile", "drawer is desktop-only");
+  const headers = await login(page);
+  const created = await page.request.post("/api/v1/tasks", {
+    headers,
+    data: { title: "抽屉筛选任务" },
+  });
+  expect(created.status()).toBe(201);
+  await page.goto("/tasks");
+  const search = page.getByLabel("搜索任务");
+  await search.fill("抽屉筛选");
+  await expect(page).toHaveURL(/[?&]q=/);
+  await page.getByRole("button", { name: "快速查看", exact: true }).click();
+  const drawer = page.locator(".ant-drawer-content");
+  await expect(
+    drawer.getByRole("heading", { name: "抽屉筛选任务" }),
+  ).toBeVisible();
+  await page.locator(".ant-drawer-close").click();
+  await expect(page).toHaveURL(/[?&]q=/);
+  await expect(search).toHaveValue("抽屉筛选");
+  await expect(
+    page.locator(".task-card").filter({ hasText: "抽屉筛选任务" }),
   ).toBeVisible();
 });
 
@@ -897,6 +937,41 @@ test("清单文件夹与保存筛选", async ({ page }) => {
 
   await page.getByRole("button", { name: "删除筛选", exact: true }).click();
   await expect(page.getByText("筛选已删除")).toBeVisible();
+});
+
+test("任务筛选写入 URL，刷新与详情返回后保持", async ({ page }) => {
+  const headers = await login(page);
+  for (const title of ["URL筛选-数学", "URL筛选-英语"]) {
+    const response = await page.request.post("/api/v1/tasks", {
+      headers,
+      data: { title },
+    });
+    expect(response.status()).toBe(201);
+  }
+  await page.goto("/tasks");
+  const search = page.getByLabel("搜索任务");
+  await search.fill("数学");
+  await expect(page).toHaveURL(/[?&]q=/);
+  await expect(
+    page.getByRole("heading", { name: "URL筛选-数学", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "URL筛选-英语", exact: true }),
+  ).not.toBeVisible();
+
+  const filteredUrl = page.url();
+  await page.reload();
+  await expect(page).toHaveURL(filteredUrl);
+  await expect(search).toHaveValue("数学");
+  await expect(
+    page.getByRole("heading", { name: "URL筛选-数学", exact: true }),
+  ).toBeVisible();
+
+  await page.getByRole("link", { name: "URL筛选-数学", exact: true }).click();
+  await expect(page).toHaveURL(/\/tasks\/[^/]+\?.*from=/);
+  await page.getByRole("link", { name: "返回任务列表" }).click();
+  await expect(page).toHaveURL(filteredUrl);
+  await expect(search).toHaveValue("数学");
 });
 
 test("标签管理重命名、使用次数与删除", async ({ page }) => {

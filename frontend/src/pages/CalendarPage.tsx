@@ -13,19 +13,33 @@ import { api, type Plan, type Event, type Profile } from "../api";
 import { withFrom } from "../navigation";
 import { eventTypeColor, eventTypeLabel, staleInfo } from "../semantics";
 const errorText = (e: unknown) => (e instanceof Error ? e.message : "操作失败");
+const calendarViews = ["timeGridWeek", "listWeek"] as const;
 export default function CalendarPage({
   profile,
   week,
+  view,
   onWeekChange,
+  onViewChange,
   onSelect,
 }: {
   profile: Profile;
   week?: string;
+  view?: string;
   onWeekChange?: (day: string) => void;
+  onViewChange?: (view: string) => void;
   onSelect?: (start: Date, end: Date) => void;
 }) {
   const navigate = useNavigate();
   const calendar = useRef<FullCalendar | null>(null);
+  const initialView =
+    view && (calendarViews as readonly string[]).includes(view)
+      ? view
+      : window.innerWidth < 700
+        ? "listWeek"
+        : "timeGridWeek";
+  const calendarUrl = week
+    ? `/calendar?week=${encodeURIComponent(week)}&view=${initialView}`
+    : `/calendar?view=${initialView}`;
   const plan = useQuery({
     queryKey: ["plans", "current"],
     queryFn: () => api<Plan | null>("/plans/current"),
@@ -63,7 +77,7 @@ export default function CalendarPage({
           locale={zhLocale}
           timeZone={profile.timezone}
           initialDate={week}
-          initialView={window.innerWidth < 700 ? "listWeek" : "timeGridWeek"}
+          initialView={initialView}
           headerToolbar={{
             left: "prev,next today",
             center: "title",
@@ -74,7 +88,10 @@ export default function CalendarPage({
           select={(info: DateSelectArg) =>
             onSelect?.(info.start, info.end)
           }
-          datesSet={(info) => onWeekChange?.(info.startStr.slice(0, 10))}
+          datesSet={(info) => {
+            onWeekChange?.(info.startStr.slice(0, 10));
+            if (info.view.type !== view) onViewChange?.(info.view.type);
+          }}
           eventClick={(info) => navigate(info.event.extendedProps.to)}
           eventContent={(arg) => (
             <div className="fc-event-body">
@@ -98,9 +115,12 @@ export default function CalendarPage({
           events={[
             ...(events.data?.map((e) => ({
               id: e.id,
-              to: week
-                ? `/calendar/events/${e.id}?week=${week}`
-                : `/calendar/events/${e.id}`,
+              to: withFrom(
+                week
+                  ? `/calendar/events/${e.id}?week=${encodeURIComponent(week)}`
+                  : `/calendar/events/${e.id}`,
+                calendarUrl,
+              ),
               title: e.title + (e.is_skipped ? "（本次不参加）" : ""),
               start: e.start_at,
               end: e.end_at,
@@ -110,10 +130,7 @@ export default function CalendarPage({
             })) ?? []),
             ...(plan.data?.blocks.map((b) => ({
               id: `${b.task_id}-${b.start_at}`,
-              to: withFrom(
-                `/tasks/${b.task_id}`,
-                week ? `/calendar?week=${week}` : "/calendar",
-              ),
+              to: withFrom(`/tasks/${b.task_id}`, calendarUrl),
               title: b.title,
               start: b.start_at,
               end: b.end_at,

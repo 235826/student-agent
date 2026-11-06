@@ -64,15 +64,31 @@ export default function EventsPage({ profile }: { profile: Profile }) {
     DateTime.fromISO(weekParam, { zone: profile.timezone }).isValid
       ? weekParam
       : fallbackWeek;
+  const viewParam = params.get("view");
+  const calendarView =
+    viewParam === "timeGridWeek" || viewParam === "listWeek"
+      ? viewParam
+      : undefined;
+  const calendarUrl = `${
+    weekParam ? `/calendar?week=${encodeURIComponent(week)}` : "/calendar"
+  }${calendarView ? `${weekParam ? "&" : "?"}view=${calendarView}` : ""}`;
+  const here = `${location.pathname}${location.search}${location.hash}`;
   const from = params.get("from");
   const back = backTarget(from, {
-    to: weekParam ? `/calendar?week=${encodeURIComponent(week)}` : "/calendar",
+    to: calendarUrl,
     label: "返回日历",
   });
   const setWeek = (day: string) => {
     if (!weekParam && day === week) return;
     const next = new URLSearchParams(params);
     next.set("week", day);
+    setParams(next, { replace: true });
+  };
+  const setView = (value: string) => {
+    if (value !== "timeGridWeek" && value !== "listWeek") return;
+    if (value === viewParam) return;
+    const next = new URLSearchParams(params);
+    next.set("view", value);
     setParams(next, { replace: true });
   };
   const client = useQueryClient();
@@ -131,9 +147,7 @@ export default function EventsPage({ profile }: { profile: Profile }) {
   const closeEditor = () => {
     setEditing(undefined);
     if (isNewEvent) {
-      navigate(from ?? `/calendar?week=${encodeURIComponent(week)}`, {
-        replace: true,
-      });
+      navigate(back.to, { replace: true });
     } else if (params.has("new")) {
       const next = new URLSearchParams(params);
       next.delete("new");
@@ -143,9 +157,7 @@ export default function EventsPage({ profile }: { profile: Profile }) {
   const closeSeries = () => {
     setSeriesOpen(false);
     if (isNewSeries) {
-      navigate(from ?? `/calendar?week=${encodeURIComponent(week)}`, {
-        replace: true,
-      });
+      navigate(back.to, { replace: true });
     }
   };
   const openCourse = (target: "event" | "series" | null) => {
@@ -366,10 +378,7 @@ export default function EventsPage({ profile }: { profile: Profile }) {
                 courses.data.map((c) => (
                   <div key={c.id} className="toolbar">
                     <Link
-                      to={withFrom(
-                        `/calendar/courses/${c.id}`,
-                        `/calendar?week=${week}`,
-                      )}
+                      to={withFrom(`/calendar/courses/${c.id}`, calendarUrl)}
                     >
                       {c.name}
                     </Link>
@@ -381,10 +390,7 @@ export default function EventsPage({ profile }: { profile: Profile }) {
                       .map((s) => (
                         <p key={s.id}>
                           <Link
-                            to={withFrom(
-                              `/calendar/series/${s.id}`,
-                              `/calendar?week=${week}`,
-                            )}
+                            to={withFrom(`/calendar/series/${s.id}`, calendarUrl)}
                           >
                             {s.dtstart_local.slice(0, 10)} 起 ·{" "}
                             {s.event_ids.length} 次
@@ -402,7 +408,9 @@ export default function EventsPage({ profile }: { profile: Profile }) {
                 <CalendarPage
                   profile={profile}
                   week={week}
+                  view={calendarView}
                   onWeekChange={setWeek}
+                  onViewChange={setView}
                   onSelect={(start, end) =>
                     openNewEvent(
                       DateTime.fromJSDate(start)
@@ -441,11 +449,12 @@ export default function EventsPage({ profile }: { profile: Profile }) {
               <div className="card-heading">
                 <h3>
                   <Link
-                    to={
+                    to={withFrom(
                       weekParam
                         ? `/calendar/events/${event.id}?week=${encodeURIComponent(week)}`
-                        : `/calendar/events/${event.id}`
-                    }
+                        : `/calendar/events/${event.id}`,
+                      id ? back.to : here,
+                    )}
                   >
                     {event.title}
                   </Link>

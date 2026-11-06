@@ -32,6 +32,9 @@ test("草稿发布、重复课程单次变更与规则检查", async ({ page }, 
     .getByLabel("任务类型（可选）", { exact: true })
     .fill(`reading-${info.project.name}`);
   await page.getByRole("button", { name: "保存草稿" }).click();
+  await expect(page).toHaveURL(/\/tasks(\?|$)/);
+  await expect(page.getByText("草稿已保存到收件箱")).toBeVisible();
+  await page.getByRole("link", { name: "收件箱", exact: true }).click();
   await expect(page).toHaveURL(/\/inbox$/);
   const draft = page
     .locator(".ant-card")

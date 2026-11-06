@@ -1,4 +1,4 @@
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useLocation, useSearchParams } from "react-router-dom";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -30,6 +30,7 @@ import type {
   TypePolicy,
 } from "../api";
 import { displayTime } from "../time";
+import { currentLocation, withFrom } from "../navigation";
 const scopes = [
   { value: "course", label: "课程" },
   { value: "event", label: "具体事件" },
@@ -40,9 +41,27 @@ const scopes = [
 const errorText = (e: unknown) => (e instanceof Error ? e.message : "操作失败");
 export default function CompatibilityPage({ profile }: { profile: Profile }) {
   const [params, setParams] = useSearchParams();
+  const location = useLocation();
+  const here = currentLocation(
+    location.pathname,
+    location.search,
+    location.hash,
+  );
   const tab = params.get("tab") ?? "types";
-  const setTab = (value: string) => setParams({ tab: value });
-  const [includePast, setIncludePast] = useState(false);
+  const setTab = (value: string) =>
+    setParams((current) => {
+      const next = new URLSearchParams(current);
+      next.set("tab", value);
+      return next;
+    });
+  const includePast = params.get("past") === "1";
+  const setIncludePast = (value: boolean) =>
+    setParams((current) => {
+      const next = new URLSearchParams(current);
+      if (value) next.set("past", "1");
+      else next.delete("past");
+      return next;
+    });
   const client = useQueryClient();
   const { message, modal } = App.useApp();
   const tasks = useQuery({
@@ -261,7 +280,11 @@ export default function CompatibilityPage({ profile }: { profile: Profile }) {
               {courses.data?.length ? (
                 courses.data.map((course) => (
                   <div className="course-settings toolbar" key={course.id}>
-                    <Link to={`/courses/${course.id}`}>{course.name}</Link>
+                    <Link
+                      to={withFrom(`/calendar/courses/${course.id}`, here)}
+                    >
+                      {course.name}
+                    </Link>
                     <Select
                       className="activity-select"
                       aria-label={`${course.name}默认并行设置`}

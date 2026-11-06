@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Alert, Collapse, Empty, Select, Spin } from "antd";
 import { DateTime } from "luxon";
 import { api, type ImportJob } from "../api";
+import { currentLocation, withFrom } from "../navigation";
 export const importLabels: Record<string, string> = {
   queued: "等待解析",
   running: "正在解析",
@@ -20,6 +21,12 @@ export default function ImportRecords({
   pendingOnly?: boolean;
 }) {
   const [filter, setFilter] = useState("all");
+  const location = useLocation();
+  const here = currentLocation(
+    location.pathname,
+    location.search,
+    location.hash,
+  );
   const list = useQuery({
     queryKey: ["imports"],
     queryFn: () => api<ImportJob[]>("/imports"),
@@ -70,7 +77,7 @@ export default function ImportRecords({
             label: `${key}（${jobs.length} 批）`,
             children: jobs.map((job) => (
               <p key={job.id}>
-                <Link to={`/inbox/imports/${job.id}`}>
+                <Link to={withFrom(`/inbox/imports/${job.id}`, here)}>
                   {job.source.kind === "image"
                     ? "课表图片"
                     : job.source.text.slice(0, 60) || "文本材料"}{" "}
