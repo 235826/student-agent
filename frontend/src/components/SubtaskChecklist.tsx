@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { App, Button, Card, Checkbox, Input, Space, Tag } from "antd";
+import { App, Button, Checkbox, Input, Space, Tag } from "antd";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type Task } from "../api";
 
@@ -9,7 +9,7 @@ const errorText = (e: unknown) =>
 
 export default function SubtaskChecklist({ parent }: { parent: Task }) {
   const client = useQueryClient();
-  const { message, modal } = App.useApp();
+  const { message } = App.useApp();
   const [title, setTitle] = useState("");
   const tasks = useQuery({
     queryKey: ["tasks", false],
@@ -226,13 +226,14 @@ export default function SubtaskChecklist({ parent }: { parent: Task }) {
     if (value) add.mutate(value);
   };
   return (
-    <Card
-      title={
+    <section className="section">
+      <div className="section-inline-heading">
+        <h3>
+          子任务 {done}/{descendants.length}
+        </h3>
         <Space wrap>
-          <span>
-            子任务 {done}/{descendants.length}
-          </span>
           <Button
+            type="text"
             size="small"
             disabled={!incomplete.length}
             loading={batchComplete.isPending}
@@ -241,25 +242,16 @@ export default function SubtaskChecklist({ parent }: { parent: Task }) {
             全部完成
           </Button>
           <Button
+            type="text"
             size="small"
             disabled={!completed.length}
             loading={clearDone.isPending}
-            onClick={() =>
-              modal.confirm({
-                title: "清除已完成子任务？",
-                content: "已完成子任务会移入垃圾箱，可从垃圾箱恢复。",
-                okText: "清除",
-                cancelText: "取消",
-                onOk: () => clearDone.mutate(completed),
-              })
-            }
+            onClick={() => clearDone.mutate(completed)}
           >
             清除已完成
           </Button>
         </Space>
-      }
-      className="toolbar"
-    >
+      </div>
       {descendants.length ? (
         renderChildren(parent.id, 0)
       ) : (
@@ -283,6 +275,6 @@ export default function SubtaskChecklist({ parent }: { parent: Task }) {
           添加
         </Button>
       </Space.Compact>
-    </Card>
+    </section>
   );
 }

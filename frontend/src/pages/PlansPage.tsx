@@ -5,7 +5,6 @@ import {
   Alert,
   App,
   Button,
-  Card,
   Collapse,
   Empty,
   Form,
@@ -118,7 +117,8 @@ export default function PlansPage({ profile }: { profile: Profile }) {
         />
       )}
       {!selected && (
-        <Card className="toolbar" title="生成计划草稿">
+        <section className="section toolbar">
+          <h3>生成计划草稿</h3>
           <Form
             form={form}
             layout="vertical"
@@ -191,7 +191,7 @@ export default function PlansPage({ profile }: { profile: Profile }) {
               天范围内的任务；最后一个计划块可短于最小值。休息窗口不会安排任务。
             </p>
           </Form>
-        </Card>
+        </section>
       )}
       {(plans.error || events.error) && (
         <Alert type="error" message={(plans.error ?? events.error)?.message} />
@@ -199,30 +199,34 @@ export default function PlansPage({ profile }: { profile: Profile }) {
       {plans.error ? null : plans.isPending ? (
         <Spin />
       ) : !selected ? (
-        <div className="cards">
+        <div className="rows">
           {!plans.data?.length && !plans.error && (
             <Empty description="还没有计划，先生成一份草稿" />
           )}
           {plans.data?.map((p) => (
-            <Card
-              key={p.id}
-              title={
-                p.status === "adopted"
-                  ? "当前计划"
-                  : p.status === "draft"
-                    ? "计划草稿"
-                    : "历史计划"
-              }
-            >
-              <p>{displayTime(p.created_at, profile.timezone)}</p>
-              <p>
-                {p.blocks.length} 个计划块{" "}
-                {staleInfo(p) && (
-                  <Tag color="orange">{staleInfo(p)!.short}</Tag>
-                )}
-              </p>
-              <Link to={`/plans/${p.id}`}>查看计划详情</Link>
-            </Card>
+            <article key={p.id} className="task-row plan-row">
+              <div className="task-row-main">
+                <h3>
+                  {p.status === "adopted"
+                    ? "当前计划"
+                    : p.status === "draft"
+                      ? "计划草稿"
+                      : "历史计划"}
+                </h3>
+                <div className="row-detail-meta">
+                  <span>{displayTime(p.created_at, profile.timezone)}</span>
+                  <span>{p.blocks.length} 个计划块</span>
+                  {staleInfo(p) && (
+                    <span className="danger-text">{staleInfo(p)!.short}</span>
+                  )}
+                </div>
+                <div className="row-actions">
+                  <Link to={`/plans/${p.id}`} className="text-action">
+                    查看计划详情
+                  </Link>
+                </div>
+              </div>
+            </article>
           ))}
         </div>
       ) : !active ? (
@@ -235,7 +239,7 @@ export default function PlansPage({ profile }: { profile: Profile }) {
         />
       ) : (
         <>
-          <Card className="toolbar">
+          <section className="section toolbar">
             <Select
               className="activity-select"
               aria-label="计划版本"
@@ -346,8 +350,8 @@ export default function PlansPage({ profile }: { profile: Profile }) {
                 <Link to="/calendar">查看日历</Link>
               </Space>
             )}
-          </Card>
-          <Card className="calendar">
+          </section>
+          <div className="calendar">
             <FullCalendar
               key={active.id}
               plugins={[timeGridPlugin, listPlugin, luxonPlugin]}
@@ -377,10 +381,11 @@ export default function PlansPage({ profile }: { profile: Profile }) {
                 })),
               ]}
             />
-          </Card>
-          <div id="reports" className="cards toolbar">
+          </div>
+          <div id="reports" className="rows toolbar">
             {active.reports.map((r) => (
-              <Card key={r.task_id}>
+              <article key={r.task_id} className="task-row plan-report">
+                <div className="task-row-main">
                 <h3>
                   <Link
                     to={withFrom(
@@ -400,7 +405,8 @@ export default function PlansPage({ profile }: { profile: Profile }) {
                     : `未排 ${r.unscheduled_minutes} 分钟`}
                 </p>
                 <p className="muted">{r.reason}</p>
-              </Card>
+                </div>
+              </article>
             ))}
           </div>
         </>

@@ -10,7 +10,6 @@ import {
   Alert,
   App,
   Button,
-  Card,
   Empty,
   Form,
   Input,
@@ -110,11 +109,11 @@ export default function HierarchyPage({
     return <Spin />;
   if (!course || (kind === "series" && !currentSeries))
     return (
-      <Card>
+      <div className="empty-state">
         <Empty description="记录不存在或已删除">
           <Link to={back.to}>{back.label}</Link>
         </Empty>
-      </Card>
+      </div>
     );
   return (
     <>
@@ -145,7 +144,7 @@ export default function HierarchyPage({
       </header>
       {kind === "course" ? (
         <>
-          <Card title="课程资料" className="toolbar">
+          <section className="section toolbar"><h3>课程资料</h3>
             <Form
               key={course.id}
               layout="vertical"
@@ -172,8 +171,8 @@ export default function HierarchyPage({
                 保存课程
               </Button>
             </Form>
-          </Card>
-          <Card title="课程默认设置" className="toolbar">
+          </section>
+          <section className="section toolbar"><h3>课程默认设置</h3>
             <Select
               aria-label={`${course.name}默认并行设置`}
               className="activity-select"
@@ -191,9 +190,10 @@ export default function HierarchyPage({
               }
             />
             <p>仅应用于没有单次调整的课程实例。</p>
-          </Card>
-          <Card title="每周课程" className="toolbar">
+          </section>
+          <section className="section toolbar"><h3>每周课程</h3>
             <Button
+              type="text"
               className="toolbar"
               onClick={() =>
                 navigate(
@@ -218,9 +218,10 @@ export default function HierarchyPage({
             {!courseSeries.length && (
               <Empty description="尚未建立每周课程" />
             )}
-          </Card>
-          <Card title="单次课程事件">
+          </section>
+          <section className="section"><h3>单次课程事件</h3>
             <Button
+              type="text"
               className="toolbar"
               onClick={() =>
                 navigate(
@@ -245,11 +246,11 @@ export default function HierarchyPage({
               </p>
             ))}
             {!courseEvents.length && <p className="muted">暂无单次课程事件。</p>}
-          </Card>
+          </section>
         </>
       ) : (
         <>
-          <Card title="批量修改时间与地点" className="toolbar">
+          <section className="section toolbar"><h3>批量修改时间与地点</h3>
             <Alert
               type="info"
               message="修改整门每周课程的原始时间和地点；已有单次时间、地点、参加状态和并行覆盖保留。日期范围与星期不变。"
@@ -316,11 +317,12 @@ export default function HierarchyPage({
                 批量保存
               </Button>
             </Form>
-          </Card>
+          </section>
           <Space wrap className="toolbar">
             {[true, false].map((skipped) => (
               <Button
                 key={String(skipped)}
+                type="text"
                 loading={
                   attendance.isPending && attendance.variables === skipped
                 }
@@ -338,7 +340,7 @@ export default function HierarchyPage({
             ))}
             <SourceButton objectId={id!} />
           </Space>
-          <Card title="各周实例">
+          <section className="section"><h3>各周实例</h3>
             <div className="instance-list">
               {instances.map((e, i) => (
                 <p key={e.id}>
@@ -352,7 +354,7 @@ export default function HierarchyPage({
                 </p>
               ))}
             </div>
-          </Card>
+          </section>
         </>
       )}
       {kind === "course" && blocked && (
@@ -387,6 +389,7 @@ export default function HierarchyPage({
         />
       )}
       <Button
+        type="text"
         className="toolbar"
         danger
         disabled={kind === "course" && blocked}

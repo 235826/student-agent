@@ -71,7 +71,9 @@ test("手动排序可拖动并持久化", async ({ page }, testInfo) => {
   if (testInfo.project.name === "mobile") {
     await cardA.getByLabel("下移 任务A").click();
   } else {
-    await cardA.getByLabel("拖动 任务A").dragTo(cardC.locator(".description"));
+    await cardA
+      .getByLabel("拖动 任务A")
+      .dragTo(cardC.getByRole("heading", { name: "任务C" }));
   }
   await expect
     .poll(
@@ -119,7 +121,7 @@ test("嵌套子任务排序与批量完成", async ({ page }) => {
   await expect(page.getByRole("link", { name: "阶段一" })).toBeVisible();
   await expect(page.getByRole("link", { name: "阶段二" })).toBeVisible();
   await expect(page.getByRole("link", { name: "步骤一" })).toBeVisible();
-  const subtasks = page.locator(".ant-card").filter({ hasText: "子任务" });
+  const subtasks = page.locator(".section").filter({ hasText: "子任务" });
   await subtasks.getByLabel("下移子任务 阶段一").click();
   await expect
     .poll(async () => {
@@ -182,7 +184,7 @@ test("自然语言快速添加解析日期、标签和优先级", async ({ page 
   ).toBeVisible();
   await input.press("Enter");
   await expect(
-    page.getByRole("link", { name: "交高数作业", exact: true }),
+    page.getByRole("heading", { name: "交高数作业", exact: true }),
   ).toBeVisible();
 
   const auth = await (await page.request.get("/api/v1/auth/me")).json();
@@ -209,10 +211,10 @@ test("今日快速添加、改期、一键完成与撤销", async ({ page }) => 
   await page.getByLabel("快速添加任务").fill("买牛奶");
   await page.getByLabel("快速添加任务").press("Enter");
   await expect(
-    page.getByRole("link", { name: "买牛奶", exact: true }),
+    page.getByRole("heading", { name: "买牛奶", exact: true }),
   ).toBeVisible();
 
-  await page.getByRole("button", { name: "改期", exact: true }).click();
+  await page.getByLabel("修改截止时间：未设置").click();
   await page.getByText("明天", { exact: true }).click();
   await expect(page.getByText("截止时间已更新")).toBeVisible();
   let tasks = await (await page.request.get("/api/v1/tasks")).json();
@@ -222,7 +224,7 @@ test("今日快速添加、改期、一键完成与撤销", async ({ page }) => 
   await page.getByLabel("完成 买牛奶").click();
   await expect(page.getByText("已完成“买牛奶”")).toBeVisible();
   await expect(
-    page.getByRole("link", { name: "买牛奶", exact: true }),
+    page.getByRole("heading", { name: "买牛奶", exact: true }),
   ).not.toBeVisible();
   tasks = await (await page.request.get("/api/v1/tasks")).json();
   task = tasks.find((item: { title: string }) => item.title === "买牛奶");
@@ -231,9 +233,10 @@ test("今日快速添加、改期、一键完成与撤销", async ({ page }) => 
 
   await page.getByRole("button", { name: "撤销" }).click();
   await expect(
-    page.getByRole("link", { name: "买牛奶", exact: true }),
+    page.getByRole("heading", { name: "买牛奶", exact: true }),
   ).toBeVisible();
 
+  await page.getByRole("heading", { name: "买牛奶", exact: true }).click();
   await page.getByRole("button", { name: "记录用时" }).click();
   await page.getByLabel("实际用了多少分钟").fill("15");
   await page.getByRole("button", { name: "完成并记录" }).click();

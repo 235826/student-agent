@@ -61,16 +61,12 @@ test("文本解析、校对、确认、来源与重复导入", async ({ page }, 
   ).toHaveLength(1);
   await page.getByRole("link", { name: "任务", exact: true }).click();
   const card = page
-    .locator(".ant-card")
+    .locator(".task-card")
     .filter({ has: page.getByRole("heading", { name: title + "-校对" }) });
+  await card.getByRole("heading", { name: title + "-校对" }).click();
   await card.getByRole("button", { name: "查看来源" }).click();
-  await expect(
-    page.getByRole("dialog").getByText(title, { exact: true }),
-  ).toBeVisible();
-  await page
-    .getByRole("dialog")
-    .getByRole("link", { name: "打开导入记录与字段依据" })
-    .click();
+  await expect(card.getByText(title, { exact: true })).toBeVisible();
+  await card.getByRole("link", { name: "打开导入记录与字段依据" }).click();
   await expect(page).toHaveURL(/\/inbox\/imports\//);
   await page.getByRole("link", { name: "返回任务列表" }).click();
   await expect(page).toHaveURL(/\/tasks$/);

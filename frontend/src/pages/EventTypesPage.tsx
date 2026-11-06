@@ -5,7 +5,6 @@ import {
   Alert,
   App,
   Button,
-  Card,
   Empty,
   Form,
   Input,
@@ -78,13 +77,14 @@ export default function EventTypesPage() {
       {types.isPending ? (
         <Spin />
       ) : !types.data?.length ? (
-        <Card>
+        <div className="empty-state">
           <Empty description="还没有事件类型" />
-        </Card>
+        </div>
       ) : (
-        <div className="cards">
+        <div className="rows">
           {types.data.map((type) => (
-            <Card key={type.id}>
+            <article key={type.id} className="task-row">
+              <div className="task-row-main">
               <div className="card-heading">
                 <h3>
                   <span
@@ -100,10 +100,14 @@ export default function EventTypesPage() {
               </div>
               <p className="muted">已用于 {type.usage_count} 个事件</p>
               {!type.system_key && (
-                <Space wrap>
-                  <Button onClick={() => open(type)}>编辑</Button>
+                <div className="row-actions">
+                  <Button type="text" size="small" onClick={() => open(type)}>
+                    编辑
+                  </Button>
                   {!type.archived_at && (
                     <Button
+                      type="text"
+                      size="small"
                       danger
                       loading={archive.isPending}
                       onClick={() =>
@@ -119,9 +123,10 @@ export default function EventTypesPage() {
                       归档
                     </Button>
                   )}
-                </Space>
+                </div>
               )}
-            </Card>
+              </div>
+            </article>
           ))}
         </div>
       )}

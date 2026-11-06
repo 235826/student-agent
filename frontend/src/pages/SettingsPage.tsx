@@ -1,7 +1,7 @@
 import { Link, useLocation } from "react-router-dom";
 import { useEffect } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { App as AntApp, Button, Card, Form, Input, Select, Space } from "antd";
+import { App as AntApp, Button, Form, Input, Select, Space } from "antd";
 import { api, type Profile, type ProfileInput } from "../api";
 const errorText = (e: unknown) => (e instanceof Error ? e.message : "操作失败");
 export default function SettingsPage({
@@ -43,13 +43,15 @@ export default function SettingsPage({
         <Link to="/settings/event-types">事件类型</Link>
         <Link to="/settings/rules">并行规则</Link>
       </Space>
-      <Card title="账号" className="toolbar">
+      <section className="section toolbar">
+        <h3>账号</h3>
         <p>{profile.username}</p>
-        <Button onClick={onLogout} loading={loggingOut}>
+        <Button type="text" onClick={onLogout} loading={loggingOut}>
           退出账号
         </Button>
-      </Card>
-      <Card className="settings" id="availability">
+      </section>
+      <section className="section settings" id="availability">
+        <h3>时间与可用时段</h3>
         <Form
           form={form}
           layout="vertical"
@@ -64,6 +66,7 @@ export default function SettingsPage({
             <Input placeholder="Asia/Shanghai" />
           </Form.Item>
           <Button
+            type="text"
             className="toolbar"
             onClick={() =>
               form.setFieldValue(
@@ -145,7 +148,7 @@ export default function SettingsPage({
             保存设置
           </Button>
         </Form>
-      </Card>
+      </section>
     </>
   );
 }

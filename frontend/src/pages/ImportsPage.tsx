@@ -12,7 +12,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Alert,
   Button,
-  Card,
   Checkbox,
   Input,
   InputNumber,
@@ -142,7 +141,8 @@ export default function ImportsPage({ profile }: { profile: Profile }) {
         </div>
       </header>
       {!jobId && (
-        <Card title="提交材料">
+        <section className="section">
+        <h3>提交材料</h3>
           {capabilities.data &&
             (!capabilities.data.configured ||
               !capabilities.data.worker_online) && (
@@ -249,12 +249,13 @@ export default function ImportsPage({ profile }: { profile: Profile }) {
           {submit.error && (
             <Alert type="error" message={errorText(submit.error)} />
           )}
-        </Card>
+        </section>
       )}
       {!jobId && (
-        <Card title="导入记录（最近 100 批）">
+        <section className="section">
+          <h3>导入记录（最近 100 批）</h3>
           <ImportRecords timezone={profile.timezone} />
-        </Card>
+        </section>
       )}
       {jobId && (
         <Space className="toolbar">
@@ -335,13 +336,12 @@ function DraftEditor({
   const act = (name: string, body?: unknown, method?: string) =>
     action.mutate({ name, body, method });
   return (
-    <Card
-      title={
-        job.published_revision
+    <section className="section">
+      <h3>
+        {job.published_revision
           ? "已创建任务和日程"
-          : `导入草稿 · ${importLabels[job.status]}`
-      }
-    >
+          : `导入草稿 · ${importLabels[job.status]}`}
+      </h3>
       <p>
         参考时间：
         {DateTime.fromISO(job.reference_at)
@@ -426,13 +426,12 @@ function DraftEditor({
         />
       )}
       {items.map((item, index) => (
-        <Card
+        <section
           key={item.key}
           id={`candidate-${item.key}`}
-          size="small"
-          style={{ marginTop: 16 }}
-          title={`条目 ${index + 1}`}
+          className="section candidate"
         >
+          <h3>条目 {index + 1}</h3>
           <Space wrap>
             <Checkbox
               checked={item.selected}
@@ -669,7 +668,7 @@ function DraftEditor({
           >
             已核对该条目的标题、日期、时间及关联关系
           </Checkbox>
-        </Card>
+        </section>
       ))}
       {!readOnly && (
         <Space wrap style={{ marginTop: 16 }}>
@@ -756,6 +755,6 @@ function DraftEditor({
           </Popconfirm>
         </div>
       )}
-    </Card>
+    </section>
   );
 }

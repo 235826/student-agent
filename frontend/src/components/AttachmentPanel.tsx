@@ -1,14 +1,5 @@
 import { useState } from "react";
-import {
-  App,
-  Button,
-  Card,
-  List,
-  Modal,
-  Popconfirm,
-  Space,
-  Upload,
-} from "antd";
+import { App, Button, List, Space, Upload } from "antd";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type Attachment } from "../api";
 
@@ -27,6 +18,7 @@ export default function AttachmentPanel({ taskId }: { taskId: string }) {
   const client = useQueryClient();
   const { message } = App.useApp();
   const [preview, setPreview] = useState<Attachment | null>(null);
+  const [confirming, setConfirming] = useState<string | null>(null);
   const attachments = useQuery({
     queryKey: ["tasks", "attachments", taskId],
     queryFn: () => api<Attachment[]>(`/tasks/${taskId}/attachments`),
@@ -57,7 +49,8 @@ export default function AttachmentPanel({ taskId }: { taskId: string }) {
     onError: (e: Error) => void message.error(e.message),
   });
   return (
-    <Card title="附件" className="toolbar">
+    <section className="section">
+      <h3>附件</h3>
       {attachments.error ? (
         <p className="danger-text">{attachments.error.message}</p>
       ) : attachments.isPending ? (
@@ -88,23 +81,40 @@ export default function AttachmentPanel({ taskId }: { taskId: string }) {
                 >
                   下载
                 </a>,
-                <Popconfirm
-                  key="delete"
-                  title="删除附件？"
-                  okText="删除"
-                  cancelText="取消"
-                  onConfirm={() => remove.mutate(attachment.id)}
-                >
+                confirming === attachment.id ? (
+                  <>
+                    <Button
+                      key="confirm-delete"
+                      type="link"
+                      danger
+                      loading={
+                        remove.isPending && remove.variables === attachment.id
+                      }
+                      onClick={() => {
+                        setConfirming(null);
+                        remove.mutate(attachment.id);
+                      }}
+                    >
+                      确认删除
+                    </Button>,
+                    <Button
+                      key="cancel-delete"
+                      type="link"
+                      onClick={() => setConfirming(null)}
+                    >
+                      取消
+                    </Button>,
+                  </>
+                ) : (
                   <Button
+                    key="delete"
                     type="link"
                     danger
-                    loading={
-                      remove.isPending && remove.variables === attachment.id
-                    }
+                    onClick={() => setConfirming(attachment.id)}
                   >
                     删除
                   </Button>
-                </Popconfirm>,
+                ),
               ]}
             >
               <Space direction="vertical" size={0}>
@@ -122,19 +132,20 @@ export default function AttachmentPanel({ taskId }: { taskId: string }) {
           return false;
         }}
       >
-        <Button loading={upload.isPending}>上传附件</Button>
+        <Button type="text" loading={upload.isPending}>
+          上传附件
+        </Button>
       </Upload>
       <p className="muted">单个附件不超过 20 MiB，每个任务最多 20 个。</p>
-      <Modal
-        open={!!preview}
-        title={preview?.filename}
-        footer={null}
-        onCancel={() => setPreview(null)}
-        width={900}
-        destroyOnHidden
-      >
-        {preview &&
-          (preview.media_type === "application/pdf" ? (
+      {preview && (
+        <div className="attachment-inline-preview">
+          <div className="section-inline-heading">
+            <span>{preview.filename}</span>
+            <Button type="text" size="small" onClick={() => setPreview(null)}>
+              收起
+            </Button>
+          </div>
+          {preview.media_type === "application/pdf" ? (
             <iframe
               className="attachment-preview-frame"
               src={`/api/v1/attachments/${preview.id}?inline=true`}
@@ -146,8 +157,9 @@ export default function AttachmentPanel({ taskId }: { taskId: string }) {
               src={`/api/v1/attachments/${preview.id}?inline=true`}
               alt={preview.filename}
             />
-          ))}
-      </Modal>
-    </Card>
+          )}
+        </div>
+      )}
+    </section>
   );
 }

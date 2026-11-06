@@ -44,13 +44,11 @@ test("空标题草稿、正式任务校验与关系跳转", async ({ page }) => 
   const child = await response.json();
   await page.goto(`/tasks/${child.id}`);
   await expect(
-    page
-      .locator(".ant-alert")
-      .getByRole("link", { name: "父任务", exact: true }),
+    page.getByRole("link", { name: "父任务", exact: true }).first(),
   ).toBeVisible();
   await page
-    .locator(".ant-alert")
     .getByRole("link", { name: "父任务", exact: true })
+    .first()
     .click();
   await expect(page).toHaveURL(new RegExp(`/tasks/${parent.id}(\\?|$)`));
   await page.reload();

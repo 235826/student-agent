@@ -19,8 +19,9 @@ test("账号、任务、事件、设置和手机布局闭环", async ({ page }, 
   await page.getByRole("button", { name: "创建任务", exact: true }).click();
   await expect(page.getByRole("heading", { name: title })).toBeVisible();
   const card = page
-    .locator(".ant-card")
+    .locator(".task-card")
     .filter({ has: page.getByRole("heading", { name: title }) });
+  await card.getByRole("heading", { name: title }).click();
   await card.getByRole("button", { name: /^编\s*辑$/ }).click();
   await page.getByLabel("任务标题").fill(`${title}-已编辑`);
   await page.getByRole("button", { name: "保存修改", exact: true }).click();
@@ -33,7 +34,13 @@ test("账号、任务、事件、设置和手机布局闭环", async ({ page }, 
     page.getByRole("heading", { name: `${title}-已编辑` }),
   ).not.toBeVisible();
   await page.getByRole("button", { name: "垃圾箱", exact: true }).click();
-  await page.getByRole("button", { name: "恢复任务" }).click();
+  const trashed = page
+    .locator(".task-card")
+    .filter({ hasText: `${title}-已编辑` });
+  await trashed
+    .getByRole("heading", { name: `${title}-已编辑` })
+    .click();
+  await trashed.getByRole("button", { name: "恢复任务" }).click();
   await page.getByRole("button", { name: /^全\s*部$/ }).click();
   await expect(
     page.getByRole("heading", { name: `${title}-已编辑` }),
@@ -53,7 +60,7 @@ test("账号、任务、事件、设置和手机布局闭环", async ({ page }, 
     page.getByRole("heading", { name: `数据库课-${testInfo.project.name}` }),
   ).toBeVisible();
   await page
-    .locator(".ant-card")
+    .locator(".event-row")
     .filter({
       has: page.getByRole("heading", {
         name: `数据库课-${testInfo.project.name}`,

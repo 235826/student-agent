@@ -5,7 +5,6 @@ import {
   Alert,
   App,
   Button,
-  Card,
   Checkbox,
   Empty,
   Form,
@@ -217,7 +216,8 @@ export default function CompatibilityPage({ profile }: { profile: Profile }) {
       ) : (
         <>
           {tab === "types" && (
-            <Card title="任务类型设置" className="toolbar">
+            <section className="section toolbar">
+              <h3>任务类型设置</h3>
               <Form
                 form={typeForm}
                 layout="vertical"
@@ -270,10 +270,11 @@ export default function CompatibilityPage({ profile }: { profile: Profile }) {
               <p className="muted">
                 具体任务的单项设置优先于任务类型设置；单次调整在事件详情管理。
               </p>
-            </Card>
+            </section>
           )}
           {tab === "courses" && (
-            <Card title="课程默认设置">
+            <section className="section">
+              <h3>课程默认设置</h3>
               <p className="muted">
                 应用于没有单次调整的课程实例；任务与课程都接受并行后，仍需组合规则。
               </p>
@@ -306,13 +307,14 @@ export default function CompatibilityPage({ profile }: { profile: Profile }) {
               ) : (
                 <Empty description="尚未添加课程" />
               )}
-            </Card>
+            </section>
           )}
           {tab === "rules" && (
-            <div className="cards toolbar">
+            <div className="rows toolbar">
               {rules.data?.length ? (
                 rules.data.map((rule) => (
-                  <Card key={rule.id}>
+                  <article key={rule.id} className="task-row">
+                    <div className="task-row-main">
                     <h3>
                       {label(rule.left)} ＋ {label(rule.right)}
                     </h3>
@@ -330,10 +332,14 @@ export default function CompatibilityPage({ profile }: { profile: Profile }) {
                     <p className="muted">
                       修改时间：{displayTime(rule.updated_at, profile.timezone)}
                     </p>
-                    <Space>
-                      <Button onClick={() => open(rule)}>编辑规则</Button>
+                    <div className="row-actions">
+                      <Button type="text" size="small" onClick={() => open(rule)}>
+                        编辑规则
+                      </Button>
                       {rule.status === "confirmed" && (
                         <Button
+                          type="text"
+                          size="small"
                           danger
                           disabled={write.isPending}
                           onClick={() =>
@@ -352,18 +358,20 @@ export default function CompatibilityPage({ profile }: { profile: Profile }) {
                           停用规则
                         </Button>
                       )}
-                    </Space>
-                  </Card>
+                    </div>
+                    </div>
+                  </article>
                 ))
               ) : (
-                <Card>
+                <div className="empty-state">
                   <Empty description="还没有组合规则" />
-                </Card>
+                </div>
               )}
             </div>
           )}
           {tab === "check" && (
-            <Card title="检查两项或多项活动能否同时进行">
+            <section className="section">
+              <h3>检查两项或多项活动能否同时进行</h3>
               <Checkbox
                 checked={includePast}
                 onChange={(e) => {
@@ -430,7 +438,7 @@ export default function CompatibilityPage({ profile }: { profile: Profile }) {
                   ))}
                 </div>
               )}
-            </Card>
+            </section>
           )}
         </>
       )}

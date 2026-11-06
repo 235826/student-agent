@@ -27,7 +27,7 @@ test("清单创建、任务归类、筛选与完成历史", async ({ page }) => 
   await page.getByRole("button", { name: "创建任务", exact: true }).click();
   await expect(page.getByRole("dialog")).not.toBeVisible();
   const card = page
-    .locator(".ant-card")
+    .locator(".task-card")
     .filter({ has: page.getByRole("heading", { name: "清单任务" }) });
   await expect(card.getByText("课程", { exact: true })).toBeVisible();
 
@@ -37,21 +37,45 @@ test("清单创建、任务归类、筛选与完成历史", async ({ page }) => 
   await expect(page.getByRole("dialog")).not.toBeVisible();
   await expect(page.getByRole("heading", { name: "收件箱任务" })).toBeVisible();
 
-  await card.getByText("课程", { exact: true }).click();
+  await card.getByRole("heading", { name: "清单任务" }).click();
+  await expect(card.getByText("数学", { exact: true })).toBeVisible();
+  await expect(card.getByText("阅读", { exact: true })).toBeVisible();
+
+  const listFilter = page.locator(".ant-select").filter({
+    has: page.getByRole("combobox", { name: "筛选清单" }),
+  });
+  await listFilter.click();
+  await page
+    .locator(".ant-select-dropdown:not(.ant-select-dropdown-hidden) .ant-select-item-option")
+    .filter({ hasText: "课程" })
+    .click();
   await expect(page.getByRole("heading", { name: "清单任务" })).toBeVisible();
   await expect(
     page.getByRole("heading", { name: "收件箱任务" }),
   ).not.toBeVisible();
-  await card.getByText("课程", { exact: true }).click();
+  await listFilter.click();
+  await page
+    .locator(".ant-select-dropdown:not(.ant-select-dropdown-hidden) .ant-select-item-option")
+    .filter({ hasText: "全部清单" })
+    .click();
   await expect(page.getByRole("heading", { name: "收件箱任务" })).toBeVisible();
 
-  await expect(card.getByText("数学", { exact: true })).toBeVisible();
-  await expect(card.getByText("阅读", { exact: true })).toBeVisible();
-  await card.getByText("数学", { exact: true }).click();
+  const tagFilter = page.locator(".ant-select").filter({
+    has: page.getByRole("combobox", { name: "筛选标签" }),
+  });
+  await tagFilter.click();
+  await page
+    .locator(".ant-select-dropdown:not(.ant-select-dropdown-hidden) .ant-select-item-option")
+    .filter({ hasText: "数学" })
+    .click();
   await expect(
     page.getByRole("heading", { name: "收件箱任务" }),
   ).not.toBeVisible();
-  await card.getByText("数学", { exact: true }).click();
+  await tagFilter.click();
+  await page
+    .locator(".ant-select-dropdown:not(.ant-select-dropdown-hidden) .ant-select-item-option")
+    .filter({ hasText: "全部标签" })
+    .click();
   await expect(page.getByRole("heading", { name: "收件箱任务" })).toBeVisible();
 
   await page.getByLabel("完成 清单任务").click();
@@ -175,29 +199,21 @@ test("PWA 资源与离线提示", async ({ page }) => {
   ).not.toBeVisible();
 });
 
-test("任务快速查看抽屉", async ({ page }, testInfo) => {
-  test.skip(testInfo.project.name === "mobile", "drawer is desktop-only");
+test("任务行列内联展开详情", async ({ page }) => {
   const headers = await login(page);
   const created = await page.request.post("/api/v1/tasks", {
     headers,
-    data: { title: "抽屉任务" },
+    data: { title: "抽屉任务", description: "行内展开的描述" },
   });
   expect(created.status()).toBe(201);
-  const task = await created.json();
   await page.goto("/tasks");
-  await page.getByRole("button", { name: "快速查看", exact: true }).click();
+  const row = page
+    .locator(".task-card")
+    .filter({ has: page.getByRole("heading", { name: "抽屉任务" }) });
+  await row.getByRole("heading", { name: "抽屉任务" }).click();
 
-  const drawer = page.locator(".ant-drawer-content");
-  await expect(
-    drawer.getByRole("heading", { name: "抽屉任务" }),
-  ).toBeVisible();
-  await expect(
-    page.locator(".task-card").filter({ hasText: "抽屉任务" }),
-  ).toBeVisible();
-
-  await drawer.getByRole("button", { name: "打开完整详情", exact: true }).click();
-  await expect(page).toHaveURL(new RegExp(`/tasks/${task.id}(\\?|$)`));
-  await expect(
-    page.locator(".task-card").getByRole("heading", { name: "抽屉任务" }),
-  ).toBeVisible();
+  await expect(page.locator(".ant-drawer-content")).toHaveCount(0);
+  await expect(row.getByText("行内展开的描述", { exact: true })).toBeVisible();
+  await expect(row.getByRole("button", { name: "编辑", exact: true })).toBeVisible();
+  await expect(page).toHaveURL(/\/tasks$/);
 });

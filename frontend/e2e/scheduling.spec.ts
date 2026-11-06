@@ -42,7 +42,7 @@ test("排程预览、确认、版本保留及失效提示", async ({ page }, inf
     title,
   );
   const report = page
-    .locator(".ant-card")
+    .locator(".plan-report")
     .filter({ has: page.getByRole("heading", { name: title, exact: true }) });
   await expect(report.getByText("已排 60 分钟 · 未排 0 分钟")).toBeVisible();
   await page.getByRole("button", { name: "确认采用" }).click();

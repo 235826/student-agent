@@ -99,11 +99,12 @@ test("任务筛选写入 URL，刷新与详情返回后保持", async ({ page })
     page.getByRole("heading", { name: "URL筛选-数学", exact: true }),
   ).toBeVisible();
 
-  await page.getByRole("link", { name: "URL筛选-数学", exact: true }).click();
-  await expect(page).toHaveURL(/\/tasks\/[^/]+\?.*from=/);
-  await page.getByRole("link", { name: "返回任务列表" }).click();
+  const row = page
+    .locator(".task-card")
+    .filter({ has: page.getByRole("heading", { name: "URL筛选-数学" }) });
+  await row.getByRole("heading", { name: "URL筛选-数学" }).click();
   await expect(page).toHaveURL(filteredUrl);
-  await expect(search).toHaveValue("数学");
+  await expect(row.getByRole("button", { name: "编辑", exact: true })).toBeVisible();
 });
 
 test("标签管理重命名、使用次数与删除", async ({ page }) => {

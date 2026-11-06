@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { Alert, Button, Card, Form, Input } from "antd";
+import { Alert, Button, Form, Input } from "antd";
 import { api, type Auth } from "../api";
 const errorText = (e: unknown) => (e instanceof Error ? e.message : "操作失败");
 export default function Login({
@@ -39,15 +39,14 @@ export default function Login({
         更有安排。
       </h1>
       <p className="muted">从一个任务开始，逐步找到适合自己的节奏。</p>
-      <Card
-        title={
-          !initialized
+      <section className="section login-panel">
+        <h2>
+          {!initialized
             ? "创建你的个人账号"
             : registering
               ? "创建新账号"
-              : "欢迎回来"
-        }
-      >
+              : "欢迎回来"}
+        </h2>
         {mutation.error && (
           <Alert type="error" message={errorText(mutation.error)} showIcon />
         )}
@@ -105,7 +104,7 @@ export default function Login({
             {registering ? "已有账号？返回登录" : "创建新账号"}
           </Button>
         )}
-      </Card>
+      </section>
     </main>
   );
 }

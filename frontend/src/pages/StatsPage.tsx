@@ -1,4 +1,4 @@
-import { Alert, Card, Empty, Spin, Statistic } from "antd";
+import { Alert, Empty, Spin, Statistic } from "antd";
 import { useQuery } from "@tanstack/react-query";
 import { api, type CompletionStats } from "../api";
 
@@ -21,17 +21,18 @@ export default function StatsPage() {
         </div>
       </header>
       <div className="stats-summary">
-        <Card>
+        <div className="stat-block">
           <Statistic title="今天完成" value={data.today} />
-        </Card>
-        <Card>
+        </div>
+        <div className="stat-block">
           <Statistic title="本周完成" value={data.week} />
-        </Card>
-        <Card>
+        </div>
+        <div className="stat-block">
           <Statistic title="本月完成" value={data.month} />
-        </Card>
+        </div>
       </div>
-      <Card title="最近 14 天" className="toolbar">
+      <section className="section toolbar">
+        <h3>最近 14 天</h3>
         <div className="stats-bars">
           {data.days.map((day) => (
             <div
@@ -50,13 +51,14 @@ export default function StatsPage() {
             </div>
           ))}
         </div>
-      </Card>
-      <Card title="估时与实耗" className="toolbar">
+      </section>
+      <section className="section toolbar">
+        <h3>估时与实耗</h3>
         <div className="stats-minutes">
           <Statistic title="预计用时（分钟）" value={data.estimate_minutes} />
           <Statistic title="实际用时（分钟）" value={data.actual_minutes} />
         </div>
-      </Card>
+      </section>
       {data.days.every((day) => day.count === 0) && (
         <Empty description="最近还没有完成记录" />
       )}

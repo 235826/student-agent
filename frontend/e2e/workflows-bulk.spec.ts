@@ -1,29 +1,25 @@
 import { test, expect } from "./fixtures";
 import { login } from "./support";
 
-test("任务快速查看关闭后保留筛选 URL", async ({ page }, testInfo) => {
-  test.skip(testInfo.project.name === "mobile", "drawer is desktop-only");
+test("任务行展开后保留筛选 URL", async ({ page }) => {
   const headers = await login(page);
   const created = await page.request.post("/api/v1/tasks", {
     headers,
-    data: { title: "抽屉筛选任务" },
+    data: { title: "抽屉筛选任务", description: "行内展开内容" },
   });
   expect(created.status()).toBe(201);
   await page.goto("/tasks");
   const search = page.getByLabel("搜索任务");
   await search.fill("抽屉筛选");
   await expect(page).toHaveURL(/[?&]q=/);
-  await page.getByRole("button", { name: "快速查看", exact: true }).click();
-  const drawer = page.locator(".ant-drawer-content");
-  await expect(
-    drawer.getByRole("heading", { name: "抽屉筛选任务" }),
-  ).toBeVisible();
-  await page.locator(".ant-drawer-close").click();
+  const row = page
+    .locator(".task-card")
+    .filter({ has: page.getByRole("heading", { name: "抽屉筛选任务" }) });
+  await row.getByRole("heading", { name: "抽屉筛选任务" }).click();
+  await expect(page.locator(".ant-drawer-content")).toHaveCount(0);
+  await expect(row.getByText("行内展开内容", { exact: true })).toBeVisible();
   await expect(page).toHaveURL(/[?&]q=/);
   await expect(search).toHaveValue("抽屉筛选");
-  await expect(
-    page.locator(".task-card").filter({ hasText: "抽屉筛选任务" }),
-  ).toBeVisible();
 });
 
 test("批量改期、添加标签与撤销", async ({ page }) => {
@@ -39,7 +35,7 @@ test("批量改期、添加标签与撤销", async ({ page }) => {
   await page.getByRole("button", { name: "批量操作", exact: true }).click();
   await page.getByLabel("选择 批量改期A").check();
   await page.getByLabel("选择 批量改期B").check();
-  const bar = page.locator(".ant-card").filter({ hasText: "已选 2 项" });
+  const bar = page.locator(".bulk-bar").filter({ hasText: "已选 2 项" });
   await bar.getByRole("button", { name: /^改\s*期$/ }).click();
   await page
     .locator(".ant-dropdown-menu-item")
@@ -119,6 +115,7 @@ test("垃圾箱永久删除与清空", async ({ page }) => {
   const card = page
     .locator(".task-card")
     .filter({ hasText: "永久删除A" });
+  await card.getByRole("heading", { name: "永久删除A" }).click();
   await card.getByRole("button", { name: "永久删除", exact: true }).click();
   await page
     .getByRole("dialog")
@@ -191,13 +188,14 @@ test("任务附件上传、下载链接与删除", async ({ page }) => {
     /\/api\/v1\/attachments\//,
   );
 
-  const attachmentCard = page.locator(".ant-card").filter({ hasText: "附件" });
+  const attachmentCard = page
+    .locator(".section")
+    .filter({ has: page.getByRole("heading", { name: "附件" }) });
   await attachmentCard
     .getByRole("button", { name: /^删\s*除$/ })
     .click();
-  await page
-    .locator(".ant-popconfirm")
-    .getByRole("button", { name: /^删\s*除$/ })
+  await attachmentCard
+    .getByRole("button", { name: /^确认删除$/ })
     .click();
   await expect(page.getByText("附件已删除")).toBeVisible();
   await expect(page.getByText("note.txt", { exact: true })).not.toBeVisible();

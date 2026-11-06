@@ -37,7 +37,7 @@ test("草稿发布、重复课程单次变更与规则检查", async ({ page }, 
   await page.getByRole("link", { name: "收件箱", exact: true }).click();
   await expect(page).toHaveURL(/\/inbox$/);
   const draft = page
-    .locator(".ant-card")
+    .locator(".task-row")
     .filter({ has: page.getByRole("heading", { name: title, exact: true }) });
   await draft.getByRole("button", { name: "发布任务" }).click();
   await page
@@ -137,9 +137,13 @@ test("草稿发布、重复课程单次变更与规则检查", async ({ page }, 
   ).toBeVisible();
   await page.getByRole("tab", { name: "兼容性检查", exact: true }).click();
   await choose(page, "选择待检查活动", `任务：${title}`);
+  await page
+    .locator(".ant-select-dropdown:visible .ant-select-item-option")
+    .filter({ hasText: `事件：${course}` })
+    .first()
+    .click();
   await page.keyboard.press("Escape");
-  await choose(page, "选择待检查活动", `事件：${course}`);
-  await page.keyboard.press("Escape");
+  await expect(page.locator(".ant-select-dropdown:visible")).toHaveCount(0);
   await page.getByRole("button", { name: "检查兼容性" }).click();
   await expect(page.getByText("所有两两组合均通过")).toBeVisible();
   expect(

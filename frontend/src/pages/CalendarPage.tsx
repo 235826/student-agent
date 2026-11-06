@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import type { DateSelectArg } from "@fullcalendar/core";
 import { Link, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Alert, Card } from "antd";
+import { Alert } from "antd";
 import FullCalendar from "@fullcalendar/react";
 import timeGridPlugin from "@fullcalendar/timegrid";
 import listPlugin from "@fullcalendar/list";
@@ -70,7 +70,7 @@ export default function CalendarPage({
           action={<Link to="/plans">查看计划</Link>}
         />
       )}
-      <Card className="calendar">
+      <div className="calendar">
         <FullCalendar
           ref={calendar}
           plugins={[timeGridPlugin, listPlugin, luxonPlugin]}
@@ -140,7 +140,7 @@ export default function CalendarPage({
             })) ?? []),
           ]}
         />
-      </Card>
+      </div>
     </>
   );
 }

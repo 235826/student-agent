@@ -14,7 +14,6 @@ import {
   Alert,
   App,
   Button,
-  Card,
   Checkbox,
   Empty,
   Form,
@@ -346,8 +345,8 @@ export default function EventsPage({ profile }: { profile: Profile }) {
         </div>
         {!id && (
           <Space wrap>
-            <Button onClick={() => openCourse(null)}>添加课程</Button>
-            <Button onClick={() => openNewSeries()}>建立每周课程</Button>
+            <Button type="text" onClick={() => openCourse(null)}>添加课程</Button>
+            <Button type="text" onClick={() => openNewSeries()}>建立每周课程</Button>
             <Button
               type="primary"
               onClick={() =>
@@ -371,7 +370,8 @@ export default function EventsPage({ profile }: { profile: Profile }) {
       {!id && (
         <>
           <div className="calendar-layout">
-            <Card className="toolbar course-sidebar" title="课程与每周课程">
+            <section className="section course-sidebar">
+              <h3>课程与每周课程</h3>
               {courses.isPending ? (
                 <Spin />
               ) : courses.error ? null : courses.data?.length ? (
@@ -402,7 +402,7 @@ export default function EventsPage({ profile }: { profile: Profile }) {
               ) : (
                 <Empty description="尚未添加课程" />
               )}
-            </Card>
+            </section>
             <div>
               {events.data && !events.error && (
                 <CalendarPage
@@ -431,7 +431,7 @@ export default function EventsPage({ profile }: { profile: Profile }) {
         </>
       )}
       {id && (
-        <Space className="toolbar">
+        <Space className="toolbar row-actions">
           <Link to={back.to}>{back.label}</Link>
           <Link to="/settings/rules?tab=courses">查看相关并行规则</Link>
         </Space>
@@ -439,13 +439,13 @@ export default function EventsPage({ profile }: { profile: Profile }) {
       {events.error ? null : events.isPending ? (
         <Spin />
       ) : !visible.length ? (
-        <Card>
+        <div className="empty-state">
           <Empty description={id ? "事件不存在或已删除" : "本周没有事件"} />
-        </Card>
+        </div>
       ) : (
-        <div className="cards">
+        <div className="rows">
           {visible.map((event) => (
-            <Card key={event.id}>
+            <article key={event.id} className="task-row event-row">
               <div className="card-heading">
                 <h3>
                   <Link
@@ -507,7 +507,7 @@ export default function EventsPage({ profile }: { profile: Profile }) {
                   }
                 />
               )}
-              <Space wrap>
+              <div className="row-actions">
                 {event.course_id && (
                   <Link
                     to={
@@ -568,8 +568,8 @@ export default function EventsPage({ profile }: { profile: Profile }) {
                     {event.is_skipped ? "恢复参加" : "本次不参加"}
                   </Button>
                 )}
-              </Space>
-            </Card>
+              </div>
+            </article>
           ))}
         </div>
       )}

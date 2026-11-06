@@ -6,7 +6,6 @@ import {
   App,
   Button,
   Checkbox,
-  Dropdown,
   Empty,
   Form,
   Input,
@@ -28,18 +27,16 @@ import {
 } from "../api";
 import { displayTime } from "../time";
 import { withFrom } from "../navigation";
+import InlineDeadline from "../components/InlineDeadline";
 import { eventTypeLabel, priorityLabel, staleInfo } from "../semantics";
-import {
-  deadlineLabel,
-  quickDeadlineOptions,
-  recurrenceLabel,
-} from "../tasks";
+import { recurrenceLabel } from "../tasks";
 import { parseQuickAdd, type ParsedQuickAdd } from "../nlp";
 
 export default function TodayPage({ profile }: { profile: Profile }) {
   const client = useQueryClient();
   const { message } = App.useApp();
   const [draft, setDraft] = useState("");
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [completing, setCompleting] = useState<Task | null>(null);
   const [completeForm] = Form.useForm();
   const plan = useQuery({
@@ -216,101 +213,121 @@ export default function TodayPage({ profile }: { profile: Profile }) {
     .sort((a, b) => a.start_at.localeCompare(b.start_at));
   const stale = plan.data ? staleInfo(plan.data) : null;
   const error = plan.error ?? events.error ?? tasks.error;
-  const deadlineOptions = quickDeadlineOptions(now);
   const taskLine = (task: Task) => {
-    const deadline = task.deadline_at
-      ? DateTime.fromISO(task.deadline_at).setZone(profile.timezone)
-      : null;
-    const overdue = deadline ? deadline < now : false;
+    const expanded = expandedId === task.id;
+    const taskList = (lists.data ?? []).find(
+      (list) => list.id === task.list_id,
+    );
+    const toggle = () => setExpandedId(expanded ? null : task.id);
     return (
-      <div className="task-row" key={task.id}>
+      <div
+        className={expanded ? "task-row task-card expanded" : "task-row task-card"}
+        key={task.id}
+      >
         <Checkbox
           aria-label={`完成 ${task.title}`}
           checked={false}
           onChange={() => complete.mutate(task)}
         />
         <div className="task-row-main">
-          <Link to={withFrom(`/tasks/${task.id}`, "/")}>{task.title}</Link>
-          <div className="task-row-meta">
-            {deadline ? (
-              <span className={overdue ? "danger-text" : ""}>
-                {overdue ? "已逾期 · " : "截止 · "}
-                {deadlineLabel(
-                  task.deadline_at,
-                  task.deadline_all_day,
-                  profile.timezone,
-                )}
+          <div className="task-row-titleline">
+            <button
+              type="button"
+              className="row-title-button"
+              onClick={toggle}
+              aria-expanded={expanded}
+            >
+              <h3>{task.title}</h3>
+            </button>
+            <InlineDeadline
+              task={task}
+              timezone={profile.timezone}
+              onChange={(deadline_at, deadline_all_day) =>
+                setDeadline.mutate({ task, deadline_at, deadline_all_day })
+              }
+            />
+            {taskList && (
+              <span className="task-row-list">
+                <span
+                  className="task-row-list-dot"
+                  style={{ background: taskList.color }}
+                />
+                {taskList.name}
               </span>
-            ) : (
-              <span>未设置截止时间</span>
             )}
-            <span>{priorityLabel(task.priority)}</span>
-            {task.recurrence && (
-              <Tag>
-                {recurrenceLabel(
-                  task.recurrence,
-                  task.recurrence_interval,
-                  task.recurrence_from_completion,
-                )}
-              </Tag>
+            {task.status === "in_progress" && (
+              <span className="task-row-list">进行中</span>
             )}
-            {task.status === "in_progress" && <Tag color="blue">进行中</Tag>}
-            <Dropdown
-              menu={{
-                items: deadlineOptions.map(({ key, label }) => ({
-                  key,
-                  label,
-                })),
-                onClick: ({ key }) => {
-                  const option = deadlineOptions.find(
-                    (item) => item.key === key,
-                  );
-                  if (option)
-                    setDeadline.mutate({
-                      task,
-                      deadline_at: option.deadline_at,
-                      deadline_all_day: option.deadline_all_day,
-                    });
-                },
-              }}
-            >
-              <Button type="text" size="small">
-                改期
-              </Button>
-            </Dropdown>
-            <Button
-              type="text"
-              size="small"
-              className={task.flagged ? "flag-button active" : "flag-button"}
-              aria-label={
-                task.flagged
-                  ? `取消标记 ${task.title}`
-                  : `标记 ${task.title}`
-              }
-              loading={
-                setFlag.isPending && setFlag.variables?.task.id === task.id
-              }
-              onClick={() =>
-                setFlag.mutate({ task, flagged: !task.flagged })
-              }
-            >
-              {task.flagged ? "★" : "☆"}
-            </Button>
-            <Button
-              type="text"
-              size="small"
-              onClick={() => {
-                completeForm.resetFields();
-                completeForm.setFieldsValue({
-                  actual_minutes: task.estimate_minutes ?? undefined,
-                  cause: "unknown",
-                });
-                setCompleting(task);
-              }}
-            >
-              记录用时
-            </Button>
+            {task.priority >= 3 && (
+              <span className="task-row-priority">
+                {priorityLabel(task.priority)}
+              </span>
+            )}
+            {task.flagged && (
+              <span className="task-row-flag" aria-label="已标记为重点">
+                ★
+              </span>
+            )}
+            <span className="row-chevron" aria-hidden="true">
+              {expanded ? "▾" : "▸"}
+            </span>
           </div>
+          {expanded && (
+            <div
+              className="row-detail"
+              onClick={(event) => event.stopPropagation()}
+            >
+              {task.description && (
+                <p className="description">{task.description}</p>
+              )}
+              {task.tags.length > 0 && (
+                <div className="row-detail-meta">
+                  {task.tags.map((tag) => (
+                    <span key={tag}>{tag}</span>
+                  ))}
+                </div>
+              )}
+              <div className="row-detail-meta">
+                <span>{priorityLabel(task.priority)}</span>
+                <span>预计 {task.estimate_minutes ?? "—"} 分钟</span>
+                {task.recurrence &&
+                  `重复：${recurrenceLabel(
+                    task.recurrence,
+                    task.recurrence_interval,
+                    task.recurrence_from_completion,
+                  )}`}
+              </div>
+              <div className="row-actions">
+                <Button
+                  type="text"
+                  size="small"
+                  onClick={() =>
+                    setFlag.mutate({ task, flagged: !task.flagged })
+                  }
+                  loading={
+                    setFlag.isPending &&
+                    setFlag.variables?.task.id === task.id
+                  }
+                >
+                  {task.flagged ? "取消标记" : "标记"}
+                </Button>
+                <Button
+                  type="text"
+                  size="small"
+                  onClick={() => {
+                    completeForm.resetFields();
+                    completeForm.setFieldsValue({
+                      actual_minutes: task.estimate_minutes ?? undefined,
+                      cause: "unknown",
+                    });
+                    setCompleting(task);
+                  }}
+                >
+                  记录用时
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     );
