@@ -144,6 +144,7 @@ test("任务分页加载更多", async ({ page }) => {
     expect(response.status()).toBe(201);
   }
   await page.goto("/tasks");
+  await page.getByRole("button", { name: "无日期", exact: true }).click();
   await expect(page.locator(".task-card")).toHaveCount(50);
   await page.getByRole("button", { name: "加载更多" }).click();
   await expect(page.locator(".task-card")).toHaveCount(51);

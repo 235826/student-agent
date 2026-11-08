@@ -19,6 +19,7 @@ import {
   useEffect,
   useRef,
   useState,
+  type PointerEvent as ReactPointerEvent,
 } from "react";
 import { backTarget, currentLocation, withFrom } from "../navigation";
 import {
@@ -55,7 +56,7 @@ import type {
   TaskList,
   TaskListGroup,
 } from "../api";
-import { displayTime, toLocal } from "../time";
+import { displayTime, toInstant, toLocal } from "../time";
 import { priorities, priorityLabel } from "../semantics";
 import {
   deadlineInstant,
@@ -163,6 +164,13 @@ export default function TasksPage({ profile }: { profile: Profile }) {
   const [listManager, setListManager] = useState(false);
   const [tagManager, setTagManager] = useState(false);
   const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [monthsLoaded, setMonthsLoaded] = useState(1);
+  const [dragOverDate, setDragOverDate] = useState<string | null | undefined>(
+    undefined,
+  );
+  const [dropBeforeId, setDropBeforeId] = useState<string | null>(null);
+  const [dropPosition, setDropPosition] = useState<"before" | "after">("before");
+  const timelineSentinelRef = useRef<HTMLDivElement>(null);
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkTagOpen, setBulkTagOpen] = useState(false);
@@ -229,6 +237,8 @@ export default function TasksPage({ profile }: { profile: Profile }) {
     );
     return () => clearTimeout(timer);
   }, [search, debouncedSearch, setUrlValue]);
+  const timelineMode =
+    !inbox && !id && (view === "all" || view === "today" || view === "scheduled");
   useEffect(() => {
     setSearch((current) =>
       current.trim() === debouncedSearch ? current : debouncedSearch,
@@ -239,6 +249,20 @@ export default function TasksPage({ profile }: { profile: Profile }) {
       ?.querySelector<HTMLElement>(".view-tab.active")
       ?.scrollIntoView({ block: "nearest", inline: "nearest" });
   }, [view]);
+  useEffect(() => {
+    if (!timelineMode || !timelineSentinelRef.current) return;
+    const node = timelineSentinelRef.current;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setMonthsLoaded((current) => Math.min(12, current + 1));
+        }
+      },
+      { rootMargin: "240px" },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [timelineMode, monthsLoaded]);
   const closeEditor = () => {
     setEditor(null);
     setPendingCancel(null);
@@ -267,16 +291,21 @@ export default function TasksPage({ profile }: { profile: Profile }) {
       tagFilter,
       status,
       debouncedSearch,
+      timelineMode,
     ],
     queryFn: ({ pageParam }) => {
       const params = new URLSearchParams(taskQueryString);
-      params.set("limit", String(PAGE_SIZE + 1));
-      params.set("offset", String(pageParam));
+      if (!timelineMode) {
+        params.set("limit", String(PAGE_SIZE + 1));
+        params.set("offset", String(pageParam));
+      }
       return api<Task[]>(`/tasks?${params.toString()}`);
     },
     initialPageParam: 0,
     getNextPageParam: (lastPage, _allPages, lastPageParam) =>
-      lastPage.length > PAGE_SIZE ? lastPageParam + PAGE_SIZE : undefined,
+      !timelineMode && lastPage.length > PAGE_SIZE
+        ? lastPageParam + PAGE_SIZE
+        : undefined,
     enabled: !inbox && !id,
     placeholderData: (previous) => previous,
   });
@@ -443,6 +472,16 @@ export default function TasksPage({ profile }: { profile: Profile }) {
   const reorder = useMutation({
     mutationFn: (task_ids: string[]) =>
       api("/tasks/reorder", "POST", { task_ids }),
+    onSuccess: () => refresh(),
+    onError: (e: unknown) => void message.error(errorText(e)),
+  });
+  const planMove = useMutation({
+    mutationFn: (body: {
+      task_id: string;
+      deadline_at: string | null;
+      deadline_all_day: boolean;
+      ordered_task_ids: string[];
+    }) => api<Task[]>("/tasks/plan/move", "POST", body),
     onSuccess: () => refresh(),
     onError: (e: unknown) => void message.error(errorText(e)),
   });
@@ -730,6 +769,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
       parallel_policy: payload?.parallel_policy ?? "inherit",
       deadline_at: toLocal(payload?.deadline_at, profile.timezone),
       deadline_all_day: payload?.deadline_all_day ?? false,
+      remind_at: toLocal(payload?.remind_at, profile.timezone),
       flagged: payload?.flagged ?? false,
       recurrence: payload?.recurrence ?? undefined,
       recurrence_interval: payload?.recurrence_interval ?? 1,
@@ -777,6 +817,9 @@ export default function TasksPage({ profile }: { profile: Profile }) {
           profile.timezone,
         ),
         deadline_all_day: values.deadline_all_day ?? false,
+        remind_at: values.remind_at
+          ? toInstant(values.remind_at, profile.timezone)
+          : null,
         recurrence: values.recurrence ?? null,
         recurrence_interval: values.recurrence_interval ?? 1,
         recurrence_from_completion:
@@ -916,18 +959,30 @@ export default function TasksPage({ profile }: { profile: Profile }) {
       },
     });
   };
+  const taskDateKey = (task: Task) =>
+    task.deadline_at
+      ? DateTime.fromISO(task.deadline_at)
+          .setZone(profile.timezone)
+          .toISODate()
+      : null;
   const visible = (detailPage ? (detailTask ? [detailTask] : []) : listItems)
     .sort((a, b) =>
-      sort === "deadline"
-        ? (a.deadline_at ?? "9999").localeCompare(b.deadline_at ?? "9999")
-        : sort === "priority"
-          ? b.priority - a.priority
-          : sort === "completed"
-            ? (b.completed_at ?? "").localeCompare(a.completed_at ?? "")
-            : sort === "manual"
-              ? a.sort_order - b.sort_order ||
-                b.created_at.localeCompare(a.created_at)
-              : a.status.localeCompare(b.status),
+      timelineMode
+        ? (taskDateKey(a) ?? "9999-12-31").localeCompare(
+            taskDateKey(b) ?? "9999-12-31",
+          ) ||
+          a.sort_order - b.sort_order ||
+          b.created_at.localeCompare(a.created_at)
+        : sort === "deadline"
+          ? (a.deadline_at ?? "9999").localeCompare(b.deadline_at ?? "9999")
+          : sort === "priority"
+            ? b.priority - a.priority
+            : sort === "completed"
+              ? (b.completed_at ?? "").localeCompare(a.completed_at ?? "")
+              : sort === "manual"
+                ? a.sort_order - b.sort_order ||
+                  b.created_at.localeCompare(a.created_at)
+                : a.status.localeCompare(b.status),
     );
   const groupOf = (task: Task) =>
     view === "done" && task.completed_at
@@ -974,6 +1029,209 @@ export default function TasksPage({ profile }: { profile: Profile }) {
     const next = [...visible];
     [next[from], next[to]] = [next[to], next[from]];
     reorder.mutate(next.map((item) => item.id));
+  };
+  const today = DateTime.now().setZone(profile.timezone).startOf("day");
+  const todayKey = today.toISODate()!;
+  const timelineEnd =
+    view === "today"
+      ? today
+      : today
+          .startOf("month")
+          .plus({ months: monthsLoaded })
+          .minus({ days: 1 });
+  const timelineEndKey = timelineEnd.toISODate()!;
+  const sortForPlan = (items: Task[]) =>
+    [...items].sort(
+      (a, b) =>
+        a.sort_order - b.sort_order ||
+        b.created_at.localeCompare(a.created_at) ||
+        a.id.localeCompare(b.id),
+    );
+  const planDateLabel = (date: DateTime) => {
+    const weekdays = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
+    return `${date.toFormat("M月d日")} ${weekdays[date.weekday % 7]}`;
+  };
+  const groupByDate = (items: Task[]) => {
+    const map = new Map<string, Task[]>();
+    for (const task of items) {
+      const key = taskDateKey(task);
+      if (!key) continue;
+      const list = map.get(key) ?? [];
+      list.push(task);
+      map.set(key, list);
+    }
+    return [...map.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, entries]) => ({
+        key,
+        label: planDateLabel(
+          DateTime.fromISO(key, { zone: profile.timezone }),
+        ),
+        tasks: sortForPlan(entries),
+      }));
+  };
+  const overdueGroups = groupByDate(
+    visible.filter((task) => {
+      const key = taskDateKey(task);
+      return !!key && key < todayKey;
+    }),
+  );
+  const noDateTasks = sortForPlan(
+    visible.filter((task) => !taskDateKey(task)),
+  );
+  const datedByDate = new Map<string, Task[]>();
+  for (const task of visible) {
+    const key = taskDateKey(task);
+    if (!key || key < todayKey || key > timelineEndKey) continue;
+    const list = datedByDate.get(key) ?? [];
+    list.push(task);
+    datedByDate.set(key, list);
+  }
+  const timelineMonths: Array<{
+    month: string;
+    days: Array<{ key: string; label: string; tasks: Task[] }>;
+  }> = [];
+  for (
+    let cursor = today;
+    cursor <= timelineEnd;
+    cursor = cursor.plus({ days: 1 })
+  ) {
+    const key = cursor.toISODate()!;
+    const month = cursor.toFormat("yyyy年M月");
+    let bucket = timelineMonths[timelineMonths.length - 1];
+    if (!bucket || bucket.month !== month) {
+      bucket = { month, days: [] };
+      timelineMonths.push(bucket);
+    }
+    const diff = cursor.startOf("day").diff(today, "days").days;
+    bucket.days.push({
+      key,
+      label:
+        diff === 0
+          ? `今天 · ${planDateLabel(cursor)}`
+          : diff === 1
+            ? `明天 · ${planDateLabel(cursor)}`
+            : diff === 2
+              ? `后天 · ${planDateLabel(cursor)}`
+              : planDateLabel(cursor),
+      tasks: sortForPlan(datedByDate.get(key) ?? []),
+    });
+  }
+  const tasksByDateAll = new Map<string, Task[]>();
+  for (const task of visible) {
+    const key = taskDateKey(task);
+    if (!key) continue;
+    const list = tasksByDateAll.get(key) ?? [];
+    list.push(task);
+    tasksByDateAll.set(key, list);
+  }
+  const resolvePlanDrop = (x: number, y: number) => {
+    const element = document.elementFromPoint(x, y) as HTMLElement | null;
+    const day = element?.closest<HTMLElement>(
+      "[data-plan-date], [data-plan-nodate]",
+    );
+    if (!day) return { date: undefined as string | null | undefined, beforeId: null, position: "before" as const };
+    const date = day.hasAttribute("data-plan-nodate")
+      ? null
+      : (day.dataset.planDate ?? null);
+    const row = element?.closest<HTMLElement>("[data-task-id]");
+    let beforeId: string | null = null;
+    let position: "before" | "after" = "before";
+    if (row && day.contains(row)) {
+      beforeId = row.dataset.taskId ?? null;
+      const rect = row.getBoundingClientRect();
+      position = y < rect.top + rect.height / 2 ? "before" : "after";
+    }
+    return { date, beforeId, position };
+  };
+  const startTimelineDrag = (
+    event: ReactPointerEvent<HTMLSpanElement>,
+    task: Task,
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setDraggingId(task.id);
+    setDragOverDate(taskDateKey(task));
+    setDropBeforeId(null);
+    document.body.classList.add("plan-dragging");
+    const onMove = (pointerEvent: PointerEvent) => {
+      const target = resolvePlanDrop(pointerEvent.clientX, pointerEvent.clientY);
+      setDragOverDate(target.date);
+      setDropBeforeId(target.beforeId);
+      setDropPosition(target.position);
+      if (pointerEvent.clientY < 80) window.scrollBy(0, -18);
+      else if (pointerEvent.clientY > window.innerHeight - 80)
+        window.scrollBy(0, 18);
+    };
+    const cleanup = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onCancel);
+      document.body.classList.remove("plan-dragging");
+      setDraggingId(null);
+      setDragOverDate(undefined);
+      setDropBeforeId(null);
+    };
+    const onCancel = () => cleanup();
+    const onUp = (pointerEvent: PointerEvent) => {
+      const target = resolvePlanDrop(pointerEvent.clientX, pointerEvent.clientY);
+      cleanup();
+      if (target.date === undefined) return;
+      const targetList = sortForPlan(
+        target.date === null
+          ? noDateTasks
+          : [...(tasksByDateAll.get(target.date) ?? [])],
+      ).filter((item) => item.id !== task.id);
+      let index = targetList.length;
+      if (target.beforeId) {
+        const beforeIndex = targetList.findIndex(
+          (item) => item.id === target.beforeId,
+        );
+        if (beforeIndex >= 0)
+          index = target.position === "before" ? beforeIndex : beforeIndex + 1;
+      }
+      const ordered = [
+        ...targetList.slice(0, index),
+        task,
+        ...targetList.slice(index),
+      ];
+      let deadlineAt = task.deadline_at;
+      let allDay = task.deadline_all_day;
+      if (target.date === null) {
+        deadlineAt = null;
+        allDay = false;
+      } else {
+        const targetDay = DateTime.fromISO(target.date, {
+          zone: profile.timezone,
+        });
+        if (!task.deadline_at || task.deadline_all_day) {
+          deadlineAt = targetDay.endOf("day").toISO()!;
+          allDay = true;
+        } else {
+          const local = DateTime.fromISO(task.deadline_at).setZone(
+            profile.timezone,
+          );
+          deadlineAt = targetDay
+            .set({
+              hour: local.hour,
+              minute: local.minute,
+              second: 0,
+              millisecond: 0,
+            })
+            .toISO()!;
+          allDay = false;
+        }
+      }
+      planMove.mutate({
+        task_id: task.id,
+        deadline_at: deadlineAt,
+        deadline_all_day: allDay,
+        ordered_task_ids: ordered.map((item) => item.id),
+      });
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onCancel);
   };
   const selectedTasks = visible.filter((task) => selectedIds.has(task.id));
   const toggleSelected = (taskId: string) =>
@@ -1192,6 +1450,373 @@ export default function TasksPage({ profile }: { profile: Profile }) {
       )}
     </>
   );
+  const renderTaskCard = (task: Task, index: number, timeline = false) => {
+    const taskList = listOf(task);
+    const expanded = expandedId === task.id;
+    const statusLabel = states.find(
+      (state) => state.value === task.status,
+    )?.label;
+    const toggle = () => setExpandedId(expanded ? null : task.id);
+    return (
+              <article
+                data-task-id={task.id}
+                className={[
+                  "task-row",
+                  "task-card",
+                  expanded ? "expanded" : "",
+                  draggingId === task.id ? "dragging" : "",
+                  task.status === "done" ? "done" : "",
+                  dropBeforeId === task.id
+                    ? dropPosition === "before"
+                      ? "drop-before"
+                      : "drop-after"
+                    : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
+                onDragOver={(event) => {
+                  if (canReorder) event.preventDefault();
+                }}
+                onDrop={(event) => {
+                  if (!canReorder) return;
+                  event.preventDefault();
+                  dropTask(task);
+                }}
+              >
+                <div className="task-row-check">
+                  {selectionMode && !task.trashed_at ? (
+                    <Checkbox
+                      aria-label={`选择 ${task.title}`}
+                      checked={selectedIds.has(task.id)}
+                      onChange={() => toggleSelected(task.id)}
+                    />
+                  ) : !task.trashed_at ? (
+                    <Checkbox
+                      aria-label={
+                        task.status === "done"
+                          ? `恢复 ${task.title}`
+                          : `完成 ${task.title}`
+                      }
+                      checked={task.status === "done"}
+                      disabled={task.status === "cancelled"}
+                      onChange={(event) => {
+                        if (task.status === "done") reopen.mutate(task);
+                        else if (event.target.checked)
+                          complete.mutate(task);
+                      }}
+                    />
+                  ) : null}
+                </div>
+                <div className="task-row-main">
+                  <div className="task-row-titleline">
+                    <button
+                      type="button"
+                      className="row-title-button"
+                      onClick={toggle}
+                      aria-expanded={expanded}
+                    >
+                      <h3>{task.title}</h3>
+                    </button>
+                    {task.trashed_at ? (
+                      <span className="row-deadline muted">
+                        {deadlineLabel(
+                          task.deadline_at,
+                          task.deadline_all_day,
+                          profile.timezone,
+                        )}
+                      </span>
+                    ) : (
+                      <InlineDeadline
+                        task={task}
+                        timezone={profile.timezone}
+                        onChange={(deadline_at, deadline_all_day) =>
+                          setDeadline.mutate({
+                            task,
+                            deadline_at,
+                            deadline_all_day,
+                          })
+                        }
+                      />
+                    )}
+                    {task.remind_at && (
+                      <span className="task-row-reminder">
+                        提醒 {displayTime(task.remind_at, profile.timezone)}
+                      </span>
+                    )}
+                    {taskList && (
+                      <span className="task-row-list">
+                        <span
+                          className="task-row-list-dot"
+                          style={{ background: taskList.color }}
+                        />
+                        {taskList.name}
+                      </span>
+                    )}
+                    {task.status !== "todo" && statusLabel && (
+                      <span className="task-row-list">{statusLabel}</span>
+                    )}
+                    {task.priority >= 3 && (
+                      <span className="task-row-priority">
+                        {priorityLabel(task.priority)}
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      className={
+                        task.flagged
+                          ? "text-action task-row-flag active"
+                          : "text-action task-row-flag"
+                      }
+                      aria-label={
+                        task.flagged
+                          ? `取消标记 ${task.title}`
+                          : `标记 ${task.title}`
+                      }
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setFlag.mutate({
+                          task,
+                          flagged: !task.flagged,
+                        });
+                      }}
+                    >
+                      {task.flagged ? "★" : "☆"}
+                    </button>
+                    <span className="row-chevron" aria-hidden="true">
+                      {expanded ? "▾" : "▸"}
+                    </span>
+                  </div>
+                  {expanded && (
+                    <div
+                      className="row-detail"
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      {task.description && (
+                        <p className="description">{task.description}</p>
+                      )}
+                      {task.tags.length > 0 && (
+                        <div className="row-detail-meta">
+                          {task.tags.map((tag) => (
+                            <span key={tag}>{tag}</span>
+                          ))}
+                        </div>
+                      )}
+                      {task.links.length > 0 && (
+                        <div className="task-links">
+                          {task.links.map((link) => (
+                            <a
+                              key={link}
+                              href={link}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              {link}
+                            </a>
+                          ))}
+                        </div>
+                      )}
+                      {task.parent_id && (
+                        <p className="muted">
+                          父任务：{relations([task.parent_id])}
+                        </p>
+                      )}
+                      {task.predecessor_ids.length > 0 && (
+                        <p className="muted">
+                          前置：{relations(task.predecessor_ids)}
+                        </p>
+                      )}
+                      {task.child_ids.length > 0 && !detailPage && (
+                        <p className="muted">
+                          子任务：{relations(task.child_ids)}
+                        </p>
+                      )}
+                      {task.blocked_by.length > 0 &&
+                        task.status !== "done" && (
+                          <p className="danger-text">
+                            等待前置：{relations(task.blocked_by_ids)}
+                          </p>
+                        )}
+                      <div className="row-detail-meta">
+                        <span>
+                          预计 {task.estimate_minutes ?? "—"} 分钟
+                        </span>
+                        <span>{priorityLabel(task.priority)}</span>
+                        {task.recurrence &&
+                          `重复：${recurrenceLabel(task.recurrence, task.recurrence_interval, task.recurrence_from_completion)}`}
+                        {task.completed_at &&
+                          `完成于 ${displayTime(task.completed_at, profile.timezone)}`}
+                      </div>
+                      {!task.trashed_at && (
+                        <>
+                          <SubtaskChecklist parent={task} />
+                          <AttachmentPanel taskId={task.id} />
+                        </>
+                      )}
+                      {confirmAction?.kind === "trash" &&
+                        confirmAction.task.id === task.id && (
+                          <InlineConfirm
+                            message={`子任务和依赖不会被删除。后续任务会标记前置任务不可用：${[
+                              ...task.dependent_ids,
+                              ...task.child_ids,
+                            ]
+                              .map(titleOf)
+                              .join("、")}`}
+                            confirmLabel="确认移入垃圾箱"
+                            loading={trashTask.isPending}
+                            onCancel={() => setConfirmAction(null)}
+                            onConfirm={() => {
+                              setConfirmAction(null);
+                              trashTask.mutate({
+                                task,
+                                confirmed: true,
+                              });
+                            }}
+                          />
+                        )}
+                      {confirmAction?.kind === "purge" &&
+                        confirmAction.task.id === task.id && (
+                          <InlineConfirm
+                            message="附件和关联记录会一并删除，无法恢复。"
+                            confirmLabel="确认永久删除"
+                            loading={purgeTask.isPending}
+                            onCancel={() => setConfirmAction(null)}
+                            onConfirm={() => {
+                              setConfirmAction(null);
+                              purgeTask.mutate(task);
+                            }}
+                          />
+                        )}
+                      <div className="row-actions">
+                        {task.trashed_at ? (
+                          <>
+                            <Button
+                              type="text"
+                              size="small"
+                              onClick={() => restoreTask.mutate(task)}
+                              loading={
+                                restoreTask.isPending &&
+                                restoreTask.variables?.id === task.id
+                              }
+                            >
+                              恢复任务
+                            </Button>
+                            <Button
+                              type="text"
+                              size="small"
+                              danger
+                              loading={
+                                purgeTask.isPending &&
+                                purgeTask.variables?.id === task.id
+                              }
+                              onClick={() =>
+                                setConfirmAction({
+                                  kind: "purge",
+                                  task,
+                                })
+                              }
+                            >
+                              永久删除
+                            </Button>
+                          </>
+                        ) : (
+                          <>
+                            <Button
+                              type="text"
+                              size="small"
+                              onClick={() =>
+                                setFlag.mutate({
+                                  task,
+                                  flagged: !task.flagged,
+                                })
+                              }
+                              loading={
+                                setFlag.isPending &&
+                                setFlag.variables?.task.id === task.id
+                              }
+                            >
+                              {task.flagged ? "取消标记" : "标记"}
+                            </Button>
+                            <SourceButton objectId={task.id} />
+                            <Button
+                              type="text"
+                              size="small"
+                              onClick={() =>
+                                open({ kind: "task", task })
+                              }
+                            >
+                              编辑
+                            </Button>
+                            <Button
+                              type="text"
+                              size="small"
+                              danger
+                              disabled={
+                                trashTask.isPending &&
+                                trashTask.variables?.task.id === task.id
+                              }
+                              onClick={() => remove(task)}
+                            >
+                              移入垃圾箱
+                            </Button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+                {timeline && (
+                  <span
+                    className="drag-handle plan-drag-handle"
+                    aria-label={`拖动 ${task.title}`}
+                    title="拖动到其他日期或调整顺序"
+                    onPointerDown={(event) => startTimelineDrag(event, task)}
+                  >
+                    ⋮⋮
+                  </span>
+                )}
+                {canReorder && !timeline && (
+                  <div className="task-row-reorder">
+                    <span
+                      className="drag-handle"
+                      draggable
+                      aria-label={`拖动 ${task.title}`}
+                      title="拖动排序"
+                      onDragStart={(event) => {
+                        setDraggingId(task.id);
+                        event.dataTransfer.effectAllowed = "move";
+                        event.dataTransfer.setData("text/plain", task.id);
+                      }}
+                      onDragEnd={() => setDraggingId(null)}
+                    >
+                      ⋮⋮
+                    </span>
+                    <Button
+                      type="text"
+                      size="small"
+                      aria-label={`上移 ${task.title}`}
+                      disabled={index === 0 || reorder.isPending}
+                      onClick={() => moveTask(task, -1)}
+                    >
+                      ↑
+                    </Button>
+                    <Button
+                      type="text"
+                      size="small"
+                      aria-label={`下移 ${task.title}`}
+                      disabled={
+                        index === visible.length - 1 ||
+                        reorder.isPending
+                      }
+                      onClick={() => moveTask(task, 1)}
+                    >
+                      ↓
+                    </Button>
+                  </div>
+                )}
+              </article>
+    );
+  };
+
   return (
     <>
       <header>
@@ -1321,12 +1946,14 @@ export default function TasksPage({ profile }: { profile: Profile }) {
               onChange={setStatus}
               options={[{ value: "all", label: "全部状态" }, ...states]}
             />
-            <Select
-              aria-label="任务排序"
-              value={sort}
-              onChange={setSort}
-              options={sortOptions}
-            />
+            {!timelineMode && (
+              <Select
+                aria-label="任务排序"
+                value={sort}
+                onChange={setSort}
+                options={sortOptions}
+              />
+            )}
             </div>
           </div>
           {saveFilterOpen && (
@@ -1682,6 +2309,13 @@ export default function TasksPage({ profile }: { profile: Profile }) {
             <Checkbox>仅日期（全天）</Checkbox>
           </Form.Item>
           <Form.Item
+            name="remind_at"
+            label={`提醒时间（${profile.timezone}）`}
+            extra="独立于截止时间，仅显示提醒，不发送系统通知。"
+          >
+            <Input type="datetime-local" />
+          </Form.Item>
+          <Form.Item
             name="recurrence"
             label="重复"
             extra="重复任务需要设置截止时间；完成当前任务后自动生成下一次。"
@@ -1946,6 +2580,116 @@ export default function TasksPage({ profile }: { profile: Profile }) {
           )}{" "}
           {currentQuery.error ? null : currentQuery.isPending ? (
             <Spin />
+          ) : timelineMode && visible.length ? (
+            <div className="plan-timeline">
+              {overdueGroups.length > 0 && (
+                <section className="plan-overdue">
+                  <h2 className="plan-section-title">逾期</h2>
+                  {overdueGroups.map((group) => (
+                    <div
+                      key={group.key}
+                      data-plan-date={group.key}
+                      className={
+                        dragOverDate === group.key
+                          ? "plan-day drag-over"
+                          : "plan-day"
+                      }
+                    >
+                      <div className="plan-day-heading">
+                        <strong>{group.label}</strong>
+                        <span>{group.tasks.length} 项</span>
+                      </div>
+                      <div className="plan-day-tasks">
+                        {group.tasks.map((task) => (
+                          <Fragment key={task.id}>
+                            {renderTaskCard(
+                              task,
+                              visible.findIndex((item) => item.id === task.id),
+                              true,
+                            )}
+                          </Fragment>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </section>
+              )}
+              <div
+                data-plan-nodate
+                className={
+                  dragOverDate === null
+                    ? "plan-day plan-no-date drag-over"
+                    : "plan-day plan-no-date"
+                }
+              >
+                <div className="plan-day-heading">
+                  <strong>无日期</strong>
+                  <span>
+                    {noDateTasks.length > 0 ? `${noDateTasks.length} 项` : ""}
+                  </span>
+                </div>
+                {noDateTasks.length > 0 ? (
+                  <div className="plan-day-tasks">
+                    {noDateTasks.map((task) => (
+                      <Fragment key={task.id}>
+                        {renderTaskCard(
+                          task,
+                          visible.findIndex((item) => item.id === task.id),
+                          true,
+                        )}
+                      </Fragment>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="plan-day-empty">拖到这里可清除日期</div>
+                )}
+              </div>
+              {timelineMonths.map((month) => (
+                <section className="plan-month" key={month.month}>
+                  <h2 className="plan-month-title">{month.month}</h2>
+                  {month.days.map((day) => (
+                    <div
+                      key={day.key}
+                      data-plan-date={day.key}
+                      className={
+                        dragOverDate === day.key
+                          ? "plan-day drag-over"
+                          : "plan-day"
+                      }
+                    >
+                      <div className="plan-day-heading">
+                        <strong>{day.label}</strong>
+                        <span>
+                          {day.tasks.length > 0
+                            ? `${day.tasks.length} 项`
+                            : ""}
+                        </span>
+                      </div>
+                      {day.tasks.length > 0 ? (
+                        <div className="plan-day-tasks">
+                          {day.tasks.map((task) => (
+                            <Fragment key={task.id}>
+                              {renderTaskCard(
+                                task,
+                                visible.findIndex((item) => item.id === task.id),
+                                true,
+                              )}
+                            </Fragment>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="plan-day-empty" />
+                      )}
+                    </div>
+                  ))}
+                </section>
+              ))}
+              {view !== "today" && monthsLoaded < 12 && (
+                <div ref={timelineSentinelRef} className="plan-sentinel">
+                  加载更多月份…
+                </div>
+              )}
+            </div>
           ) : !visible.length ? (
             <div className="empty-state">
               <Empty
@@ -1970,361 +2714,19 @@ export default function TasksPage({ profile }: { profile: Profile }) {
             </div>
           ) : (
             <div className={draggingId ? "rows dragging" : "rows"}>
-              {visible.map((task, index) => {
-                const taskList = listOf(task);
-                const expanded = expandedId === task.id;
-                const statusLabel = states.find(
-                  (state) => state.value === task.status,
-                )?.label;
-                const toggle = () =>
-                  setExpandedId(expanded ? null : task.id);
-                return (
-                  <Fragment key={task.id}>
-                    {!detailPage &&
-                      sort === "status" &&
-                      (index === 0 ||
-                        groupOf(visible[index - 1]) !== groupOf(task)) && (
-                        <h2 style={{ margin: "18px 0 4px" }}>
-                          {groupLabel(task)}
-                        </h2>
-                      )}
-                    <article
-                      className={[
-                        "task-row",
-                        "task-card",
-                        expanded ? "expanded" : "",
-                        draggingId === task.id ? "dragging" : "",
-                      ]
-                        .filter(Boolean)
-                        .join(" ")}
-                      onDragOver={(event) => {
-                        if (canReorder) event.preventDefault();
-                      }}
-                      onDrop={(event) => {
-                        if (!canReorder) return;
-                        event.preventDefault();
-                        dropTask(task);
-                      }}
-                    >
-                      <div className="task-row-check">
-                        {selectionMode && !task.trashed_at ? (
-                          <Checkbox
-                            aria-label={`选择 ${task.title}`}
-                            checked={selectedIds.has(task.id)}
-                            onChange={() => toggleSelected(task.id)}
-                          />
-                        ) : !task.trashed_at ? (
-                          <Checkbox
-                            aria-label={
-                              task.status === "done"
-                                ? `恢复 ${task.title}`
-                                : `完成 ${task.title}`
-                            }
-                            checked={task.status === "done"}
-                            disabled={task.status === "cancelled"}
-                            onChange={(event) => {
-                              if (task.status === "done") reopen.mutate(task);
-                              else if (event.target.checked)
-                                complete.mutate(task);
-                            }}
-                          />
-                        ) : null}
-                      </div>
-                      <div className="task-row-main">
-                        <div className="task-row-titleline">
-                          <button
-                            type="button"
-                            className="row-title-button"
-                            onClick={toggle}
-                            aria-expanded={expanded}
-                          >
-                            <h3>{task.title}</h3>
-                          </button>
-                          {task.trashed_at ? (
-                            <span className="row-deadline muted">
-                              {deadlineLabel(
-                                task.deadline_at,
-                                task.deadline_all_day,
-                                profile.timezone,
-                              )}
-                            </span>
-                          ) : (
-                            <InlineDeadline
-                              task={task}
-                              timezone={profile.timezone}
-                              onChange={(deadline_at, deadline_all_day) =>
-                                setDeadline.mutate({
-                                  task,
-                                  deadline_at,
-                                  deadline_all_day,
-                                })
-                              }
-                            />
-                          )}
-                          {taskList && (
-                            <span className="task-row-list">
-                              <span
-                                className="task-row-list-dot"
-                                style={{ background: taskList.color }}
-                              />
-                              {taskList.name}
-                            </span>
-                          )}
-                          {task.status !== "todo" && statusLabel && (
-                            <span className="task-row-list">{statusLabel}</span>
-                          )}
-                          {task.priority >= 3 && (
-                            <span className="task-row-priority">
-                              {priorityLabel(task.priority)}
-                            </span>
-                          )}
-                          <button
-                            type="button"
-                            className={
-                              task.flagged
-                                ? "text-action task-row-flag active"
-                                : "text-action task-row-flag"
-                            }
-                            aria-label={
-                              task.flagged
-                                ? `取消标记 ${task.title}`
-                                : `标记 ${task.title}`
-                            }
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              setFlag.mutate({
-                                task,
-                                flagged: !task.flagged,
-                              });
-                            }}
-                          >
-                            {task.flagged ? "★" : "☆"}
-                          </button>
-                          <span className="row-chevron" aria-hidden="true">
-                            {expanded ? "▾" : "▸"}
-                          </span>
-                        </div>
-                        {expanded && (
-                          <div
-                            className="row-detail"
-                            onClick={(event) => event.stopPropagation()}
-                          >
-                            {task.description && (
-                              <p className="description">{task.description}</p>
-                            )}
-                            {task.tags.length > 0 && (
-                              <div className="row-detail-meta">
-                                {task.tags.map((tag) => (
-                                  <span key={tag}>{tag}</span>
-                                ))}
-                              </div>
-                            )}
-                            {task.links.length > 0 && (
-                              <div className="task-links">
-                                {task.links.map((link) => (
-                                  <a
-                                    key={link}
-                                    href={link}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                  >
-                                    {link}
-                                  </a>
-                                ))}
-                              </div>
-                            )}
-                            {task.parent_id && (
-                              <p className="muted">
-                                父任务：{relations([task.parent_id])}
-                              </p>
-                            )}
-                            {task.predecessor_ids.length > 0 && (
-                              <p className="muted">
-                                前置：{relations(task.predecessor_ids)}
-                              </p>
-                            )}
-                            {task.child_ids.length > 0 && !detailPage && (
-                              <p className="muted">
-                                子任务：{relations(task.child_ids)}
-                              </p>
-                            )}
-                            {task.blocked_by.length > 0 &&
-                              task.status !== "done" && (
-                                <p className="danger-text">
-                                  等待前置：{relations(task.blocked_by_ids)}
-                                </p>
-                              )}
-                            <div className="row-detail-meta">
-                              <span>
-                                预计 {task.estimate_minutes ?? "—"} 分钟
-                              </span>
-                              <span>{priorityLabel(task.priority)}</span>
-                              {task.recurrence &&
-                                `重复：${recurrenceLabel(task.recurrence, task.recurrence_interval, task.recurrence_from_completion)}`}
-                              {task.completed_at &&
-                                `完成于 ${displayTime(task.completed_at, profile.timezone)}`}
-                            </div>
-                            {!task.trashed_at && (
-                              <>
-                                <SubtaskChecklist parent={task} />
-                                <AttachmentPanel taskId={task.id} />
-                              </>
-                            )}
-                            {confirmAction?.kind === "trash" &&
-                              confirmAction.task.id === task.id && (
-                                <InlineConfirm
-                                  message={`子任务和依赖不会被删除。后续任务会标记前置任务不可用：${[
-                                    ...task.dependent_ids,
-                                    ...task.child_ids,
-                                  ]
-                                    .map(titleOf)
-                                    .join("、")}`}
-                                  confirmLabel="确认移入垃圾箱"
-                                  loading={trashTask.isPending}
-                                  onCancel={() => setConfirmAction(null)}
-                                  onConfirm={() => {
-                                    setConfirmAction(null);
-                                    trashTask.mutate({
-                                      task,
-                                      confirmed: true,
-                                    });
-                                  }}
-                                />
-                              )}
-                            {confirmAction?.kind === "purge" &&
-                              confirmAction.task.id === task.id && (
-                                <InlineConfirm
-                                  message="附件和关联记录会一并删除，无法恢复。"
-                                  confirmLabel="确认永久删除"
-                                  loading={purgeTask.isPending}
-                                  onCancel={() => setConfirmAction(null)}
-                                  onConfirm={() => {
-                                    setConfirmAction(null);
-                                    purgeTask.mutate(task);
-                                  }}
-                                />
-                              )}
-                            <div className="row-actions">
-                              {task.trashed_at ? (
-                                <>
-                                  <Button
-                                    type="text"
-                                    size="small"
-                                    onClick={() => restoreTask.mutate(task)}
-                                    loading={
-                                      restoreTask.isPending &&
-                                      restoreTask.variables?.id === task.id
-                                    }
-                                  >
-                                    恢复任务
-                                  </Button>
-                                  <Button
-                                    type="text"
-                                    size="small"
-                                    danger
-                                    loading={
-                                      purgeTask.isPending &&
-                                      purgeTask.variables?.id === task.id
-                                    }
-                                    onClick={() =>
-                                      setConfirmAction({
-                                        kind: "purge",
-                                        task,
-                                      })
-                                    }
-                                  >
-                                    永久删除
-                                  </Button>
-                                </>
-                              ) : (
-                                <>
-                                  <Button
-                                    type="text"
-                                    size="small"
-                                    onClick={() =>
-                                      setFlag.mutate({
-                                        task,
-                                        flagged: !task.flagged,
-                                      })
-                                    }
-                                    loading={
-                                      setFlag.isPending &&
-                                      setFlag.variables?.task.id === task.id
-                                    }
-                                  >
-                                    {task.flagged ? "取消标记" : "标记"}
-                                  </Button>
-                                  <SourceButton objectId={task.id} />
-                                  <Button
-                                    type="text"
-                                    size="small"
-                                    onClick={() =>
-                                      open({ kind: "task", task })
-                                    }
-                                  >
-                                    编辑
-                                  </Button>
-                                  <Button
-                                    type="text"
-                                    size="small"
-                                    danger
-                                    disabled={
-                                      trashTask.isPending &&
-                                      trashTask.variables?.task.id === task.id
-                                    }
-                                    onClick={() => remove(task)}
-                                  >
-                                    移入垃圾箱
-                                  </Button>
-                                </>
-                              )}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                      {canReorder && (
-                        <div className="task-row-reorder">
-                          <span
-                            className="drag-handle"
-                            draggable
-                            aria-label={`拖动 ${task.title}`}
-                            title="拖动排序"
-                            onDragStart={(event) => {
-                              setDraggingId(task.id);
-                              event.dataTransfer.effectAllowed = "move";
-                              event.dataTransfer.setData("text/plain", task.id);
-                            }}
-                            onDragEnd={() => setDraggingId(null)}
-                          >
-                            ⋮⋮
-                          </span>
-                          <Button
-                            type="text"
-                            size="small"
-                            aria-label={`上移 ${task.title}`}
-                            disabled={index === 0 || reorder.isPending}
-                            onClick={() => moveTask(task, -1)}
-                          >
-                            ↑
-                          </Button>
-                          <Button
-                            type="text"
-                            size="small"
-                            aria-label={`下移 ${task.title}`}
-                            disabled={
-                              index === visible.length - 1 ||
-                              reorder.isPending
-                            }
-                            onClick={() => moveTask(task, 1)}
-                          >
-                            ↓
-                          </Button>
-                        </div>
-                      )}
-                    </article>
-                  </Fragment>
-                );
-              })}
+              {visible.map((task, index) => (
+                <Fragment key={task.id}>
+                  {!detailPage &&
+                    sort === "status" &&
+                    (index === 0 ||
+                      groupOf(visible[index - 1]) !== groupOf(task)) && (
+                      <h2 style={{ margin: "18px 0 4px" }}>
+                        {groupLabel(task)}
+                      </h2>
+                    )}
+                  {renderTaskCard(task, index)}
+                </Fragment>
+              ))}
             </div>
           )}
           {!detailPage && listTasks.hasNextPage && (

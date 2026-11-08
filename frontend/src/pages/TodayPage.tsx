@@ -187,8 +187,11 @@ export default function TodayPage({ profile }: { profile: Profile }) {
         t.status === "in_progress" ||
         (t.deadline_at && DateTime.fromISO(t.deadline_at) < tomorrow),
     )
-    .sort((a, b) =>
-      (a.deadline_at ?? "9999").localeCompare(b.deadline_at ?? "9999"),
+    .sort(
+      (a, b) =>
+        (a.deadline_at ?? "9999").localeCompare(b.deadline_at ?? "9999") ||
+        a.sort_order - b.sort_order ||
+        b.created_at.localeCompare(a.created_at),
     );
   const overdueTasks = todayTasks.filter(
     (t) => t.deadline_at && DateTime.fromISO(t.deadline_at) < now,
@@ -201,7 +204,11 @@ export default function TodayPage({ profile }: { profile: Profile }) {
     .sort((a, b) => {
       if (!a.deadline_at) return 1;
       if (!b.deadline_at) return -1;
-      return a.deadline_at.localeCompare(b.deadline_at);
+      return (
+        a.deadline_at.localeCompare(b.deadline_at) ||
+        a.sort_order - b.sort_order ||
+        b.created_at.localeCompare(a.created_at)
+      );
     })
     .filter(
       (t) => !t.deadline_at || DateTime.fromISO(t.deadline_at) < week,
@@ -250,6 +257,11 @@ export default function TodayPage({ profile }: { profile: Profile }) {
                 setDeadline.mutate({ task, deadline_at, deadline_all_day })
               }
             />
+            {task.remind_at && (
+              <span className="task-row-reminder">
+                提醒 {displayTime(task.remind_at, profile.timezone)}
+              </span>
+            )}
             {taskList && (
               <span className="task-row-list">
                 <span

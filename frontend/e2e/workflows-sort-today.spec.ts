@@ -1,6 +1,6 @@
 import { test, expect } from "./fixtures";
 import { DateTime } from "luxon";
-import { login, openTaskFilters } from "./support";
+import { login } from "./support";
 
 test("旗标标记、已标记视图与取消标记", async ({ page }) => {
   const headers = await login(page);
@@ -32,7 +32,7 @@ test("旗标标记、已标记视图与取消标记", async ({ page }) => {
   ).toBe(false);
 });
 
-test("手动排序可拖动并持久化", async ({ page }, testInfo) => {
+test("手动排序可拖动并持久化", async ({ page }) => {
   const headers = await login(page);
   const records = [];
   for (const title of ["任务A", "任务B", "任务C"]) {
@@ -49,15 +49,6 @@ test("手动排序可拖动并持久化", async ({ page }, testInfo) => {
   });
   await page.goto("/tasks");
   await expect(page.getByRole("heading", { name: "任务A" })).toBeVisible();
-  await openTaskFilters(page);
-  await page
-    .locator(".ant-select")
-    .filter({ has: page.getByRole("combobox", { name: "任务排序" }) })
-    .click();
-  await page.getByTitle("手动排序").click();
-  await expect(
-    page.locator(".ant-select-selection-item").filter({ hasText: "手动排序" }),
-  ).toBeVisible();
 
   const cardA = page
     .locator(".task-card")
@@ -65,17 +56,10 @@ test("手动排序可拖动并持久化", async ({ page }, testInfo) => {
   const cardC = page
     .locator(".task-card")
     .filter({ has: page.getByRole("heading", { name: "任务C" }) });
-  const expected =
-    testInfo.project.name === "mobile"
-      ? ["任务B", "任务A", "任务C"]
-      : ["任务B", "任务C", "任务A"];
-  if (testInfo.project.name === "mobile") {
-    await cardA.getByLabel("下移 任务A").click();
-  } else {
-    await cardA
-      .getByLabel("拖动 任务A")
-      .dragTo(cardC.getByRole("heading", { name: "任务C" }));
-  }
+  const expected = ["任务B", "任务A", "任务C"];
+  await cardA
+    .getByLabel("拖动 任务A")
+    .dragTo(cardC.getByRole("heading", { name: "任务C" }));
   await expect
     .poll(
       async () => {
@@ -251,4 +235,67 @@ test("今日快速添加、改期、一键完成与撤销", async ({ page }) => 
   ).json();
   expect(logs).toHaveLength(1);
   expect(logs[0].actual_minutes).toBe(15);
+});
+
+test("计划视图按日期分组并跨天拖拽", async ({ page }) => {
+  const headers = await login(page);
+  const auth = await (await page.request.get("/api/v1/auth/me")).json();
+  const zone = auth.user.timezone;
+  const today = DateTime.now().setZone(zone).startOf("day");
+  const todayKey = today.toISODate()!;
+  const tomorrowKey = today.plus({ days: 1 }).toISODate()!;
+  const remindAt = today.set({ hour: 9, minute: 0 }).toISO()!;
+  const reminder = await page.request.post("/api/v1/tasks", {
+    headers,
+    data: {
+      title: "提醒任务",
+      deadline_at: today.endOf("day").toISO(),
+      deadline_all_day: true,
+      remind_at: remindAt,
+    },
+  });
+  expect(reminder.status()).toBe(201);
+  const undated = await page.request.post("/api/v1/tasks", {
+    headers,
+    data: { title: "跨天任务" },
+  });
+  expect(undated.status()).toBe(201);
+
+  await page.goto("/tasks");
+  await expect(
+    page.locator(`[data-plan-date="${todayKey}"] .plan-day-heading strong`),
+  ).toContainText("今天");
+  await expect(
+    page.locator(`[data-plan-date="${tomorrowKey}"] .plan-day-heading strong`),
+  ).toContainText("明天");
+  const reminderCard = page
+    .locator(".task-card")
+    .filter({ has: page.getByRole("heading", { name: "提醒任务" }) });
+  await expect(reminderCard.getByText(/^提醒 /)).toBeVisible();
+
+  const source = page
+    .locator(".task-card")
+    .filter({ has: page.getByRole("heading", { name: "跨天任务" }) });
+  await source
+    .getByLabel("拖动 跨天任务")
+    .dragTo(page.locator(`[data-plan-date="${tomorrowKey}"]`));
+  await expect
+    .poll(
+      async () => {
+        const tasks = await (await page.request.get("/api/v1/tasks")).json();
+        const task = tasks.find(
+          (item: { title: string }) => item.title === "跨天任务",
+        );
+        return task.deadline_at
+          ? DateTime.fromISO(task.deadline_at).setZone(zone).toISODate()
+          : null;
+      },
+      { timeout: 10000 },
+    )
+    .toBe(tomorrowKey);
+  await expect(
+    page
+      .locator(`[data-plan-date="${tomorrowKey}"]`)
+      .getByRole("heading", { name: "跨天任务" }),
+  ).toBeVisible();
 });
