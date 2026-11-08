@@ -319,12 +319,14 @@ export default function HierarchyPage({
                 onCancel={() => setPendingSeriesSave(null)}
                 onConfirm={() => {
                   const values = pendingSeriesSave;
-                  setPendingSeriesSave(null);
-                  save.mutate({
-                    path: `/event-series/${id}`,
-                    method: "PUT",
-                    body: { ...values, confirmed: true },
-                  });
+                  save.mutate(
+                    {
+                      path: `/event-series/${id}`,
+                      method: "PUT",
+                      body: { ...values, confirmed: true },
+                    },
+                    { onSuccess: () => setPendingSeriesSave(null) },
+                  );
                 }}
               />
             )}

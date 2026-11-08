@@ -96,6 +96,7 @@ test("系列批量修改、事件删除与空课程清理", async ({ page }) => 
   await page
     .getByRole("button", { name: "确认批量修改", exact: true })
     .click();
+  await expect(page.getByText("已保存", { exact: true })).toBeVisible();
   await expect(page.getByRole("dialog")).not.toBeVisible();
   const events = await (await page.request.get("/api/v1/events")).json();
   expect(
