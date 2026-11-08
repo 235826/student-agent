@@ -83,6 +83,7 @@ test("草稿发布、重复课程单次变更与规则检查", async ({ page }, 
   await expect(page).toHaveURL(/\/calendar\/events\//);
   await page.reload();
   await page.getByRole("button", { name: "本次不参加", exact: true }).click();
+  await expect(page.getByText("已设为本次不参加")).toBeVisible();
   await expect(
     page.getByRole("button", { name: "恢复参加", exact: true }),
   ).toBeVisible();
@@ -95,6 +96,7 @@ test("草稿发布、重复课程单次变更与规则检查", async ({ page }, 
   await page.getByRole("link", { name: "所属每周课程", exact: true }).click();
   await page.locator(".instance-list a").first().click();
   await page.getByRole("button", { name: "恢复参加", exact: true }).click();
+  await expect(page.getByText("已恢复参加本次课程")).toBeVisible();
   await expect(
     page.getByRole("button", { name: "本次不参加", exact: true }),
   ).toBeVisible();

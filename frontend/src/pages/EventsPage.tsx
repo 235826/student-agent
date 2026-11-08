@@ -341,6 +341,11 @@ export default function EventsPage({ profile }: { profile: Profile }) {
         is_skipped: next,
         confirmed: true,
       });
+      client.setQueryData<Event[]>(["events"], (current) =>
+        current?.map((item) =>
+          item.id === event.id ? { ...item, is_skipped: next } : item,
+        ),
+      );
       void client.invalidateQueries({ queryKey: ["events"] });
       void client.invalidateQueries({ queryKey: ["series"] });
       void client.invalidateQueries({ queryKey: ["plans"] });
