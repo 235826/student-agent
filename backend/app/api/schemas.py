@@ -99,6 +99,7 @@ class TaskInput(Schema):
     flagged: bool = False
     deadline_at: datetime | None = None
     deadline_all_day: bool = False
+    remind_at: datetime | None = None
     estimate_minutes: Annotated[int, Field(gt=0, le=100000)] | None = None
     task_type: Annotated[str, Field(min_length=1, max_length=100)] | None = None
     recurrence: Recurrence | None = None
@@ -124,7 +125,7 @@ class TaskInput(Schema):
                 result.append(value)
         return result
 
-    @field_validator("deadline_at", "recurrence_until")
+    @field_validator("deadline_at", "remind_at", "recurrence_until")
     @classmethod
     def aware(cls, value: datetime | None) -> datetime | None:
         if value is not None and value.utcoffset() is None:
@@ -150,6 +151,7 @@ class TaskOut(TaskInput):
     sort_order: int
     subtask_order: int
     deadline_at: Timestamp | None
+    remind_at: Timestamp | None
     completed_at: Timestamp | None
     trashed_at: Timestamp | None
     created_at: Timestamp
@@ -162,6 +164,31 @@ class TaskOrderInput(Schema):
 
 class FlagInput(Schema):
     flagged: bool
+
+
+class ReminderInput(Schema):
+    remind_at: datetime | None = None
+
+    @field_validator("remind_at")
+    @classmethod
+    def aware(cls, value: datetime | None) -> datetime | None:
+        if value is not None and value.utcoffset() is None:
+            raise ValueError("提醒时间必须包含 UTC 偏移")
+        return value
+
+
+class PlanMoveInput(Schema):
+    task_id: str
+    deadline_at: datetime | None = None
+    deadline_all_day: bool = False
+    ordered_task_ids: list[str] = Field(default_factory=list, max_length=1000)
+
+    @field_validator("deadline_at")
+    @classmethod
+    def aware(cls, value: datetime | None) -> datetime | None:
+        if value is not None and value.utcoffset() is None:
+            raise ValueError("截止时间必须包含 UTC 偏移")
+        return value
 
 
 class TaskSummaryOut(Schema):

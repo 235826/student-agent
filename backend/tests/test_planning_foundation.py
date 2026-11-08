@@ -36,6 +36,7 @@ def update_task(client, record, **kwargs):
         "flagged",
         "deadline_at",
         "deadline_all_day",
+        "remind_at",
         "estimate_minutes",
         "task_type",
         "recurrence",
@@ -882,6 +883,58 @@ def test_task_reorder_and_new_task_appends(authenticated):
     )
     c.post(f"/api/v1/tasks/{ids[0]}/trash")
     assert c.post("/api/v1/tasks/reorder", json={"task_ids": [ids[0], ids[1]]}).status_code == 404
+
+
+def test_task_reminder_and_plan_move(authenticated):
+    c = authenticated
+    future = datetime.now(UTC) + timedelta(days=2)
+    reminder = datetime.now(UTC) + timedelta(days=1)
+    first = task(
+        c,
+        "计划任务A",
+        deadline_at=future.isoformat(),
+        remind_at=reminder.isoformat(),
+    )
+    second = task(c, "计划任务B")
+    assert first["remind_at"] is not None
+    assert abs(
+        datetime.fromisoformat(first["remind_at"].replace("Z", "+00:00")).timestamp()
+        - reminder.timestamp()
+    ) < 0.001
+    assert c.patch(
+        f"/api/v1/tasks/{second['id']}/reminder",
+        json={"remind_at": reminder.isoformat()},
+    ).status_code == 200
+    assert c.get(f"/api/v1/tasks/{second['id']}").json()["remind_at"] is not None
+
+    moved = c.post(
+        "/api/v1/tasks/plan/move",
+        json={
+            "task_id": second["id"],
+            "deadline_at": future.isoformat(),
+            "deadline_all_day": True,
+            "ordered_task_ids": [first["id"], second["id"]],
+        },
+    )
+    assert moved.status_code == 200, moved.text
+    assert moved.json()[0]["sort_order"] == 1
+    assert moved.json()[1]["sort_order"] == 2
+    record = c.get(f"/api/v1/tasks/{second['id']}").json()
+    assert record["deadline_all_day"] is True
+    assert abs(
+        datetime.fromisoformat(record["deadline_at"].replace("Z", "+00:00")).timestamp()
+        - future.timestamp()
+    ) < 0.001
+    assert c.post(
+        "/api/v1/tasks/plan/move",
+        json={
+            "task_id": second["id"],
+            "deadline_at": None,
+            "deadline_all_day": False,
+            "ordered_task_ids": [second["id"]],
+        },
+    ).status_code == 200
+    assert c.get(f"/api/v1/tasks/{second['id']}").json()["deadline_at"] is None
 
 
 def test_tag_usage_rename_and_trash(authenticated):

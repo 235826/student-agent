@@ -39,7 +39,7 @@ def main() -> None:
     engine = build_engine(database_url)
     with Session(engine) as db:
         version = db.scalar(text("SELECT version_num FROM alembic_version"))
-        if version != "0019":
+        if version != "0020":
             raise SystemExit("数据库尚未迁移到 0019，请先执行 alembic upgrade head")
         add_demo_account(db, args.username, args.password)
     engine.dispose()

@@ -245,6 +245,11 @@ def next_task_values(db: Session, user: User, task: Task, after_ms: int) -> dict
         "flagged": task.flagged,
         "deadline_at": deadline,
         "deadline_all_day": task.deadline_all_day,
+        "remind_at": (
+            deadline + (task.remind_at - task.deadline_at)
+            if task.remind_at is not None and task.deadline_at is not None
+            else None
+        ),
         "estimate_minutes": task.estimate_minutes,
         "task_type": task.task_type,
         "recurrence": task.recurrence,
@@ -366,6 +371,7 @@ def apply_task(db: Session, user: User, body: TaskInput, task: Task | None = Non
         require_impact_confirmation(db, task, body.confirm_impact)
     data = body.model_dump(exclude={"predecessor_ids", "confirm_impact", "tags"})
     data["deadline_at"] = int(body.deadline_at.timestamp() * 1000) if body.deadline_at else None
+    data["remind_at"] = int(body.remind_at.timestamp() * 1000) if body.remind_at else None
     data["recurrence_until"] = (
         int(body.recurrence_until.timestamp() * 1000) if body.recurrence_until else None
     )

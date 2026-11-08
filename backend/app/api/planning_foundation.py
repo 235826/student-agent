@@ -22,9 +22,11 @@ from app.api.schemas import (
     EventOut,
     EventPolicyInput,
     FlagInput,
+    PlanMoveInput,
     PolicyInput,
     PublishInput,
     PurgeOut,
+    ReminderInput,
     RuleInput,
     RuleOut,
     SavedFilterInput,
@@ -803,6 +805,48 @@ def update_deadline(task_id: str, body: DeadlineInput, db: DB, user: UserDep) ->
     task.deadline_all_day = body.deadline_all_day if body.deadline_at else False
     record_change(db, user, "task.deadline", task)
     return task_view(db, task)
+
+
+@router.patch("/tasks/{task_id}/reminder", response_model=TaskOut)
+def update_reminder(task_id: str, body: ReminderInput, db: DB, user: UserDep) -> TaskOut:
+    task = active_task(db, user, task_id)
+    task.remind_at = int(body.remind_at.timestamp() * 1000) if body.remind_at else None
+    record_change(db, user, "task.reminder", task, scheduling=False)
+    return task_view(db, task)
+
+
+@router.post("/tasks/plan/move", response_model=list[TaskOut])
+def move_task_in_plan(body: PlanMoveInput, db: DB, user: UserDep) -> list[TaskOut]:
+    task = active_task(db, user, body.task_id)
+    ordered_ids = list(dict.fromkeys(body.ordered_task_ids))
+    if task.id not in ordered_ids:
+        ordered_ids.append(task.id)
+    tasks = list(
+        db.scalars(
+            select(Task).where(
+                Task.workspace_id == user.workspace_id,
+                Task.trashed_at.is_(None),
+                Task.id.in_(ordered_ids),
+            )
+        )
+    )
+    if len(tasks) != len(ordered_ids):
+        raise HTTPException(404, "任务不存在")
+    by_id = {item.id: item for item in tasks}
+    target = by_id[task.id]
+    old_deadline = target.deadline_at
+    target.deadline_at = int(body.deadline_at.timestamp() * 1000) if body.deadline_at else None
+    target.deadline_all_day = body.deadline_all_day if body.deadline_at else False
+    for index, task_id in enumerate(ordered_ids, start=1):
+        by_id[task_id].sort_order = index
+    record_change(
+        db,
+        user,
+        "task.plan.move",
+        target,
+        scheduling=old_deadline != target.deadline_at,
+    )
+    return [task_view(db, by_id[task_id]) for task_id in ordered_ids]
 
 
 @router.patch("/tasks/{task_id}/flag", response_model=TaskOut)

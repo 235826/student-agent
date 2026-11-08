@@ -872,6 +872,40 @@ export interface paths {
         patch: operations["update_deadline_api_v1_tasks__task_id__deadline_patch"];
         trace?: never;
     };
+    "/api/v1/tasks/{task_id}/reminder": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Reminder */
+        patch: operations["update_reminder_api_v1_tasks__task_id__reminder_patch"];
+        trace?: never;
+    };
+    "/api/v1/tasks/plan/move": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Move Task In Plan */
+        post: operations["move_task_in_plan_api_v1_tasks_plan_move_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tasks/{task_id}/flag": {
         parameters: {
             query?: never;
@@ -1465,6 +1499,8 @@ export interface components {
              * @default false
              */
             deadline_all_day: boolean;
+            /** Remind At */
+            remind_at?: string | null;
             /** Estimate Minutes */
             estimate_minutes?: number | null;
             /** Task Type */
@@ -1998,6 +2034,20 @@ export interface components {
             /** Idempotency Key */
             idempotency_key: string;
         };
+        /** PlanMoveInput */
+        PlanMoveInput: {
+            /** Task Id */
+            task_id: string;
+            /** Deadline At */
+            deadline_at?: string | null;
+            /**
+             * Deadline All Day
+             * @default false
+             */
+            deadline_all_day: boolean;
+            /** Ordered Task Ids */
+            ordered_task_ids?: string[];
+        };
         /** PlanOut */
         PlanOut: {
             /** Id */
@@ -2113,6 +2163,11 @@ export interface components {
             start_time?: string | null;
             /** End Time */
             end_time?: string | null;
+        };
+        /** ReminderInput */
+        ReminderInput: {
+            /** Remind At */
+            remind_at?: string | null;
         };
         /** RuleInput */
         RuleInput: {
@@ -2414,6 +2469,8 @@ export interface components {
              * @default false
              */
             deadline_all_day: boolean;
+            /** Remind At */
+            remind_at?: string | null;
             /** Estimate Minutes */
             estimate_minutes?: number | null;
             /** Task Type */
@@ -2553,6 +2610,8 @@ export interface components {
              * @default false
              */
             deadline_all_day: boolean;
+            /** Remind At */
+            remind_at: string | null;
             /** Estimate Minutes */
             estimate_minutes?: number | null;
             /** Task Type */
@@ -8521,6 +8580,182 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TaskOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    update_reminder_api_v1_tasks__task_id__reminder_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReminderInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    move_task_in_plan_api_v1_tasks_plan_move_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlanMoveInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskOut"][];
                 };
             };
             /** @description Unauthorized */

@@ -94,6 +94,7 @@ class Task(Owned, Base):
     )
     deadline_at: Mapped[int | None] = mapped_column(BigInteger, index=True)
     deadline_all_day: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    remind_at: Mapped[int | None] = mapped_column(BigInteger, index=True)
     estimate_minutes: Mapped[int | None]
     task_type: Mapped[str | None]
     recurrence: Mapped[str | None] = mapped_column(String(20), nullable=True)
