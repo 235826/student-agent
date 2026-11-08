@@ -1,6 +1,6 @@
 import { test, expect } from "./fixtures";
 import { DateTime } from "luxon";
-import { login } from "./support";
+import { login, openTaskFilters } from "./support";
 
 test("旗标标记、已标记视图与取消标记", async ({ page }) => {
   const headers = await login(page);
@@ -49,6 +49,7 @@ test("手动排序可拖动并持久化", async ({ page }, testInfo) => {
   });
   await page.goto("/tasks");
   await expect(page.getByRole("heading", { name: "任务A" })).toBeVisible();
+  await openTaskFilters(page);
   await page
     .locator(".ant-select")
     .filter({ has: page.getByRole("combobox", { name: "任务排序" }) })

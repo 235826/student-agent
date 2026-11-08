@@ -1,6 +1,6 @@
 import { test, expect } from "./fixtures";
 import { DateTime } from "luxon";
-import { login } from "./support";
+import { login, openTaskFilters } from "./support";
 
 test("清单文件夹与保存筛选", async ({ page }) => {
   const headers = await login(page);
@@ -54,6 +54,7 @@ test("清单文件夹与保存筛选", async ({ page }) => {
 
   await search.fill("");
   await expect(page).toHaveURL(/[?&]saved=/);
+  await openTaskFilters(page);
   const savedSelect = page
     .locator(".ant-select")
     .filter({ has: page.getByRole("combobox", { name: "已保存筛选" }) });

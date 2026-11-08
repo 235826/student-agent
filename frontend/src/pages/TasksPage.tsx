@@ -166,6 +166,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
   const [bulkTagOpen, setBulkTagOpen] = useState(false);
   const [bulkTagValues, setBulkTagValues] = useState<string[]>([]);
   const [saveFilterOpen, setSaveFilterOpen] = useState(false);
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [filterName, setFilterName] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [confirmAction, setConfirmAction] = useState<
@@ -1099,6 +1100,15 @@ export default function TasksPage({ profile }: { profile: Profile }) {
       }`,
       onClose: () => clearFilter("sort"),
     });
+  if (savedFilterId)
+    filterChips.push({
+      key: "saved",
+      label: `筛选：${
+        (savedFilters.data ?? []).find((item) => item.id === savedFilterId)
+          ?.name ?? "已保存筛选"
+      }`,
+      onClose: () => setUrlValue("saved", "", ""),
+    });
   const clearAllFilters = () => {
     setSearch("");
     updateParams((next) => {
@@ -1107,6 +1117,15 @@ export default function TasksPage({ profile }: { profile: Profile }) {
       }
     });
   };
+  const searchInput = (
+    <Input.Search
+      className="task-search"
+      aria-label="搜索任务"
+      placeholder="搜索标题、描述、标签、链接或附件名"
+      value={search}
+      onChange={(e) => setSearch(e.target.value)}
+    />
+  );
   return (
     <>
       <header>
@@ -1191,17 +1210,32 @@ export default function TasksPage({ profile }: { profile: Profile }) {
                   清空垃圾箱
                 </Button>
               )}
+              <Button
+                type="text"
+                aria-label="筛选"
+                aria-expanded={mobileFiltersOpen}
+                aria-controls="task-filter-panel"
+                className={`mobile-filter-trigger ${
+                  mobileFiltersOpen ? "toolbar-toggle active" : "toolbar-toggle"
+                }`}
+                onClick={() => setMobileFiltersOpen((open) => !open)}
+              >
+                筛选
+                {filterChips.length > 0 && (
+                  <span className="filter-count">{filterChips.length}</span>
+                )}
+              </Button>
             </Space>
           </div>
-          <div className="task-filter-bar">
-            <Input.Search
-              className="task-search"
-              aria-label="搜索任务"
-              placeholder="搜索标题、描述、标签、链接或附件名"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-            <Select
+          <div
+            id="task-filter-panel"
+            className={
+              mobileFiltersOpen ? "task-filter-panel open" : "task-filter-panel"
+            }
+          >
+            <div className="task-filter-bar">
+              {searchInput}
+              <Select
               aria-label="筛选清单"
               value={listFilter}
               onChange={setListFilter}
@@ -1244,6 +1278,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
               onChange={setSort}
               options={sortOptions}
             />
+            </div>
           </div>
           {saveFilterOpen && (
             <span className="inline-filter-save">

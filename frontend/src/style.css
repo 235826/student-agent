@@ -159,6 +159,9 @@ header {
 .task-toolbar-actions .ant-btn:hover {
   color: var(--primary);
 }
+.mobile-filter-trigger {
+  display: none;
+}
 .task-filter-bar {
   display: flex;
   flex-wrap: wrap;
@@ -196,6 +199,20 @@ header {
 .filter-summary-label {
   color: var(--text-muted);
   margin-right: 2px;
+}
+.filter-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  margin-left: 4px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--primary);
+  color: #fff;
+  font-size: 11px;
+  line-height: 18px;
 }
 
 .section {
@@ -1087,6 +1104,12 @@ header {
   }
   .task-toolbar-actions .ant-btn {
     padding-inline: 4px;
+  }
+  .mobile-filter-trigger {
+    display: inline-flex;
+  }
+  .task-filter-panel:not(.open) .task-filter-bar > *:not(.task-search) {
+    display: none;
   }
   .task-filter-bar {
     padding: 10px;

@@ -1,5 +1,5 @@
 import { test, expect } from "./fixtures";
-import { login } from "./support";
+import { login, openTaskFilters } from "./support";
 
 test("清单创建、任务归类、筛选与完成历史", async ({ page }) => {
   await login(page);
@@ -43,6 +43,7 @@ test("清单创建、任务归类、筛选与完成历史", async ({ page }) => 
   await expect(card.getByText("数学", { exact: true })).toBeVisible();
   await expect(card.getByText("阅读", { exact: true })).toBeVisible();
 
+  await openTaskFilters(page);
   const listFilter = page.locator(".ant-select").filter({
     has: page.getByRole("combobox", { name: "筛选清单" }),
   });
