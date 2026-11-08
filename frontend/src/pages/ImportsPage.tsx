@@ -554,7 +554,7 @@ function DraftEditor({
                 {item.title || "未填写标题"}
               </span>
             </div>
-            <Space wrap>
+            <Space wrap size={6}>
               <Checkbox
                 checked={item.selected}
                 disabled={readOnly}
@@ -563,6 +563,7 @@ function DraftEditor({
                 纳入本次创建
               </Checkbox>
               <Select
+                size="small"
                 aria-label={`条目 ${index + 1} 类型`}
                 value={item.kind}
                 disabled={readOnly}
@@ -583,12 +584,16 @@ function DraftEditor({
                 已核对该条目的标题、日期、时间及关联关系
               </Checkbox>
               <Button
+                size="small"
                 disabled={readOnly}
                 onClick={() => toggleExpanded(item.key)}
               >
                 {expanded.has(item.key) ? "收起" : "展开"}
               </Button>
               <Button
+                size="small"
+                type="text"
+                danger
                 disabled={readOnly}
                 onClick={() => {
                   setItems(items.filter((_, i) => i !== index));

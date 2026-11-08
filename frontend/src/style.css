@@ -3,11 +3,11 @@
   --text-secondary: #55655c;
   --text-muted: #5f6f66;
   --text-faint: #66776d;
-  --border: #e4e8e1;
+  --border: var(--border);
   --surface: #fff;
-  --surface-muted: #f5f6f2;
-  --primary: #245c48;
-  --primary-soft: #eaf1e9;
+  --surface-muted: var(--surface-muted);
+  --primary: var(--primary);
+  --primary-soft: var(--primary-soft);
   --radius: 10px;
   font-family:
     system-ui,
@@ -50,7 +50,7 @@ aside {
   flex-shrink: 0;
   padding: 34px 22px;
   background: #fff;
-  border-right: 1px solid #e4e8e1;
+  border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   position: sticky;
@@ -61,7 +61,7 @@ aside {
   font-size: 13px;
   font-weight: 800;
   letter-spacing: 2px;
-  color: #245c48;
+  color: var(--primary);
 }
 .brand-sub {
   font-size: 12px;
@@ -82,8 +82,8 @@ nav a {
   font-size: 14px;
 }
 nav a.active {
-  color: #245c48;
-  background: #eaf1e9;
+  color: var(--primary);
+  background: var(--primary-soft);
   font-weight: 650;
 }
 .nav-count {
@@ -238,8 +238,8 @@ header {
   align-items: center;
   gap: 12px;
   padding: 8px 0;
-  border-top: 1px solid #e4e8e1;
-  border-bottom: 1px solid #e4e8e1;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
 }
 .view-tabs {
   display: flex;
@@ -301,7 +301,7 @@ header {
   cursor: pointer;
 }
 .text-action:hover {
-  color: #245c48;
+  color: var(--primary);
   text-decoration: underline;
 }
 .row-actions {
@@ -323,7 +323,7 @@ header {
 }
 .row-actions .ant-btn:hover {
   background: transparent;
-  color: #245c48;
+  color: var(--primary);
 }
 .row-actions .ant-btn-dangerous,
 .row-actions .ant-btn-dangerous:hover {
@@ -352,7 +352,7 @@ header {
   font-weight: 600;
 }
 .row-title-button:hover h3 {
-  color: #245c48;
+  color: var(--primary);
 }
 .row-chevron {
   color: #66776d;
@@ -397,7 +397,7 @@ header {
   line-height: 1.6;
 }
 .inline-confirm .text-action:focus-visible {
-  outline: 2px solid #245c48;
+  outline: 2px solid var(--primary);
   outline-offset: 2px;
 }
 .inline-confirm .text-action:disabled {
@@ -543,7 +543,7 @@ header {
   overflow-wrap: anywhere;
 }
 .task-links a {
-  color: #245c48;
+  color: var(--primary);
 }
 .quick-view h2 {
   margin: 0 0 12px;
@@ -571,8 +571,8 @@ header {
   font-size: 13px;
 }
 .fc .fc-button-primary {
-  background: #245c48;
-  border-color: #245c48;
+  background: var(--primary);
+  border-color: var(--primary);
 }
 .fc .fc-toolbar-title {
   font-size: 18px;
@@ -625,7 +625,7 @@ header {
     z-index: 100;
     padding: 20px 16px 10px;
     border-right: 0;
-    border-bottom: 1px solid #e4e8e1;
+    border-bottom: 1px solid var(--border);
   }
   .brand-sub {
     display: none;
@@ -709,7 +709,7 @@ header {
   margin-top: 20px;
 }
 .pair-result {
-  border-top: 1px solid #e4e8e1;
+  border-top: 1px solid var(--border);
   padding: 16px 0;
   overflow-wrap: anywhere;
 }
@@ -917,7 +917,7 @@ header {
   justify-content: space-between;
   gap: 16px;
   margin-bottom: 8px;
-  border-bottom: 1px solid #e4e8e1;
+  border-bottom: 1px solid var(--border);
   padding-bottom: 8px;
 }
 .section-heading h2 {
@@ -977,7 +977,7 @@ header {
 }
 .agenda-time {
   font-variant-numeric: tabular-nums;
-  color: #245c48;
+  color: var(--primary);
   min-width: 112px;
 }
 .agent-card {
@@ -987,7 +987,7 @@ header {
   justify-content: space-between;
   gap: 20px;
   padding: 14px 0;
-  border-top: 1px solid #e4e8e1;
+  border-top: 1px solid var(--border);
 }
 .agent-card p {
   margin: 4px 0 0;
@@ -1043,7 +1043,7 @@ header {
   width: 100%;
   min-height: 2px;
   border-radius: 4px 4px 0 0;
-  background: #245c48;
+  background: var(--primary);
 }
 .stats-bar-label {
   margin-top: 4px;
@@ -1179,7 +1179,7 @@ header {
 .native-datetime {
   height: 36px;
   padding: 4px 11px;
-  border: 1px solid #d9e0d7;
+  border: 1px solid var(--border);
   border-radius: 8px;
   background: #fff;
   color: var(--text-primary);
