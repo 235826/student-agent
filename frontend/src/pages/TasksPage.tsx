@@ -12,6 +12,7 @@ import {
 } from "react-router-dom";
 import SourceButton from "../components/SourceButton";
 import InlineDeadline from "../components/InlineDeadline";
+import InlineConfirm from "../components/InlineConfirm";
 import {
   Fragment,
   useCallback,
@@ -31,7 +32,6 @@ import {
   App,
   Button,
   Checkbox,
-  Dropdown,
   Empty,
   Form,
   Input,
@@ -148,7 +148,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
   const setListFilter = (next: string) => setUrlValue("list", next, "all");
   const setTagFilter = (next: string) => setUrlValue("tag", next, "all");
   const client = useQueryClient();
-  const { message, modal } = App.useApp();
+  const { message } = App.useApp();
   const [search, setSearch] = useState(debouncedSearch);
   const [listManager, setListManager] = useState(false);
   const [tagManager, setTagManager] = useState(false);
@@ -160,6 +160,23 @@ export default function TasksPage({ profile }: { profile: Profile }) {
   const [saveFilterOpen, setSaveFilterOpen] = useState(false);
   const [filterName, setFilterName] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [confirmAction, setConfirmAction] = useState<
+    | { kind: "trash"; task: Task }
+    | { kind: "purge"; task: Task }
+    | { kind: "publish"; draft: Draft }
+    | { kind: "deleteDraft"; draft: Draft }
+    | { kind: "bulkTrash" }
+    | { kind: "clearTrash" }
+    | null
+  >(null);
+  const [pendingCancel, setPendingCancel] = useState<{
+    task: Task;
+    body: TaskInput;
+  } | null>(null);
+  const [bulkDeadlineOpen, setBulkDeadlineOpen] = useState(false);
+  const [bulkDeadlineValue, setBulkDeadlineValue] = useState("");
+  const [bulkMoveOpen, setBulkMoveOpen] = useState(false);
+  const [bulkMoveList, setBulkMoveList] = useState("inbox");
   const [editor, setEditor] = useState<Editor | null>(
     isNew || params.has("new") ? { kind: "task" } : null,
   );
@@ -184,6 +201,9 @@ export default function TasksPage({ profile }: { profile: Profile }) {
   useEffect(() => {
     setSelectedIds(new Set());
     setExpandedId(null);
+    setConfirmAction(null);
+    setBulkDeadlineOpen(false);
+    setBulkMoveOpen(false);
   }, [view, listFilter, tagFilter, status, debouncedSearch]);
   useEffect(() => {
     if (id) setExpandedId(id);
@@ -204,6 +224,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
   }, [debouncedSearch]);
   const closeEditor = () => {
     setEditor(null);
+    setPendingCancel(null);
     if (isNew) {
       const back = backTarget(params.get("from"), {
         to: "/tasks",
@@ -779,54 +800,34 @@ export default function TasksPage({ profile }: { profile: Profile }) {
         return;
       }
       const task = editor?.kind === "task" ? editor.task : undefined;
-      const submit = (confirmed = false) =>
-        mutation.mutate({
-          path: task ? `/tasks/${task.id}` : "/tasks",
-          method: task ? "PUT" : "POST",
-          body: { ...body, confirm_impact: confirmed },
-        });
       if (
         task &&
         body.status === "cancelled" &&
         task.status !== "cancelled" &&
         (task.dependent_ids.length || task.child_ids.length)
       ) {
-        modal.confirm({
-          title: "确认取消关联任务",
-          content:
-            "关联子任务和依赖会保留，后续任务将被阻塞。受影响任务：" +
-            [...task.dependent_ids, ...task.child_ids].map(titleOf).join("、"),
-          onOk: () => submit(true),
-        });
-      } else submit();
+        setPendingCancel({ task, body });
+        return;
+      }
+      mutation.mutate({
+        path: task ? `/tasks/${task.id}` : "/tasks",
+        method: task ? "PUT" : "POST",
+        body: { ...body, confirm_impact: false },
+      });
     } catch (e) {
       if (e instanceof Error) void message.error(e.message);
     }
   };
   const remove = (task: Task) => {
-    if (task.dependent_ids.length || task.child_ids.length)
-      modal.confirm({
-        title: "确认移入垃圾箱",
-        content:
-          "子任务和依赖不会被删除。后续任务会标记前置任务不可用：" +
-          [...task.dependent_ids, ...task.child_ids].map(titleOf).join("、"),
-        onOk: () => trashTask.mutate({ task, confirmed: true }),
-      });
-    else trashTask.mutate({ task });
+    if (task.dependent_ids.length || task.child_ids.length) {
+      setExpandedId(task.id);
+      setConfirmAction({ kind: "trash", task });
+    } else {
+      trashTask.mutate({ task });
+    }
   };
   const publish = (draft: Draft) =>
-    modal.confirm({
-      title: "确认发布任务草稿",
-      content: `将“${draft.payload.title || "未命名草稿"}”（版本 ${draft.revision}）发布为正式任务。发布前会再次检查字段和依赖。`,
-      onOk: () =>
-        publishWrite.mutateAsync({
-          path: `/drafts/${draft.id}/publish`,
-          body: {
-            revision: draft.revision,
-            idempotency_key: `draft-${draft.id}-r${draft.revision}`,
-          },
-        }),
-    });
+    setConfirmAction({ kind: "publish", draft });
   const currentQuery = detailPage ? detailTaskQuery : listTasks;
   const listOf = (task: Task) =>
     (lists.data ?? []).find((list) => list.id === task.list_id);
@@ -1109,16 +1110,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
             <Button
               type="text"
               danger
-              onClick={() =>
-                modal.confirm({
-                  title: "清空垃圾箱？",
-                  content:
-                    "垃圾箱中的任务、附件和关联记录将永久删除，无法恢复。",
-                  okText: "清空垃圾箱",
-                  cancelText: "取消",
-                  onOk: () => purgeTrash.mutate(),
-                })
-              }
+              onClick={() => setConfirmAction({ kind: "clearTrash" })}
             >
               清空垃圾箱
             </Button>
@@ -1205,6 +1197,21 @@ export default function TasksPage({ profile }: { profile: Profile }) {
           )}
         </Space>
       )}
+      {confirmAction?.kind === "clearTrash" && (
+        <div className="toolbar">
+          <InlineConfirm
+            message="垃圾箱中的任务、附件和关联记录将永久删除，无法恢复。"
+            confirmLabel="确认清空垃圾箱"
+            loading={purgeTrash.isPending}
+            onCancel={() => setConfirmAction(null)}
+            onConfirm={() =>
+              purgeTrash.mutate(undefined, {
+                onSuccess: () => setConfirmAction(null),
+              })
+            }
+          />
+        </div>
+      )}
       {!inbox && !detailPage && selectionMode && (
         <div className="toolbar bulk-bar">
           <Space wrap>
@@ -1225,23 +1232,76 @@ export default function TasksPage({ profile }: { profile: Profile }) {
             >
               恢复待办
             </Button>
-            <Dropdown
-              menu={{
-                items: quickDeadlineOptions(
-                  DateTime.now().setZone(profile.timezone),
-                ).map(({ key, label }) => ({ key, label })),
-                onClick: ({ key }) => {
-                  const option = quickDeadlineOptions(
-                    DateTime.now().setZone(profile.timezone),
-                  ).find((item) => item.key === key);
-                  if (option) runBulk("deadline", { deadline: option });
-                },
+            <Button
+              type="text"
+              disabled={!selectedIds.size || bulk.isPending}
+              onClick={() => {
+                setBulkDeadlineValue("");
+                setBulkDeadlineOpen((open) => !open);
               }}
             >
-              <Button type="text" disabled={!selectedIds.size || bulk.isPending}>
-                改期
-              </Button>
-            </Dropdown>
+              改期
+            </Button>
+            {bulkDeadlineOpen && (
+              <span className="inline-filter-save">
+                {quickDeadlineOptions(
+                  DateTime.now().setZone(profile.timezone),
+                ).map((option) => (
+                  <Button
+                    key={option.key}
+                    type="text"
+                    size="small"
+                    disabled={!selectedIds.size || bulk.isPending}
+                    onClick={() => {
+                      runBulk("deadline", { deadline: option });
+                      setBulkDeadlineOpen(false);
+                    }}
+                  >
+                    {option.label}
+                  </Button>
+                ))}
+                <input
+                  type="datetime-local"
+                  aria-label="批量截止时间"
+                  value={bulkDeadlineValue}
+                  onChange={(event) =>
+                    setBulkDeadlineValue(event.target.value)
+                  }
+                />
+                <Button
+                  type="text"
+                  size="small"
+                  disabled={!bulkDeadlineValue || bulk.isPending}
+                  onClick={() => {
+                    if (!bulkDeadlineValue) return;
+                    const value = deadlineInstant(
+                      bulkDeadlineValue,
+                      false,
+                      profile.timezone,
+                    );
+                    if (!value) return;
+                    runBulk("deadline", {
+                      deadline: {
+                        key: "custom",
+                        label: "自定义",
+                        deadline_at: value,
+                        deadline_all_day: false,
+                      },
+                    });
+                    setBulkDeadlineOpen(false);
+                  }}
+                >
+                  应用
+                </Button>
+                <Button
+                  type="text"
+                  size="small"
+                  onClick={() => setBulkDeadlineOpen(false)}
+                >
+                  取消
+                </Button>
+              </span>
+            )}
             <Button
               type="text"
               disabled={!selectedIds.size || bulk.isPending}
@@ -1292,37 +1352,56 @@ export default function TasksPage({ profile }: { profile: Profile }) {
                 </Button>
               </span>
             )}
-            <Dropdown
-              menu={{
-                items: [
-                  { key: "inbox", label: "收件箱（未分类）" },
-                  ...(lists.data ?? []).map((list) => ({
-                    key: list.id,
-                    label: list.name,
-                  })),
-                ],
-                onClick: ({ key }) =>
-                  runBulk("move", { listId: key === "inbox" ? null : key }),
-              }}
+            <Button
+              type="text"
+              disabled={!selectedIds.size || bulk.isPending}
+              onClick={() => setBulkMoveOpen((open) => !open)}
             >
-              <Button type="text" disabled={!selectedIds.size || bulk.isPending}>
-                移动清单
-              </Button>
-            </Dropdown>
+              移动清单
+            </Button>
+            {bulkMoveOpen && (
+              <span className="inline-filter-save">
+                <Select
+                  aria-label="批量移动到清单"
+                  value={bulkMoveList}
+                  onChange={setBulkMoveList}
+                  options={[
+                    { value: "inbox", label: "收件箱（未分类）" },
+                    ...(lists.data ?? []).map((list) => ({
+                      value: list.id,
+                      label: list.name,
+                    })),
+                  ]}
+                  style={{ minWidth: 180 }}
+                />
+                <Button
+                  type="text"
+                  size="small"
+                  disabled={bulk.isPending}
+                  onClick={() => {
+                    runBulk("move", {
+                      listId: bulkMoveList === "inbox" ? null : bulkMoveList,
+                    });
+                    setBulkMoveOpen(false);
+                  }}
+                >
+                  应用
+                </Button>
+                <Button
+                  type="text"
+                  size="small"
+                  onClick={() => setBulkMoveOpen(false)}
+                >
+                  取消
+                </Button>
+              </span>
+            )}
             <Button
               type="text"
               danger
               disabled={!selectedIds.size}
               loading={bulk.isPending}
-              onClick={() =>
-                modal.confirm({
-                  title: "移入垃圾箱",
-                  content: `将选中的 ${selectedIds.size} 个任务移入垃圾箱？有关联任务可能被阻塞。`,
-                  okText: "移入垃圾箱",
-                  cancelText: "取消",
-                  onOk: () => runBulk("trash"),
-                })
-              }
+              onClick={() => setConfirmAction({ kind: "bulkTrash" })}
             >
               移入垃圾箱
             </Button>
@@ -1336,6 +1415,18 @@ export default function TasksPage({ profile }: { profile: Profile }) {
               退出批量
             </Button>
           </Space>
+          {confirmAction?.kind === "bulkTrash" && (
+            <InlineConfirm
+              message={`将选中的 ${selectedIds.size} 个任务移入垃圾箱？有关联任务可能被阻塞。`}
+              confirmLabel="确认移入垃圾箱"
+              loading={bulk.isPending}
+              onCancel={() => setConfirmAction(null)}
+              onConfirm={() => {
+                setConfirmAction(null);
+                runBulk("trash");
+              }}
+            />
+          )}
         </div>
       )}
       {editor && (
@@ -1513,6 +1604,27 @@ export default function TasksPage({ profile }: { profile: Profile }) {
             父子关系用于组织任务；执行先后由前置任务决定。允许并行仍须有匹配的组合规则。
           </p>
         </Form>
+          {pendingCancel && (
+            <InlineConfirm
+              message={`关联子任务和依赖会保留，后续任务将被阻塞。受影响任务：${[
+                ...pendingCancel.task.dependent_ids,
+                ...pendingCancel.task.child_ids,
+              ]
+                .map(titleOf)
+                .join("、")}`}
+              confirmLabel="确认取消任务"
+              loading={mutation.isPending}
+              onCancel={() => setPendingCancel(null)}
+              onConfirm={() => {
+                mutation.mutate({
+                  path: `/tasks/${pendingCancel.task.id}`,
+                  method: "PUT",
+                  body: { ...pendingCancel.body, confirm_impact: true },
+                });
+                setPendingCancel(null);
+              }}
+            />
+          )}
           <div className="row-actions">
             <Button type="text" onClick={closeEditor}>
               取消
@@ -1602,20 +1714,48 @@ export default function TasksPage({ profile }: { profile: Profile }) {
                         size="small"
                         danger
                         onClick={() =>
-                          modal.confirm({
-                            title: "删除任务草稿？",
-                            content: "任务草稿将被删除，不会影响正式任务。",
-                            onOk: () =>
-                              draftDelete.mutateAsync({
-                                path: `/drafts/${draft.id}?revision=${draft.revision}`,
-                                method: "DELETE",
-                              }),
-                          })
+                          setConfirmAction({ kind: "deleteDraft", draft })
                         }
                       >
                         删除任务草稿
                       </Button>
                     </div>
+                    {confirmAction?.kind === "publish" &&
+                      confirmAction.draft.id === draft.id && (
+                        <InlineConfirm
+                          message={`将“${draft.payload.title || "未命名草稿"}”（版本 ${draft.revision}）发布为正式任务。发布前会再次检查字段和依赖。`}
+                          confirmLabel="确认发布任务"
+                          danger={false}
+                          loading={publishWrite.isPending}
+                          onCancel={() => setConfirmAction(null)}
+                          onConfirm={() => {
+                            setConfirmAction(null);
+                            publishWrite.mutate({
+                              path: `/drafts/${draft.id}/publish`,
+                              body: {
+                                revision: draft.revision,
+                                idempotency_key: `draft-${draft.id}-r${draft.revision}`,
+                              },
+                            });
+                          }}
+                        />
+                      )}
+                    {confirmAction?.kind === "deleteDraft" &&
+                      confirmAction.draft.id === draft.id && (
+                        <InlineConfirm
+                          message="任务草稿将被删除，不会影响正式任务。"
+                          confirmLabel="确认删除草稿"
+                          loading={draftDelete.isPending}
+                          onCancel={() => setConfirmAction(null)}
+                          onConfirm={() => {
+                            setConfirmAction(null);
+                            draftDelete.mutate({
+                              path: `/drafts/${draft.id}?revision=${draft.revision}`,
+                              method: "DELETE",
+                            });
+                          }}
+                        />
+                      )}
                   </div>
                 </article>
               ))}
@@ -1853,6 +1993,40 @@ export default function TasksPage({ profile }: { profile: Profile }) {
                                 <AttachmentPanel taskId={task.id} />
                               </>
                             )}
+                            {confirmAction?.kind === "trash" &&
+                              confirmAction.task.id === task.id && (
+                                <InlineConfirm
+                                  message={`子任务和依赖不会被删除。后续任务会标记前置任务不可用：${[
+                                    ...task.dependent_ids,
+                                    ...task.child_ids,
+                                  ]
+                                    .map(titleOf)
+                                    .join("、")}`}
+                                  confirmLabel="确认移入垃圾箱"
+                                  loading={trashTask.isPending}
+                                  onCancel={() => setConfirmAction(null)}
+                                  onConfirm={() => {
+                                    setConfirmAction(null);
+                                    trashTask.mutate({
+                                      task,
+                                      confirmed: true,
+                                    });
+                                  }}
+                                />
+                              )}
+                            {confirmAction?.kind === "purge" &&
+                              confirmAction.task.id === task.id && (
+                                <InlineConfirm
+                                  message="附件和关联记录会一并删除，无法恢复。"
+                                  confirmLabel="确认永久删除"
+                                  loading={purgeTask.isPending}
+                                  onCancel={() => setConfirmAction(null)}
+                                  onConfirm={() => {
+                                    setConfirmAction(null);
+                                    purgeTask.mutate(task);
+                                  }}
+                                />
+                              )}
                             <div className="row-actions">
                               {task.trashed_at ? (
                                 <>
@@ -1876,13 +2050,9 @@ export default function TasksPage({ profile }: { profile: Profile }) {
                                       purgeTask.variables?.id === task.id
                                     }
                                     onClick={() =>
-                                      modal.confirm({
-                                        title: "永久删除任务？",
-                                        content:
-                                          "附件和关联记录会一并删除，无法恢复。",
-                                        okText: "永久删除",
-                                        cancelText: "取消",
-                                        onOk: () => purgeTask.mutate(task),
+                                      setConfirmAction({
+                                        kind: "purge",
+                                        task,
                                       })
                                     }
                                   >

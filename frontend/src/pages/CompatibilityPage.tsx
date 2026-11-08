@@ -29,6 +29,7 @@ import type {
 } from "../api";
 import { displayTime } from "../time";
 import { currentLocation, withFrom } from "../navigation";
+import InlineConfirm from "../components/InlineConfirm";
 const scopes = [
   { value: "course", label: "课程" },
   { value: "event", label: "具体事件" },
@@ -61,7 +62,7 @@ export default function CompatibilityPage({ profile }: { profile: Profile }) {
       return next;
     });
   const client = useQueryClient();
-  const { message, modal } = App.useApp();
+  const { message } = App.useApp();
   const tasks = useQuery({
     queryKey: ["tasks", false],
     queryFn: () => api<Task[]>("/tasks"),
@@ -83,6 +84,7 @@ export default function CompatibilityPage({ profile }: { profile: Profile }) {
     queryFn: () => api<Rule[]>("/compatibility-rules"),
   });
   const [editing, setEditing] = useState<Rule | null | undefined>(undefined);
+  const [confirmingRuleId, setConfirmingRuleId] = useState<string | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
   const [form] = Form.useForm();
   const [typeForm] = Form.useForm();
@@ -341,23 +343,27 @@ export default function CompatibilityPage({ profile }: { profile: Profile }) {
                           size="small"
                           danger
                           disabled={write.isPending}
-                          onClick={() =>
-                            modal.confirm({
-                              title: "停用组合规则？",
-                              content:
-                                "后续检查将不再使用此规则；历史记录保留。",
-                              onOk: () =>
-                                write.mutateAsync({
-                                  path: `/compatibility-rules/${rule.id}`,
-                                  method: "DELETE",
-                                }),
-                            })
-                          }
+                          onClick={() => setConfirmingRuleId(rule.id)}
                         >
                           停用规则
                         </Button>
                       )}
                     </div>
+                    {confirmingRuleId === rule.id && (
+                      <InlineConfirm
+                        message="后续检查将不再使用此规则；历史记录保留。"
+                        confirmLabel="确认停用规则"
+                        loading={write.isPending}
+                        onCancel={() => setConfirmingRuleId(null)}
+                        onConfirm={() => {
+                          setConfirmingRuleId(null);
+                          write.mutate({
+                            path: `/compatibility-rules/${rule.id}`,
+                            method: "DELETE",
+                          });
+                        }}
+                      />
+                    )}
                     </div>
                   </article>
                 ))

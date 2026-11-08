@@ -270,6 +270,24 @@ header {
   font-weight: 600;
   color: #4f6b5d;
 }
+.inline-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+  color: #69776f;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.inline-confirm .text-action:focus-visible {
+  outline: 2px solid #245c48;
+  outline-offset: 2px;
+}
+.inline-confirm .text-action:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
 .inline-deadline-editor {
   display: flex;
   flex-wrap: wrap;

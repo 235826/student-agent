@@ -47,8 +47,7 @@ test("排程预览、确认、版本保留及失效提示", async ({ page }, inf
   await expect(report.getByText("已排 60 分钟 · 未排 0 分钟")).toBeVisible();
   await page.getByRole("button", { name: "确认采用" }).click();
   await page
-    .getByRole("dialog")
-    .getByRole("button", { name: /^确\s*定$/ })
+    .getByRole("button", { name: "确认采用计划", exact: true })
     .click();
   await expect(page.getByText("已采用计划", { exact: true })).toBeVisible();
   const firstPlanUrl = page.url();

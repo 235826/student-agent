@@ -8,6 +8,7 @@ import {
   useLocation,
 } from "react-router-dom";
 import SourceButton from "../components/SourceButton";
+import InlineConfirm from "../components/InlineConfirm";
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -90,7 +91,7 @@ export default function EventsPage({ profile }: { profile: Profile }) {
     setParams(next, { replace: true });
   };
   const client = useQueryClient();
-  const { message, modal } = App.useApp();
+  const { message } = App.useApp();
   const [editing, setEditing] = useState<Event | null | undefined>(
     isNewEvent || params.has("new") ? null : undefined,
   );
@@ -100,6 +101,10 @@ export default function EventsPage({ profile }: { profile: Profile }) {
     null,
   );
   const [typeOpen, setTypeOpen] = useState(false);
+  const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(
+    null,
+  );
+  const [skippingId, setSkippingId] = useState<string | null>(null);
   const [form] = Form.useForm();
   const [seriesForm] = Form.useForm();
   const [courseForm] = Form.useForm();
@@ -328,18 +333,39 @@ export default function EventsPage({ profile }: { profile: Profile }) {
           : editing.series_details;
     form.setFieldValue(field, source ?? "");
   };
-  const skip = (event: Event) =>
-    modal.confirm({
-      title: event.is_skipped ? "确认恢复参加本次课程" : "确认本次不参加",
-      content:
-        "仅改变这一次课程的参加状态，每周课程和其他周次保持不变。恢复参加后，该时段重新计为占用。",
-      onOk: () =>
-        write.mutateAsync({
-          path: `/events/${event.id}/skip`,
-          method: "PATCH",
-          body: { is_skipped: !event.is_skipped, confirmed: true },
-        }),
-    });
+  const skip = async (event: Event) => {
+    const next = !event.is_skipped;
+    setSkippingId(event.id);
+    try {
+      await api(`/events/${event.id}/skip`, "PATCH", {
+        is_skipped: next,
+        confirmed: true,
+      });
+      void client.invalidateQueries({ queryKey: ["events"] });
+      void client.invalidateQueries({ queryKey: ["series"] });
+      void client.invalidateQueries({ queryKey: ["plans"] });
+      message.open({
+        type: "success",
+        duration: 8,
+        content: (
+          <Space wrap>
+            <span>{next ? "已设为本次不参加" : "已恢复参加本次课程"}</span>
+            <Button
+              type="text"
+              size="small"
+              onClick={() => void skip({ ...event, is_skipped: next })}
+            >
+              撤销
+            </Button>
+          </Space>
+        ),
+      });
+    } catch (error) {
+      void message.error(errorText(error));
+    } finally {
+      setSkippingId(null);
+    }
+  };
   return (
     <>
       <header>
@@ -549,16 +575,7 @@ export default function EventsPage({ profile }: { profile: Profile }) {
                   <Button
                     danger
                     loading={remove.isPending}
-                    onClick={() =>
-                      modal.confirm({
-                        title: "删除这次事件？",
-                        content: event.series_id
-                          ? "将永久删除本次课程和对应的本次调整。其他周次与每周课程保留，但该周次永久缺失，后续编辑每周课程不会补回；导入来源与历史计划保留，当前计划将标记为依据已变化。"
-                          : "将永久删除本次事件和对应的本次调整；导入来源与历史计划保留，当前计划会标记过期。",
-                        onOk: () =>
-                          remove.mutateAsync(event.id).then(() => undefined),
-                      })
-                    }
+                    onClick={() => setConfirmingDeleteId(event.id)}
                   >
                     删除事件
                   </Button>
@@ -567,10 +584,27 @@ export default function EventsPage({ profile }: { profile: Profile }) {
                 {event.kind === "course" && (
                   <Button
                     disabled={write.isPending}
-                    onClick={() => skip(event)}
+                    loading={skippingId === event.id}
+                    onClick={() => void skip(event)}
                   >
                     {event.is_skipped ? "恢复参加" : "本次不参加"}
                   </Button>
+                )}
+                {confirmingDeleteId === event.id && (
+                  <InlineConfirm
+                    message={
+                      event.series_id
+                        ? "将永久删除本次课程和对应的本次调整。其他周次与每周课程保留，但该周次永久缺失，后续编辑每周课程不会补回；导入来源与历史计划保留，当前计划将标记为依据已变化。"
+                        : "将永久删除本次事件和对应的本次调整；导入来源与历史计划保留，当前计划会标记过期。"
+                    }
+                    confirmLabel="确认删除事件"
+                    loading={remove.isPending}
+                    onCancel={() => setConfirmingDeleteId(null)}
+                    onConfirm={() => {
+                      setConfirmingDeleteId(null);
+                      remove.mutate(event.id);
+                    }}
+                  />
                 )}
               </div>
             </article>

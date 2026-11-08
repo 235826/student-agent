@@ -37,10 +37,7 @@ test("批量改期、添加标签与撤销", async ({ page }) => {
   await page.getByLabel("选择 批量改期B").check();
   const bar = page.locator(".bulk-bar").filter({ hasText: "已选 2 项" });
   await bar.getByRole("button", { name: /^改\s*期$/ }).click();
-  await page
-    .locator(".ant-dropdown-menu-item")
-    .filter({ hasText: "明天" })
-    .click();
+  await bar.getByRole("button", { name: "明天", exact: true }).click();
   await expect(page.getByText("已处理 2 项")).toBeVisible();
   await expect
     .poll(async () => {
@@ -117,9 +114,8 @@ test("垃圾箱永久删除与清空", async ({ page }) => {
     .filter({ hasText: "永久删除A" });
   await card.getByRole("heading", { name: "永久删除A" }).click();
   await card.getByRole("button", { name: "永久删除", exact: true }).click();
-  await page
-    .getByRole("dialog")
-    .getByRole("button", { name: "永久删除", exact: true })
+  await card
+    .getByRole("button", { name: "确认永久删除", exact: true })
     .click();
   await expect(page.getByText("任务已永久删除")).toBeVisible();
   await expect(
@@ -128,8 +124,7 @@ test("垃圾箱永久删除与清空", async ({ page }) => {
 
   await page.getByRole("button", { name: "清空垃圾箱", exact: true }).click();
   await page
-    .getByRole("dialog")
-    .getByRole("button", { name: "清空垃圾箱", exact: true })
+    .getByRole("button", { name: "确认清空垃圾箱", exact: true })
     .click();
   await expect(page.getByText(/已永久删除 1 项/)).toBeVisible();
   expect(

@@ -24,8 +24,7 @@ test("空标题草稿、正式任务校验与关系跳转", async ({ page }) => 
   await page.getByRole("button", { name: "保存草稿", exact: true }).click();
   await page.getByRole("button", { name: "发布任务", exact: true }).click();
   await page
-    .getByRole("dialog")
-    .getByRole("button", { name: /^确\s*定$/ })
+    .getByRole("button", { name: "确认发布任务", exact: true })
     .click();
   await expect(
     page.getByRole("heading", { name: "父任务", exact: true }),
@@ -95,8 +94,7 @@ test("系列批量修改、事件删除与空课程清理", async ({ page }) => 
   await page.getByLabel("上课地点").fill("新教室");
   await page.getByRole("button", { name: "批量保存", exact: true }).click();
   await page
-    .getByRole("dialog")
-    .getByRole("button", { name: /^确\s*定$/ })
+    .getByRole("button", { name: "确认批量修改", exact: true })
     .click();
   await expect(page.getByRole("dialog")).not.toBeVisible();
   const events = await (await page.request.get("/api/v1/events")).json();
@@ -106,22 +104,19 @@ test("系列批量修改、事件删除与空课程清理", async ({ page }) => 
   await page.locator(".instance-list a").first().click();
   await page.getByRole("button", { name: "删除事件", exact: true }).click();
   await page
-    .getByRole("dialog")
-    .getByRole("button", { name: /^确\s*定$/ })
+    .getByRole("button", { name: "确认删除事件", exact: true })
     .click();
   await expect(page).toHaveURL(/\/calendar\/series\//);
   await page.getByRole("link", { name: "所属课程", exact: true }).click();
   await page.getByRole("link", { name: /起 · 1 次课程/ }).click();
   await page.getByRole("button", { name: "删除每周课程", exact: true }).click();
   await page
-    .getByRole("dialog")
-    .getByRole("button", { name: /^确\s*定$/ })
+    .getByRole("button", { name: "确认删除每周课程", exact: true })
     .click();
   await expect(page).toHaveURL(/\/calendar\/courses\//);
   await page.getByRole("button", { name: "删除课程", exact: true }).click();
   await page
-    .getByRole("dialog")
-    .getByRole("button", { name: /^确\s*定$/ })
+    .getByRole("button", { name: "确认删除课程", exact: true })
     .click();
   await expect(page).toHaveURL(/\/calendar(\?|$)/);
   expect(await (await page.request.get("/api/v1/courses")).json()).toEqual([]);

@@ -1,5 +1,5 @@
 import { Link, useLocation, useParams, useNavigate } from "react-router-dom";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Alert,
@@ -26,11 +26,13 @@ import type { Plan, Profile, Event } from "../api";
 import { displayTime, toInstant } from "../time";
 import { withFrom } from "../navigation";
 import { eventTypeColor, eventTypeLabel, staleInfo } from "../semantics";
+import InlineConfirm from "../components/InlineConfirm";
 
 export default function PlansPage({ profile }: { profile: Profile }) {
   const client = useQueryClient();
-  const { message, modal } = App.useApp();
+  const { message } = App.useApp();
   const [form] = Form.useForm();
+  const [confirmingAdopt, setConfirmingAdopt] = useState(false);
   const { id: selected } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
@@ -326,23 +328,33 @@ export default function PlansPage({ profile }: { profile: Profile }) {
               />
             )}
             {active.status === "draft" && (
-              <Button
-                type="primary"
-                disabled={active.stale}
-                loading={adopt.isPending}
-                onClick={() =>
-                  modal.confirm({
-                    title: "确认采用这份计划？",
-                    content: missing
-                      ? "部分任务仍有未排工时或缺少估时。采用后将替换整个当前计划，旧版本保留。"
-                      : "采用后将替换整个当前计划，旧版本保留。",
-                    onOk: () =>
-                      adopt.mutateAsync(active.id).then(() => undefined),
-                  })
-                }
-              >
-                确认采用
-              </Button>
+              <>
+                <Button
+                  type="primary"
+                  disabled={active.stale}
+                  loading={adopt.isPending}
+                  onClick={() => setConfirmingAdopt(true)}
+                >
+                  确认采用
+                </Button>
+                {confirmingAdopt && (
+                  <InlineConfirm
+                    message={
+                      missing
+                        ? "部分任务仍有未排工时或缺少估时。采用后将替换整个当前计划，旧版本保留。"
+                        : "采用后将替换整个当前计划，旧版本保留。"
+                    }
+                    confirmLabel="确认采用计划"
+                    danger={false}
+                    loading={adopt.isPending}
+                    onCancel={() => setConfirmingAdopt(false)}
+                    onConfirm={() => {
+                      setConfirmingAdopt(false);
+                      adopt.mutate(active.id);
+                    }}
+                  />
+                )}
+              </>
             )}
             {active.status === "adopted" && (
               <Space wrap>

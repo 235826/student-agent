@@ -13,16 +13,18 @@ import {
   Tag,
 } from "antd";
 import { api, type EventType } from "../api";
+import InlineConfirm from "../components/InlineConfirm";
 
 const errorText = (e: unknown) =>
   e instanceof Error ? e.message : "操作失败，请重试";
 
 export default function EventTypesPage() {
   const client = useQueryClient();
-  const { message, modal } = App.useApp();
+  const { message } = App.useApp();
   const [editing, setEditing] = useState<EventType | null | undefined>(
     undefined,
   );
+  const [confirmingTypeId, setConfirmingTypeId] = useState<string | null>(null);
   const [form] = Form.useForm<{ name: string; color: string }>();
   const types = useQuery({
     queryKey: ["event-types", "all"],
@@ -109,20 +111,24 @@ export default function EventTypesPage() {
                       size="small"
                       danger
                       loading={archive.isPending}
-                      onClick={() =>
-                        modal.confirm({
-                          title: "归档这个事件类型？",
-                          content:
-                            "归档后不能用于新事件，已有事件和历史记录仍显示原类型。",
-                          onOk: () =>
-                            archive.mutateAsync(type.id).then(() => undefined),
-                        })
-                      }
+                      onClick={() => setConfirmingTypeId(type.id)}
                     >
                       归档
                     </Button>
                   )}
                 </div>
+              )}
+              {confirmingTypeId === type.id && (
+                <InlineConfirm
+                  message="归档后不能用于新事件，已有事件和历史记录仍显示原类型。"
+                  confirmLabel="确认归档类型"
+                  loading={archive.isPending}
+                  onCancel={() => setConfirmingTypeId(null)}
+                  onConfirm={() => {
+                    setConfirmingTypeId(null);
+                    archive.mutate(type.id);
+                  }}
+                />
               )}
               </div>
             </article>

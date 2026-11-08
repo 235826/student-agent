@@ -17,6 +17,7 @@ import {
   Space,
   Spin,
 } from "antd";
+import { useState } from "react";
 import { DateTime } from "luxon";
 import {
   api,
@@ -27,6 +28,7 @@ import {
 } from "../api";
 import { displayTime } from "../time";
 import SourceButton from "../components/SourceButton";
+import InlineConfirm from "../components/InlineConfirm";
 import { backTarget, withFrom } from "../navigation";
 
 type Write = { path: string; method: string; body: unknown };
@@ -42,7 +44,11 @@ export default function HierarchyPage({
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const client = useQueryClient();
-  const { modal, message } = App.useApp();
+  const { message } = App.useApp();
+  const [pendingSeriesSave, setPendingSeriesSave] = useState<
+    Record<string, string> | null
+  >(null);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const courses = useQuery({
     queryKey: ["courses"],
     queryFn: () => api<Course[]>("/courses"),
@@ -267,20 +273,7 @@ export default function HierarchyPage({
                 note: currentSeries!.note,
                 details: currentSeries!.details,
               }}
-              onFinish={(values) =>
-                modal.confirm({
-                  title: "修改整门每周课程？",
-                  content: `将修改 ${instances.length} 次课程的原始安排，保留已有的本次调整；当前计划将标记为依据已变化。`,
-                  onOk: () =>
-                    save
-                      .mutateAsync({
-                        path: `/event-series/${id}`,
-                        method: "PUT",
-                        body: { ...values, confirmed: true },
-                      })
-                      .then(() => undefined),
-                })
-              }
+              onFinish={(values) => setPendingSeriesSave(values)}
             >
               <Form.Item
                 name="start_time"
@@ -317,6 +310,24 @@ export default function HierarchyPage({
                 批量保存
               </Button>
             </Form>
+            {pendingSeriesSave && (
+              <InlineConfirm
+                message={`将修改 ${instances.length} 次课程的原始安排，保留已有的本次调整；当前计划将标记为依据已变化。`}
+                confirmLabel="确认批量修改"
+                danger={false}
+                loading={save.isPending}
+                onCancel={() => setPendingSeriesSave(null)}
+                onConfirm={() => {
+                  const values = pendingSeriesSave;
+                  setPendingSeriesSave(null);
+                  save.mutate({
+                    path: `/event-series/${id}`,
+                    method: "PUT",
+                    body: { ...values, confirmed: true },
+                  });
+                }}
+              />
+            )}
           </section>
           <Space wrap className="toolbar">
             {[true, false].map((skipped) => (
@@ -327,11 +338,28 @@ export default function HierarchyPage({
                   attendance.isPending && attendance.variables === skipped
                 }
                 onClick={() =>
-                  modal.confirm({
-                    title: skipped ? "将整门每周课程设为不参加？" : "恢复整门每周课程参加？",
-                    content: `将把全部 ${instances.length} 次课程设为${skipped ? "不参加" : "参加"}，覆盖已有的单次参加状态；时间、地点与来源记录保留，计划将标记为依据已变化。`,
-                    onOk: () =>
-                      attendance.mutateAsync(skipped).then(() => undefined),
+                  attendance.mutate(skipped, {
+                    onSuccess: () => {
+                      message.open({
+                        type: "success",
+                        duration: 8,
+                        content: (
+                          <Space wrap>
+                            <span>
+                              已将整门每周课程设为
+                              {skipped ? "不参加" : "参加"}
+                            </span>
+                            <Button
+                              type="text"
+                              size="small"
+                              onClick={() => attendance.mutate(!skipped)}
+                            >
+                              撤销
+                            </Button>
+                          </Space>
+                        ),
+                      });
+                    },
                   })
                 }
               >
@@ -388,25 +416,35 @@ export default function HierarchyPage({
           }
         />
       )}
-      <Button
-        type="text"
-        className="toolbar"
-        danger
-        disabled={kind === "course" && blocked}
-        loading={remove.isPending}
-        onClick={() =>
-          modal.confirm({
-            title: kind === "course" ? "删除空课程？" : "删除整门每周课程？",
-            content:
+      <div className="toolbar">
+        <Button
+          type="text"
+          danger
+          disabled={kind === "course" && blocked}
+          loading={remove.isPending}
+          onClick={() => setConfirmingDelete(true)}
+        >
+          {kind === "course" ? "删除课程" : "删除每周课程"}
+        </Button>
+        {confirmingDelete && (
+          <InlineConfirm
+            message={
               kind === "course"
                 ? "仅允许删除没有每周课程和事件的空课程。请先逐项清理；不会级联删除其他数据。"
-                : `将永久删除本每周课程 ${instances.length} 次事件及其本次调整，保留所属课程、导入来源与历史计划。当前计划将标记为依据已变化。`,
-            onOk: () => remove.mutateAsync().then(() => undefined),
-          })
-        }
-      >
-        {kind === "course" ? "删除课程" : "删除每周课程"}
-      </Button>
+                : `将永久删除本每周课程 ${instances.length} 次事件及其本次调整，保留所属课程、导入来源与历史计划。当前计划将标记为依据已变化。`
+            }
+            confirmLabel={
+              kind === "course" ? "确认删除课程" : "确认删除每周课程"
+            }
+            loading={remove.isPending}
+            onCancel={() => setConfirmingDelete(false)}
+            onConfirm={() => {
+              setConfirmingDelete(false);
+              remove.mutate();
+            }}
+          />
+        )}
+      </div>
     </>
   );
 }
