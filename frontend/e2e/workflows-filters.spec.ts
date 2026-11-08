@@ -214,3 +214,22 @@ test("无日期视图只显示没有截止时间的任务", async ({ page }) => 
     page.getByRole("heading", { name: "有截止任务" }),
   ).not.toBeVisible();
 });
+
+test("当前筛选汇总支持一键清除", async ({ page }) => {
+  const headers = await login(page);
+  const created = await page.request.post("/api/v1/tasks", {
+    headers,
+    data: { title: "筛选汇总任务" },
+  });
+  expect(created.status()).toBe(201);
+
+  await page.goto("/tasks");
+  const search = page.getByLabel("搜索任务");
+  await search.fill("汇总");
+  const summary = page.getByRole("group", { name: "当前筛选" });
+  await expect(summary).toContainText("搜索：汇总");
+
+  await summary.getByRole("button", { name: "清除全部" }).click();
+  await expect(search).toHaveValue("");
+  await expect(summary).not.toBeVisible();
+});

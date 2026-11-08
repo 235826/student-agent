@@ -144,9 +144,11 @@ export default function SettingsPage({
               </Form.List>
             </section>
           ))}
-          <Button type="primary" htmlType="submit" loading={save.isPending}>
-            保存设置
-          </Button>
+          <div className="settings-save-bar">
+            <Button type="primary" htmlType="submit" loading={save.isPending}>
+              保存设置
+            </Button>
+          </div>
         </Form>
       </section>
     </>

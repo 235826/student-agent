@@ -21,8 +21,23 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
       theme={{
         token: {
           colorPrimary: "#245c48",
+          colorInfo: "#245c48",
+          colorSuccess: "#2f7d5b",
+          colorWarning: "#b7791f",
+          colorError: "#c62828",
+          colorText: "#243b31",
+          colorTextSecondary: "#55655c",
+          colorTextTertiary: "#5f6f66",
+          colorBorder: "#d9e0d7",
+          colorBorderSecondary: "#e4e8e1",
           borderRadius: 10,
+          controlHeight: 36,
           fontFamily: "system-ui, sans-serif",
+          fontSize: 14,
+        },
+        components: {
+          Button: { fontWeight: 500 },
+          Select: { optionSelectedBg: "#eaf1e9" },
         },
       }}
     >

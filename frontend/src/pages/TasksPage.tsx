@@ -39,6 +39,7 @@ import {
   Select,
   Space,
   Spin,
+  Tag,
 } from "antd";
 import { DateTime } from "luxon";
 import { api } from "../api";
@@ -94,6 +95,13 @@ const sortValues = [
   "completed",
   "manual",
 ] as const;
+const sortOptions = [
+  { value: "status", label: "按状态分组" },
+  { value: "deadline", label: "截止时间" },
+  { value: "priority", label: "优先级" },
+  { value: "completed", label: "完成时间" },
+  { value: "manual", label: "手动排序" },
+];
 type Editor = { kind: "task"; task?: Task } | { kind: "draft"; draft?: Draft };
 type Write = { path: string; method?: string; body?: unknown };
 const errorText = (e: unknown) =>
@@ -1045,6 +1053,60 @@ export default function TasksPage({ profile }: { profile: Profile }) {
             : ""),
       disabled: !!t.trashed_at || t.status === "cancelled",
     }));
+  const clearFilter = (key: "q" | "list" | "tag" | "status" | "sort") => {
+    if (key === "q") setSearch("");
+    setUrlValue(key, "", key === "sort" ? "status" : "all");
+  };
+  const filterChips: Array<{
+    key: string;
+    label: string;
+    onClose: () => void;
+  }> = [];
+  if (debouncedSearch)
+    filterChips.push({
+      key: "q",
+      label: `搜索：${debouncedSearch}`,
+      onClose: () => clearFilter("q"),
+    });
+  if (listFilter !== "all")
+    filterChips.push({
+      key: "list",
+      label: `清单：${
+        (lists.data ?? []).find((item) => item.id === listFilter)?.name ??
+        "已选清单"
+      }`,
+      onClose: () => clearFilter("list"),
+    });
+  if (tagFilter !== "all")
+    filterChips.push({
+      key: "tag",
+      label: `标签：${tagFilter}`,
+      onClose: () => clearFilter("tag"),
+    });
+  if (status !== "all")
+    filterChips.push({
+      key: "status",
+      label: `状态：${
+        states.find((item) => item.value === status)?.label ?? status
+      }`,
+      onClose: () => clearFilter("status"),
+    });
+  if (sort !== "status")
+    filterChips.push({
+      key: "sort",
+      label: `排序：${
+        sortOptions.find((item) => item.value === sort)?.label ?? sort
+      }`,
+      onClose: () => clearFilter("sort"),
+    });
+  const clearAllFilters = () => {
+    setSearch("");
+    updateParams((next) => {
+      for (const key of ["q", "list", "tag", "status", "sort", "saved"]) {
+        next.delete(key);
+      }
+    });
+  };
   return (
     <>
       <header>
@@ -1066,20 +1128,6 @@ export default function TasksPage({ profile }: { profile: Profile }) {
           </Button>
         ) : null}
       </header>
-      {!inbox && !detailPage && (
-        <Space className="toolbar view-tabs" wrap>
-          {views.map(([key, label]) => (
-            <Button
-              key={key}
-              type="text"
-              className={view === key ? "view-tab active" : "view-tab"}
-              onClick={() => setView(key)}
-            >
-              {label}
-            </Button>
-          ))}
-        </Space>
-      )}
       {detailPage && (
         <Space className="toolbar">
           <Link to={back.to}>{back.label}</Link>
@@ -1087,48 +1135,116 @@ export default function TasksPage({ profile }: { profile: Profile }) {
         </Space>
       )}
       {!inbox && !detailPage && (
-        <Space wrap className="toolbar">
-          <Select
-            aria-label="筛选清单"
-            value={listFilter}
-            onChange={setListFilter}
-            options={groupedListOptions}
-          />
-          <Button type="text" onClick={() => setListManager(true)}>管理清单</Button>
-          <Button type="text" onClick={() => setTagManager(true)}>管理标签</Button>
-          <Button
-            type="text"
-            className={selectionMode ? "view-tab active" : "view-tab"}
-            onClick={() => {
-              setSelectionMode((current) => !current);
-              setSelectedIds(new Set());
-            }}
-          >
-            {selectionMode ? "退出批量" : "批量操作"}
-          </Button>
-          {view === "trash" && (
-            <Button
-              type="text"
-              danger
-              onClick={() => setConfirmAction({ kind: "clearTrash" })}
-            >
-              清空垃圾箱
-            </Button>
-          )}
-          <Select
-            aria-label="已保存筛选"
-            value={savedFilterId}
-            onChange={applySavedFilter}
-            allowClear
-            placeholder="已保存筛选"
-            onClear={() => setUrlValue("saved", "", "")}
-            options={(savedFilters.data ?? []).map((saved) => ({
-              value: saved.id,
-              label: saved.name,
-            }))}
-            style={{ minWidth: 140 }}
-          />
-          <Button type="text" onClick={() => setSaveFilterOpen(true)}>保存筛选</Button>
+        <div className="task-toolbar">
+          <div className="task-toolbar-head">
+            <div className="view-tabs" role="group" aria-label="任务视图">
+              {views.map(([key, label]) => (
+                <Button
+                  key={key}
+                  type="text"
+                  aria-pressed={view === key}
+                  className={view === key ? "view-tab active" : "view-tab"}
+                  onClick={() => setView(key)}
+                >
+                  {label}
+                </Button>
+              ))}
+            </div>
+            <Space wrap className="task-toolbar-actions">
+              <Button type="text" onClick={() => setListManager(true)}>
+                管理清单
+              </Button>
+              <Button type="text" onClick={() => setTagManager(true)}>
+                管理标签
+              </Button>
+              <Button
+                type="text"
+                aria-pressed={selectionMode}
+                className={
+                  selectionMode ? "toolbar-toggle active" : "toolbar-toggle"
+                }
+                onClick={() => {
+                  setSelectionMode((current) => !current);
+                  setSelectedIds(new Set());
+                }}
+              >
+                {selectionMode ? "退出批量" : "批量操作"}
+              </Button>
+              <Button type="text" onClick={() => setSaveFilterOpen(true)}>
+                保存筛选
+              </Button>
+              {savedFilterId && (
+                <Button
+                  type="text"
+                  danger
+                  onClick={() => deleteFilter.mutate(savedFilterId)}
+                >
+                  删除筛选
+                </Button>
+              )}
+              {view === "trash" && (
+                <Button
+                  type="text"
+                  danger
+                  onClick={() => setConfirmAction({ kind: "clearTrash" })}
+                >
+                  清空垃圾箱
+                </Button>
+              )}
+            </Space>
+          </div>
+          <div className="task-filter-bar">
+            <Input.Search
+              className="task-search"
+              aria-label="搜索任务"
+              placeholder="搜索标题、描述、标签、链接或附件名"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+            <Select
+              aria-label="筛选清单"
+              value={listFilter}
+              onChange={setListFilter}
+              options={groupedListOptions}
+            />
+            <Select
+              aria-label="已保存筛选"
+              value={savedFilterId}
+              onChange={applySavedFilter}
+              allowClear
+              placeholder="已保存筛选"
+              onClear={() => setUrlValue("saved", "", "")}
+              options={(savedFilters.data ?? []).map((saved) => ({
+                value: saved.id,
+                label: saved.name,
+              }))}
+              style={{ minWidth: 140 }}
+            />
+            <Select
+              aria-label="筛选标签"
+              value={tagFilter}
+              onChange={setTagFilter}
+              options={[
+                { value: "all", label: "全部标签" },
+                ...(tags.data ?? []).map((tag) => ({
+                  value: tag.name,
+                  label: tag.name,
+                })),
+              ]}
+            />
+            <Select
+              aria-label="筛选状态"
+              value={status}
+              onChange={setStatus}
+              options={[{ value: "all", label: "全部状态" }, ...states]}
+            />
+            <Select
+              aria-label="任务排序"
+              value={sort}
+              onChange={setSort}
+              options={sortOptions}
+            />
+          </div>
           {saveFilterOpen && (
             <span className="inline-filter-save">
               <Input
@@ -1147,47 +1263,23 @@ export default function TasksPage({ profile }: { profile: Profile }) {
               </Button>
             </span>
           )}
-          {savedFilterId && (
-            <Button danger onClick={() => deleteFilter.mutate(savedFilterId)}>
-              删除筛选
-            </Button>
+          {filterChips.length > 0 && (
+            <div
+              className="filter-summary"
+              role="group"
+              aria-label="当前筛选"
+            >
+              <span className="filter-summary-label">当前筛选</span>
+              {filterChips.map((chip) => (
+                <Tag key={chip.key} closable onClose={chip.onClose}>
+                  {chip.label}
+                </Tag>
+              ))}
+              <Button type="link" size="small" onClick={clearAllFilters}>
+                清除全部
+              </Button>
+            </div>
           )}
-          <Select
-            aria-label="筛选标签"
-            value={tagFilter}
-            onChange={setTagFilter}
-            options={[
-              { value: "all", label: "全部标签" },
-              ...(tags.data ?? []).map((tag) => ({
-                value: tag.name,
-                label: tag.name,
-              })),
-            ]}
-          />
-          <Input.Search
-            aria-label="搜索任务"
-            placeholder="搜索标题、描述、标签、链接或附件名"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-          <Select
-            aria-label="筛选状态"
-            value={status}
-            onChange={setStatus}
-            options={[{ value: "all", label: "全部状态" }, ...states]}
-          />
-          <Select
-            aria-label="任务排序"
-            value={sort}
-            onChange={setSort}
-            options={[
-              { value: "status", label: "按状态分组" },
-              { value: "deadline", label: "截止时间" },
-              { value: "priority", label: "优先级" },
-              { value: "completed", label: "完成时间" },
-              { value: "manual", label: "手动排序" },
-            ]}
-          />
           {sort === "manual" && !canReorder && (
             <span className="muted">
               {listTasks.hasNextPage
@@ -1195,8 +1287,9 @@ export default function TasksPage({ profile }: { profile: Profile }) {
                 : "清除搜索、状态或标签筛选后可拖动排序"}
             </span>
           )}
-        </Space>
+        </div>
       )}
+
       {confirmAction?.kind === "clearTrash" && (
         <div className="toolbar">
           <InlineConfirm
