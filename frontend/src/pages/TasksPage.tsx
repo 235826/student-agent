@@ -1031,6 +1031,20 @@ export default function TasksPage({ profile }: { profile: Profile }) {
     const weekdays = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
     return `${date.toFormat("M月d日")} ${weekdays[date.weekday % 7]}`;
   };
+  const planDayClass = (
+    key: string | null,
+    tasks: Task[],
+    noDate = false,
+  ) =>
+    [
+      "plan-day",
+      noDate ? "plan-no-date" : "",
+      tasks.length > 0 ? "has-tasks" : "is-empty",
+      key === todayKey ? "is-today" : "",
+      dragOverDate === key ? "drag-over" : "",
+    ]
+      .filter(Boolean)
+      .join(" ");
   const chineseMonths = [
     "一月",
     "二月",
@@ -2606,11 +2620,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
                     <div
                       key={group.key}
                       data-plan-date={group.key}
-                      className={
-                        dragOverDate === group.key
-                          ? "plan-day drag-over"
-                          : "plan-day"
-                      }
+                      className={planDayClass(group.key, group.tasks)}
                     >
                       <div className="plan-day-heading">
                         <strong>{group.label}</strong>
@@ -2633,11 +2643,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
               )}
               <div
                 data-plan-nodate
-                className={
-                  dragOverDate === null
-                    ? "plan-day plan-no-date drag-over"
-                    : "plan-day plan-no-date"
-                }
+                className={planDayClass(null, noDateTasks, true)}
               >
                 <div className="plan-day-heading">
                   <strong>无日期</strong>
@@ -2665,11 +2671,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
                 <div
                   key={day.key}
                   data-plan-date={day.key}
-                  className={
-                    dragOverDate === day.key
-                      ? "plan-day drag-over"
-                      : "plan-day"
-                  }
+                  className={planDayClass(day.key, day.tasks)}
                 >
                   <div className="plan-day-heading">
                     <strong>{day.label}</strong>
@@ -2703,11 +2705,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
                     <div
                       key={day.key}
                       data-plan-date={day.key}
-                      className={
-                        dragOverDate === day.key
-                          ? "plan-day drag-over"
-                          : "plan-day"
-                      }
+                      className={planDayClass(day.key, day.tasks)}
                     >
                       <div className="plan-day-heading">
                         <strong>{day.label}</strong>
@@ -2737,11 +2735,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
                       <div
                         key={day.key}
                         data-plan-date={day.key}
-                        className={
-                          dragOverDate === day.key
-                            ? "plan-day drag-over"
-                            : "plan-day"
-                        }
+                        className={planDayClass(day.key, day.tasks)}
                       >
                         <div className="plan-day-heading">
                           <strong>{day.label}</strong>

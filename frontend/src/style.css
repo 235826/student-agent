@@ -1,14 +1,21 @@
 :root {
+  --text-strong: #182a22;
   --text-primary: #243b31;
-  --text-secondary: #55655c;
-  --text-muted: #5f6f66;
-  --text-faint: #66776d;
-  --border: var(--border);
+  --text-secondary: #5f6c65;
+  --text-muted: #7a867f;
+  --text-display: #8c9791;
+  --text-faint: #a0aaa5;
+  --primary: #245c48;
+  --primary-soft: #eaf1e9;
+  --border: #d9e0d7;
+  --border-strong: #c4cfc7;
   --surface: #fff;
-  --surface-muted: var(--surface-muted);
-  --primary: var(--primary);
-  --primary-soft: var(--primary-soft);
+  --surface-muted: #f5f7f4;
   --radius: 10px;
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-semibold: 600;
+  --fw-bold: 700;
   font-family:
     system-ui,
     -apple-system,
@@ -33,12 +40,22 @@ input {
   outline-offset: 2px;
 }
 h1 {
-  font-size: 30px;
-  letter-spacing: -1px;
   margin: 9px 0 12px;
+  color: var(--primary);
+  font-size: 30px;
+  font-weight: var(--fw-bold);
+  letter-spacing: -1px;
+}
+h2 {
+  color: var(--text-primary);
+  font-size: 20px;
+  font-weight: var(--fw-semibold);
 }
 h3 {
   margin: 0 0 12px;
+  color: var(--text-primary);
+  font-size: 16px;
+  font-weight: var(--fw-semibold);
   overflow-wrap: anywhere;
 }
 .shell {
@@ -58,15 +75,16 @@ aside {
   height: 100vh;
 }
 .brand {
-  font-size: 13px;
-  font-weight: 800;
-  letter-spacing: 2px;
   color: var(--primary);
+  font-size: 13px;
+  font-weight: var(--fw-bold);
+  letter-spacing: 2px;
 }
 .brand-sub {
-  font-size: 12px;
-  color: #5f6f66;
   margin-top: 9px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: var(--fw-regular);
 }
 nav {
   display: flex;
@@ -77,14 +95,15 @@ nav {
 nav a {
   padding: 13px 15px;
   border-radius: 9px;
-  color: #55655c;
+  color: var(--text-secondary);
   text-decoration: none;
   font-size: 14px;
+  font-weight: var(--fw-regular);
 }
 nav a.active {
   color: var(--primary);
   background: var(--primary-soft);
-  font-weight: 650;
+  font-weight: var(--fw-semibold);
 }
 .nav-count {
   display: inline-block;
@@ -93,8 +112,10 @@ nav a.active {
   padding: 0 6px;
   border-radius: 9px;
   background: #eef2ec;
-  color: #4f6b5d;
+  color: var(--text-muted);
   font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--fw-medium);
   line-height: 18px;
   text-align: center;
 }
@@ -104,6 +125,7 @@ nav a.active {
 }
 .account {
   margin-top: auto;
+  color: var(--text-secondary);
   font-size: 13px;
   display: flex;
   align-items: center;
@@ -123,14 +145,15 @@ header {
   margin-bottom: 26px;
 }
 .eyebrow {
+  color: var(--text-muted);
   font-size: 11px;
+  font-weight: var(--fw-semibold);
   letter-spacing: 2px;
-  font-weight: 700;
-  color: #5c6f60;
 }
 .muted {
-  color: #5f6f66;
+  color: var(--text-secondary);
   font-size: 14px;
+  font-weight: var(--fw-regular);
   line-height: 1.7;
 }
 .toolbar {
@@ -212,6 +235,8 @@ header {
   background: var(--primary);
   color: #fff;
   font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--fw-medium);
   line-height: 18px;
 }
 
@@ -263,6 +288,7 @@ header {
   padding: 5px 12px;
   color: var(--text-secondary);
   font-size: 13px;
+  font-weight: var(--fw-regular);
   box-shadow: none;
 }
 .view-tabs .view-tab:hover {
@@ -272,7 +298,7 @@ header {
 .view-tabs .view-tab.active {
   color: var(--primary);
   background: var(--surface);
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
   box-shadow: 0 1px 2px rgba(36, 59, 49, 0.12);
 }
 .toolbar-toggle.active {
@@ -295,7 +321,7 @@ header {
   border: 0;
   background: none;
   padding: 0;
-  color: #4f6b5d;
+  color: var(--text-secondary);
   font-size: 13px;
   line-height: 1.5;
   cursor: pointer;
@@ -318,7 +344,7 @@ header {
   border: 0;
   background: transparent;
   box-shadow: none;
-  color: #4f6b5d;
+  color: var(--text-secondary);
   font-size: 13px;
 }
 .row-actions .ant-btn:hover {
@@ -333,7 +359,7 @@ header {
   flex-basis: 100%;
   margin-top: 6px;
   padding: 8px 0;
-  color: #55655c;
+  color: var(--text-secondary);
   font-size: 13px;
   overflow-wrap: anywhere;
 }
@@ -348,19 +374,22 @@ header {
 }
 .row-title-button h3 {
   margin: 0;
+  color: var(--text-strong);
   font-size: 15px;
-  font-weight: 600;
+  font-weight: var(--fw-medium);
+  line-height: 1.4;
 }
 .row-title-button:hover h3 {
   color: var(--primary);
 }
 .row-chevron {
-  color: #66776d;
+  color: var(--text-faint);
   font-size: 11px;
   flex-shrink: 0;
 }
 .row-deadline {
-  color: #5f6f66;
+  color: var(--text-muted);
+  font-size: 12px;
   white-space: nowrap;
 }
 .row-deadline.danger-text {
@@ -368,8 +397,9 @@ header {
 }
 .row-detail {
   margin-top: 8px;
-  color: #55655c;
+  color: var(--text-secondary);
   font-size: 13px;
+  font-weight: var(--fw-regular);
   line-height: 1.7;
 }
 .row-detail > * + * {
@@ -379,12 +409,13 @@ header {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
-  color: #5f6f66;
+  color: var(--text-muted);
   font-size: 12px;
+  font-weight: var(--fw-regular);
 }
 .row-detail-title {
-  font-weight: 600;
-  color: #4f6b5d;
+  color: var(--text-secondary);
+  font-weight: var(--fw-medium);
 }
 .inline-confirm {
   display: flex;
@@ -392,7 +423,7 @@ header {
   align-items: center;
   gap: 12px;
   padding: 8px 0;
-  color: #55655c;
+  color: var(--text-secondary);
   font-size: 13px;
   line-height: 1.6;
 }
@@ -419,7 +450,7 @@ header {
   border-radius: 6px;
   padding: 4px 8px;
   background: #fff;
-  color: #243b31;
+  color: var(--text-primary);
 }
 .inline-deadline-presets {
   display: flex;
@@ -443,7 +474,7 @@ header {
 }
 .drag-handle {
   cursor: grab;
-  color: #66776d;
+  color: var(--text-faint);
   font-size: 16px;
   line-height: 1.2;
   padding: 0 4px;
@@ -485,8 +516,9 @@ header {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  color: #5f6f66;
+  color: var(--text-muted);
   font-size: 12px;
+  font-weight: var(--fw-regular);
   white-space: nowrap;
 }
 .task-row-list-dot {
@@ -496,7 +528,7 @@ header {
   flex-shrink: 0;
 }
 .task-row-flag {
-  color: #66776d;
+  color: var(--text-faint);
   font-size: 14px;
   flex-shrink: 0;
 }
@@ -506,6 +538,7 @@ header {
 .task-row-priority {
   color: #a86b13;
   font-size: 12px;
+  font-weight: var(--fw-regular);
   white-space: nowrap;
 }
 .task-card.dragging {
@@ -516,7 +549,7 @@ header {
   pointer-events: none;
 }
 .flag-button {
-  color: #66776d;
+  color: var(--text-faint);
   font-size: 16px;
   line-height: 1;
 }
@@ -528,14 +561,14 @@ header {
 }
 .meta {
   font-size: 12px;
-  color: #5f6f66;
+  color: var(--text-muted);
   margin: 18px 0;
   line-height: 1.8;
 }
 .description {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  color: #55655c;
+  color: var(--text-secondary);
 }
 .task-links {
   display: flex;
@@ -867,13 +900,13 @@ header {
 }
 .event-note {
   margin: 6px 0;
-  color: #5f6f66;
+  color: var(--text-muted);
   font-size: 13px;
   line-height: 1.6;
 }
 .event-details {
   margin: 8px 0;
-  color: #5b6961;
+  color: var(--text-secondary);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   line-height: 1.7;
@@ -940,8 +973,8 @@ header {
   min-width: 0;
 }
 .subtask-row-main > a {
-  font-weight: 600;
-  color: #1f4f3d;
+  color: var(--text-primary);
+  font-weight: var(--fw-medium);
 }
 .subtask-row-main .ant-tag {
   margin-left: 8px;
@@ -955,16 +988,17 @@ header {
   min-width: 0;
 }
 .task-row-main > a {
-  font-weight: 600;
-  color: #1f4f3d;
+  color: var(--text-primary);
+  font-weight: var(--fw-medium);
 }
 .task-row-meta {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
   margin-top: 4px;
-  color: #5f6f66;
+  color: var(--text-muted);
   font-size: 12px;
+  font-weight: var(--fw-regular);
 }
 .danger-text {
   color: #cf1322;
@@ -1030,7 +1064,7 @@ header {
 }
 .stats-bar-count {
   height: 18px;
-  color: #5f6f66;
+  color: var(--text-muted);
   font-size: 12px;
 }
 .stats-bar-track {
@@ -1050,7 +1084,7 @@ header {
 }
 .stats-bar-label {
   margin-top: 4px;
-  color: #5f6f66;
+  color: var(--text-muted);
   font-size: 11px;
   white-space: nowrap;
 }
@@ -1097,7 +1131,7 @@ header {
   cursor: pointer;
   color: var(--text-primary);
   font-size: 15px;
-  font-weight: 600;
+  font-weight: var(--fw-medium);
 }
 .settings-advanced[open] > summary {
   margin-bottom: 10px;
@@ -1324,6 +1358,7 @@ header {
   margin: 0 0 8px;
   color: #cf1322;
   font-size: 16px;
+  font-weight: var(--fw-semibold);
 }
 .plan-month + .plan-month {
   margin-top: 24px;
@@ -1333,9 +1368,10 @@ header {
   margin: 18px 0 4px;
   padding: 14px 0 8px;
   border-top: 1px solid var(--border);
-  color: var(--text-muted);
+  color: var(--text-display);
   font-size: 22px;
-  font-weight: 700;
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0;
 }
 .plan-collapsed-title {
   font-size: 20px;
@@ -1360,13 +1396,26 @@ header {
   justify-content: space-between;
   gap: 12px;
   padding: 8px 0 4px;
-  color: var(--text-secondary);
+  color: var(--text-muted);
   font-size: 13px;
+  font-weight: var(--fw-regular);
 }
 .plan-day-heading strong {
+  color: var(--text-muted);
+  font-size: 14px;
+  font-weight: var(--fw-regular);
+}
+.plan-day.has-tasks .plan-day-heading strong,
+.plan-day.is-today .plan-day-heading strong {
   color: var(--text-primary);
   font-size: 16px;
-  font-weight: 650;
+  font-weight: var(--fw-semibold);
+}
+.plan-day-heading span {
+  color: var(--text-faint);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--fw-regular);
 }
 .plan-day-tasks {
   display: flex;
@@ -1374,8 +1423,9 @@ header {
 }
 .plan-day-empty {
   min-height: 26px;
-  color: var(--text-muted);
+  color: var(--text-faint);
   font-size: 12px;
+  font-weight: var(--fw-regular);
 }
 .plan-day-empty::before {
   display: block;
@@ -1423,19 +1473,23 @@ header {
   bottom: -1px;
 }
 .task-row-reminder {
-  color: var(--primary);
+  color: var(--text-secondary);
   font-size: 12px;
+  font-weight: var(--fw-regular);
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 .task-card.done h3 {
-  color: var(--text-muted);
+  color: var(--text-faint);
+  font-weight: var(--fw-regular);
   text-decoration: line-through;
 }
 @media (max-width: 700px) {
   .plan-timeline {
     padding-bottom: 80px;
   }
-  .plan-day-heading strong {
+  .plan-day.has-tasks .plan-day-heading strong,
+  .plan-day.is-today .plan-day-heading strong {
     font-size: 15px;
   }
   .plan-drag-handle {
