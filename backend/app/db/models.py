@@ -10,6 +10,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     String,
+    Text,
     UniqueConstraint,
     text,
 )
@@ -347,3 +348,52 @@ class WorkerHeartbeat(Base):
     __tablename__ = "worker_heartbeats"
     name: Mapped[str] = mapped_column(primary_key=True)
     heartbeat_at: Mapped[int] = mapped_column(BigInteger)
+
+
+class AgentConversation(Owned, Base):
+    __tablename__ = "agent_conversations"
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    title: Mapped[str] = mapped_column(String(120), default="新对话")
+    consent_at: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+
+
+class AgentRun(Owned, Base):
+    __tablename__ = "agent_runs"
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    conversation_id: Mapped[str] = mapped_column(ForeignKey("agent_conversations.id"), index=True)
+    status: Mapped[str] = mapped_column(default="queued", index=True)
+    attempts: Mapped[int] = mapped_column(default=0)
+    next_run_at: Mapped[int] = mapped_column(BigInteger, default=0)
+    lease_until: Mapped[int] = mapped_column(BigInteger, default=0)
+    lease_token: Mapped[str] = mapped_column(default="")
+    error: Mapped[str] = mapped_column(default="")
+    transcript: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    step_count: Mapped[int] = mapped_column(default=0)
+
+
+class AgentAction(Owned, Base):
+    __tablename__ = "agent_actions"
+    __table_args__ = (UniqueConstraint("run_id", "action_key"),)
+    run_id: Mapped[str] = mapped_column(ForeignKey("agent_runs.id"), index=True)
+    conversation_id: Mapped[str] = mapped_column(ForeignKey("agent_conversations.id"), index=True)
+    action_key: Mapped[str] = mapped_column(String(64))
+    operation: Mapped[str] = mapped_column(String(80))
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON)
+    summary: Mapped[str] = mapped_column(String(1000), default="")
+    risk: Mapped[str] = mapped_column(String(20), default="low")
+    status: Mapped[str] = mapped_column(default="proposed", index=True)
+    depends_on: Mapped[list[str]] = mapped_column(JSON, default=list)
+    result: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    error: Mapped[str] = mapped_column(String(2000), default="")
+    expires_at: Mapped[int] = mapped_column(BigInteger, default=0)
+    executed_at: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+
+
+class AgentMessage(Owned, Base):
+    __tablename__ = "agent_messages"
+    conversation_id: Mapped[str] = mapped_column(ForeignKey("agent_conversations.id"), index=True)
+    run_id: Mapped[str | None] = mapped_column(
+        ForeignKey("agent_runs.id"), index=True, nullable=True
+    )
+    role: Mapped[str] = mapped_column(String(20))
+    content: Mapped[str] = mapped_column(Text, default="")

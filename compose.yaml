@@ -48,6 +48,24 @@ services:
       migrate:
         condition: service_completed_successfully
     restart: unless-stopped
+  agent-worker:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.api
+    command: [".venv/bin/python", "-m", "app.workers.agent"]
+    env_file:
+      - path: ./backend/.env
+        required: false
+    environment:
+      SA_DATABASE_URL: sqlite:////app/data/student_agent.db
+      SA_SOURCE_DIR: /app/data/sources
+      SA_ATTACHMENT_DIR: /app/data/attachments
+    volumes:
+      - student_data:/app/data
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
   gateway:
     build:
       context: .

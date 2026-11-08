@@ -24,6 +24,7 @@ from app.api.import_schemas import (
     SourceOut,
 )
 from app.api.schemas import EventInput, SeriesInput, TaskInput
+from app.config import Settings
 from app.db.models import (
     Course,
     Event,
@@ -106,7 +107,7 @@ def origins(object_id: str, db: DB, user: UserDep) -> list[ImportOut]:
 def create_job(
     db: DB,
     user: User,
-    request: Request,
+    settings: Settings,
     body: ImportText,
     image: bytes | None = None,
     media_type: str = "",
@@ -135,7 +136,7 @@ def create_job(
         return view(db, job)
     name = ""
     if image is not None:
-        directory = request.app.state.settings.source_dir
+        directory = settings.source_dir
         directory.mkdir(parents=True, exist_ok=True, mode=0o700)
         name = str(uuid4())
         temporary = directory / (name + ".tmp")
@@ -173,7 +174,7 @@ def create_job(
 
 @router.post("/text", response_model=ImportOut, status_code=202)
 def import_text(body: ImportText, request: Request, db: DB, user: UserDep) -> ImportOut:
-    return create_job(db, user, request, body)
+    return create_job(db, user, request.app.state.settings, body)
 
 
 @router.post("/image", response_model=ImportOut, status_code=202)
@@ -222,7 +223,7 @@ def import_image(
         parse=parse,
         idempotency_key=idempotency_key,
     )
-    return create_job(db, user, request, body, data, media_type)
+    return create_job(db, user, request.app.state.settings, body, data, media_type)
 
 
 @router.get("/{job_id}", response_model=ImportOut)

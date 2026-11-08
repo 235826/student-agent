@@ -44,6 +44,21 @@ def view(db: Session, user: User, plan: Plan) -> PlanOut:
     )
 
 
+def adopt_plan(db: Session, user: User, plan_id: str) -> Plan:
+    plan = owned(db, Plan, plan_id, user)
+    if plan.status == "adopted":
+        return plan
+    if plan.status != "draft" or view(db, user, plan).stale:
+        raise HTTPException(409, "计划已过期或不再是草稿，请根据最新数据重新生成")
+    previous = current_plan(db, user)
+    if previous:
+        previous.status = "superseded"
+        db.flush()
+    plan.status = "adopted"
+    record_change(db, user, "plan.adopt", plan, scheduling=False)
+    return plan
+
+
 def generate(db: Session, user: User, body: PlanInput) -> Plan:
     payload = {
         "operation": "plan.generate",

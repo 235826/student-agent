@@ -19,6 +19,12 @@ class Settings(BaseSettings):
     llm_model: str = ""
     llm_api_key: SecretStr = SecretStr("")
     llm_supports_images: bool = False
+    llm_supports_tools: bool = False
     llm_timeout_seconds: int = Field(default=60, ge=5, le=180)
+    agent_max_steps: int = Field(default=8, ge=1, le=30)
+    agent_timeout_seconds: int = Field(default=120, ge=10, le=600)
+    agent_action_ttl_seconds: int = Field(default=900, ge=60, le=86400)
+    agent_max_actions: int = Field(default=30, ge=1, le=100)
+    agent_history_messages: int = Field(default=20, ge=0, le=100)
     source_dir: Path = Path("../data/sources")
     attachment_dir: Path = Path("../data/attachments")
