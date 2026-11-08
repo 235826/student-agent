@@ -261,6 +261,18 @@ def _retry_or_fail(engine: Engine, run_id: str, token: str, failure: ParseFailur
             run.next_run_at = now_ms() + delay * 1000
         else:
             run.status = "failed"
+            db.add(
+                AgentMessage(
+                    workspace_id=run.workspace_id,
+                    conversation_id=run.conversation_id,
+                    run_id=run.id,
+                    role="assistant",
+                    content=f"本轮没有完成：{failure}",
+                )
+            )
+            conversation = db.get(AgentConversation, run.conversation_id)
+            if conversation is not None:
+                conversation.updated_at = now_ms()
         db.commit()
 
 

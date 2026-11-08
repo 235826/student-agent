@@ -4,6 +4,7 @@ import json
 import time
 from dataclasses import dataclass, field
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -42,6 +43,11 @@ class AgentChat:
             raise ParseFailure("当前模型未启用工具调用，请在服务端配置后重试")
         if not tools:
             raise ParseFailure("没有可用的 Agent 工具")
+        url = urlsplit(config.llm_base_url)
+        if url.scheme not in {"http", "https"} or not url.hostname or url.username or url.query:
+            raise ParseFailure("模型地址配置无效")
+        if url.scheme == "http" and url.hostname not in {"localhost", "127.0.0.1", "::1"}:
+            raise ParseFailure("远程模型接口必须使用 HTTPS")
         try:
             started = time.monotonic()
             with httpx.Client(
@@ -65,7 +71,7 @@ class AgentChat:
                     },
                 ) as response:
                     if response.status_code != 200:
-                        raise provider_failure(response, httpx.URL(config.llm_base_url).host)
+                        raise provider_failure(response, url.hostname or "")
                     chunks = bytearray()
                     for chunk in response.iter_bytes():
                         chunks.extend(chunk)

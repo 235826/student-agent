@@ -267,8 +267,44 @@ class PublishDraftArgs(Schema):
     revision: int = Field(gt=0)
 
 
-class DeleteArgs(Schema):
-    object_id: str
+class TaskListIdArgs(Schema):
+    list_id: str
+
+
+class GroupIdArgs(Schema):
+    group_id: str
+
+
+class TagIdArgs(Schema):
+    tag_id: str
+
+
+class FilterIdArgs(Schema):
+    filter_id: str
+
+
+class EventIdArgs(Schema):
+    event_id: str
+
+
+class CourseIdArgs(Schema):
+    course_id: str
+
+
+class SeriesIdArgs(Schema):
+    series_id: str
+
+
+class RuleIdArgs(Schema):
+    rule_id: str
+
+
+class EventTypeIdArgs(Schema):
+    event_type_id: str
+
+
+class PlanIdArgs(Schema):
+    plan_id: str
 
 
 class RenameTagArgs(Schema):
@@ -490,9 +526,9 @@ def _update_task_list(ctx: ToolContext, args: UpdateTaskListArgs) -> Any:
     )
 
 
-def _delete_task_list(ctx: ToolContext, args: DeleteArgs) -> Any:
-    planning.delete_task_list(args.object_id, ctx.db, ctx.user)
-    return {"id": args.object_id, "deleted": True}
+def _delete_task_list(ctx: ToolContext, args: TaskListIdArgs) -> Any:
+    planning.delete_task_list(args.list_id, ctx.db, ctx.user)
+    return {"id": args.list_id, "deleted": True}
 
 
 def _create_group(ctx: ToolContext, args: TaskListGroupInput) -> Any:
@@ -505,18 +541,18 @@ def _update_group(ctx: ToolContext, args: UpdateTaskListGroupArgs) -> Any:
     )
 
 
-def _delete_group(ctx: ToolContext, args: DeleteArgs) -> Any:
-    planning.delete_task_list_group(args.object_id, ctx.db, ctx.user)
-    return {"id": args.object_id, "deleted": True}
+def _delete_group(ctx: ToolContext, args: GroupIdArgs) -> Any:
+    planning.delete_task_list_group(args.group_id, ctx.db, ctx.user)
+    return {"id": args.group_id, "deleted": True}
 
 
 def _rename_tag(ctx: ToolContext, args: RenameTagArgs) -> Any:
     return planning.rename_tag(args.tag_id, TagInput(name=args.name), ctx.db, ctx.user)
 
 
-def _delete_tag(ctx: ToolContext, args: DeleteArgs) -> Any:
-    planning.delete_tag(args.object_id, ctx.db, ctx.user)
-    return {"id": args.object_id, "deleted": True}
+def _delete_tag(ctx: ToolContext, args: TagIdArgs) -> Any:
+    planning.delete_tag(args.tag_id, ctx.db, ctx.user)
+    return {"id": args.tag_id, "deleted": True}
 
 
 def _create_filter(ctx: ToolContext, args: SavedFilterInput) -> Any:
@@ -532,9 +568,9 @@ def _update_filter(ctx: ToolContext, args: UpdateSavedFilterArgs) -> Any:
     )
 
 
-def _delete_filter(ctx: ToolContext, args: DeleteArgs) -> Any:
-    planning.delete_saved_filter(args.object_id, ctx.db, ctx.user)
-    return {"id": args.object_id, "deleted": True}
+def _delete_filter(ctx: ToolContext, args: FilterIdArgs) -> Any:
+    planning.delete_saved_filter(args.filter_id, ctx.db, ctx.user)
+    return {"id": args.filter_id, "deleted": True}
 
 
 def _create_event(ctx: ToolContext, args: EventInput) -> Any:
@@ -556,9 +592,9 @@ def _update_event(ctx: ToolContext, args: UpdateEventArgs) -> Any:
     )
 
 
-def _delete_event(ctx: ToolContext, args: DeleteArgs) -> Any:
-    planning.delete_event(args.object_id, base_routes_confirm(), ctx.db, ctx.user)
-    return {"id": args.object_id, "deleted": True}
+def _delete_event(ctx: ToolContext, args: EventIdArgs) -> Any:
+    planning.delete_event(args.event_id, base_routes_confirm(), ctx.db, ctx.user)
+    return {"id": args.event_id, "deleted": True}
 
 
 def _skip_event(ctx: ToolContext, args: SkipEventArgs) -> Any:
@@ -580,9 +616,9 @@ def _update_course(ctx: ToolContext, args: UpdateCourseArgs) -> Any:
     )
 
 
-def _delete_course(ctx: ToolContext, args: DeleteArgs) -> Any:
-    planning.delete_course(args.object_id, base_routes_confirm(), ctx.db, ctx.user)
-    return {"id": args.object_id, "deleted": True}
+def _delete_course(ctx: ToolContext, args: CourseIdArgs) -> Any:
+    planning.delete_course(args.course_id, base_routes_confirm(), ctx.db, ctx.user)
+    return {"id": args.course_id, "deleted": True}
 
 
 def _create_series(ctx: ToolContext, args: CreateSeriesArgs, action_id: str = "") -> Any:
@@ -618,9 +654,9 @@ def _update_series(ctx: ToolContext, args: UpdateSeriesArgs) -> Any:
     )
 
 
-def _delete_series(ctx: ToolContext, args: DeleteArgs) -> Any:
-    planning.delete_series(args.object_id, base_routes_confirm(), ctx.db, ctx.user)
-    return {"id": args.object_id, "deleted": True}
+def _delete_series(ctx: ToolContext, args: SeriesIdArgs) -> Any:
+    planning.delete_series(args.series_id, base_routes_confirm(), ctx.db, ctx.user)
+    return {"id": args.series_id, "deleted": True}
 
 
 def _series_attendance(ctx: ToolContext, args: SeriesAttendanceArgs) -> Any:
@@ -646,9 +682,9 @@ def _create_rule(ctx: ToolContext, args: RuleInput) -> Any:
     return planning.add_rule(args, ctx.db, ctx.user)
 
 
-def _disable_rule(ctx: ToolContext, args: DeleteArgs) -> Any:
-    planning.disable_rule(args.object_id, ctx.db, ctx.user)
-    return {"id": args.object_id, "disabled": True}
+def _disable_rule(ctx: ToolContext, args: RuleIdArgs) -> Any:
+    planning.disable_rule(args.rule_id, ctx.db, ctx.user)
+    return {"id": args.rule_id, "disabled": True}
 
 
 def _type_policy(ctx: ToolContext, args: TypePolicyInput) -> Any:
@@ -665,9 +701,9 @@ def _update_event_type(ctx: ToolContext, args: UpdateEventTypeArgs) -> Any:
     )
 
 
-def _archive_event_type(ctx: ToolContext, args: DeleteArgs) -> Any:
-    event_types_api.delete_event_type(args.object_id, ctx.db, ctx.user)
-    return {"id": args.object_id, "archived": True}
+def _archive_event_type(ctx: ToolContext, args: EventTypeIdArgs) -> Any:
+    event_types_api.delete_event_type(args.event_type_id, ctx.db, ctx.user)
+    return {"id": args.event_type_id, "archived": True}
 
 
 def _generate_plan(ctx: ToolContext, args: CreatePlanArgs, action_id: str = "") -> Any:
@@ -685,10 +721,8 @@ def _generate_plan(ctx: ToolContext, args: CreatePlanArgs, action_id: str = "") 
     return scheduling.view(ctx.db, ctx.user, plan)
 
 
-def _adopt_plan(ctx: ToolContext, args: DeleteArgs) -> Any:
-    return scheduling.view(
-        ctx.db, ctx.user, scheduling.adopt_plan(ctx.db, ctx.user, args.object_id)
-    )
+def _adopt_plan(ctx: ToolContext, args: PlanIdArgs) -> Any:
+    return scheduling.view(ctx.db, ctx.user, scheduling.adopt_plan(ctx.db, ctx.user, args.plan_id))
 
 
 def _start_import(ctx: ToolContext, args: StartImportArgs, action_id: str = "") -> Any:
@@ -1082,7 +1116,7 @@ register(
         "delete_task_list",
         "删除清单，任务会保留但不再属于该清单。",
         WRITE,
-        DeleteArgs,
+        TaskListIdArgs,
         _delete_task_list,
         lambda args: "删除清单",
         "medium",
@@ -1115,7 +1149,7 @@ register(
         "delete_task_list_group",
         "删除清单文件夹，清单会保留。",
         WRITE,
-        DeleteArgs,
+        GroupIdArgs,
         _delete_group,
         lambda args: "删除清单文件夹",
         "medium",
@@ -1137,7 +1171,7 @@ register(
         "delete_tag",
         "删除标签。",
         WRITE,
-        DeleteArgs,
+        TagIdArgs,
         _delete_tag,
         lambda args: "删除标签",
         "medium",
@@ -1170,7 +1204,7 @@ register(
         "delete_saved_filter",
         "删除保存的筛选。",
         WRITE,
-        DeleteArgs,
+        FilterIdArgs,
         _delete_filter,
         lambda args: "删除保存筛选",
         "medium",
@@ -1205,7 +1239,7 @@ register(
         "delete_event",
         "删除单次事件，不可恢复。",
         WRITE,
-        DeleteArgs,
+        EventIdArgs,
         _delete_event,
         lambda args: "删除事件（不可恢复）",
         "high",
@@ -1249,7 +1283,7 @@ register(
         "delete_course",
         "删除空课程，不可恢复；课程下不能有事件或系列。",
         WRITE,
-        DeleteArgs,
+        CourseIdArgs,
         _delete_course,
         lambda args: "删除课程（不可恢复）",
         "high",
@@ -1282,7 +1316,7 @@ register(
         "delete_series",
         "删除重复课程系列及其全部事件，不可恢复。",
         WRITE,
-        DeleteArgs,
+        SeriesIdArgs,
         _delete_series,
         lambda args: "删除重复课程系列（不可恢复）",
         "high",
@@ -1328,7 +1362,7 @@ register(
         "disable_compatibility_rule",
         "停用并行兼容规则。",
         WRITE,
-        DeleteArgs,
+        RuleIdArgs,
         _disable_rule,
         lambda args: "停用并行兼容规则",
         "high",
@@ -1372,7 +1406,7 @@ register(
         "archive_event_type",
         "归档自定义事件类型。",
         WRITE,
-        DeleteArgs,
+        EventTypeIdArgs,
         _archive_event_type,
         lambda args: "归档事件类型",
         "medium",
@@ -1396,7 +1430,7 @@ register(
         "adopt_plan",
         "采用一份计划草稿作为当前计划。",
         WRITE,
-        DeleteArgs,
+        PlanIdArgs,
         _adopt_plan,
         lambda args: "采用学习计划",
         "high",

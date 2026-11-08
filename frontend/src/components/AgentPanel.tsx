@@ -195,6 +195,16 @@ export default function AgentPanel({ compact = false }: { compact?: boolean }) {
     }
     return groups;
   }, [detail.data?.actions]);
+  const orphanActions = useMemo(() => {
+    const attached = new Set(
+      (detail.data?.messages ?? [])
+        .map((message) => message.run_id)
+        .filter((value): value is string => !!value),
+    );
+    return (detail.data?.actions ?? []).filter(
+      (action) => !attached.has(action.run_id),
+    );
+  }, [detail.data?.actions, detail.data?.messages]);
   const disabled = !enabled || running || send.isPending || !conversationId;
 
   return (
@@ -268,6 +278,20 @@ export default function AgentPanel({ compact = false }: { compact?: boolean }) {
               </div>
             );
           })}
+          {orphanActions.length > 0 && (
+            <div className="agent-actions">
+              {orphanActions.map((action) => (
+                <ActionCard
+                  key={action.id}
+                  action={action}
+                  siblings={detail.data?.actions ?? []}
+                  busy={busyAction === action.id}
+                  onConfirm={(id) => confirm.mutate(id)}
+                  onReject={(id) => reject.mutate(id)}
+                />
+              ))}
+            </div>
+          )}
           {running && (
             <div className="agent-thinking">
               <Spin size="small" /> 正在理解并准备操作…
