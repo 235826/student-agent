@@ -72,3 +72,11 @@ export type ImportCandidate = components["schemas"]["ImportCandidate"];
 export type Series = components["schemas"]["SeriesOut"];
 export type EventType = components["schemas"]["EventTypeOut"];
 export type EventTypeInput = components["schemas"]["EventTypeInput"];
+
+export type AgentCapabilities = components["schemas"]["AgentCapabilities"];
+export type AgentConversation = components["schemas"]["ConversationOut"];
+export type AgentConversationDetail = components["schemas"]["ConversationDetail"];
+export type AgentAction = components["schemas"]["ActionOut"];
+export type AgentMessage = components["schemas"]["MessageOut"];
+export type AgentRun = components["schemas"]["RunOut"];
+export type AgentRunDetail = components["schemas"]["RunDetail"];

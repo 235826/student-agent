@@ -19,6 +19,8 @@ import {
   type Profile,
   type TaskSummary,
 } from "./api";
+import AgentDrawer from "./components/AgentDrawer";
+const AgentPage = lazy(() => import("./pages/AgentPage"));
 const HierarchyPage = lazy(() => import("./pages/HierarchyPage"));
 const Login = lazy(() => import("./pages/Login"));
 const TodayPage = lazy(() => import("./pages/TodayPage"));
@@ -207,6 +209,12 @@ export default function App() {
         </nav>
         <div className="sidebar-bottom">
           <NavLink
+            to="/agent"
+            className={() => (pathname.startsWith("/agent") ? "active" : "")}
+          >
+            Agent
+          </NavLink>
+          <NavLink
             to="/stats"
             className={() => (pathname.startsWith("/stats") ? "active" : "")}
           >
@@ -309,6 +317,7 @@ export default function App() {
               element={<LegacyDetail prefix="/calendar/series" />}
             />
             <Route path="/stats" element={<StatsPage />} />
+            <Route path="/agent" element={<AgentPage />} />
           <Route path="/settings/event-types" element={<EventTypesPage />} />
             <Route
               path="/settings/rules"
@@ -352,6 +361,7 @@ export default function App() {
           </Routes>
         </Suspense>
       </main>
+      <AgentDrawer />
     </div>
   );
 }

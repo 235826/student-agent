@@ -44,6 +44,7 @@ class MessageOut(Schema):
 
 class ActionOut(Schema):
     id: str
+    run_id: str
     action_key: str
     operation: str
     payload: dict[str, Any]
@@ -77,6 +78,7 @@ class ConversationDetail(Schema):
     conversation: ConversationOut
     messages: list[MessageOut]
     actions: list[ActionOut]
+    latest_run: RunOut | None = None
 
 
 class ActionConfirm(Schema):

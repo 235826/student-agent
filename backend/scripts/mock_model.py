@@ -8,8 +8,65 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, *_: object) -> None:
         pass
 
+    def json(self, payload: object) -> None:
+        response = json.dumps(payload, ensure_ascii=False).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(response)))
+        self.end_headers()
+        self.wfile.write(response)
+
+    def agent(self, body: dict) -> None:
+        messages = body["messages"]
+        if any(item.get("role") == "tool" for item in messages):
+            self.json(
+                {
+                    "choices": [
+                        {
+                            "message": {
+                                "role": "assistant",
+                                "content": "我已经提出操作，请逐条确认。",
+                            }
+                        }
+                    ]
+                }
+            )
+            return
+        user = next(
+            (item.get("content", "") for item in reversed(messages) if item.get("role") == "user"),
+            "",
+        )
+        text = user if isinstance(user, str) else ""
+        title = text.split("：", 1)[-1].split(":", 1)[-1].strip() or "测试任务"
+        arguments = json.dumps({"title": title, "estimate_minutes": 30}, ensure_ascii=False)
+        self.json(
+            {
+                "choices": [
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "content": None,
+                            "tool_calls": [
+                                {
+                                    "id": "call-1",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "create_task",
+                                        "arguments": arguments,
+                                    },
+                                }
+                            ],
+                        }
+                    }
+                ]
+            }
+        )
+
     def do_POST(self) -> None:
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+        if "tools" in body:
+            self.agent(body)
+            return
         content = body["messages"][1]["content"]
         source = json.loads(content[0]["text"])
         if "E2E_FAIL" in source["source_text"]:
@@ -45,18 +102,13 @@ class Handler(BaseHTTPRequestHandler):
                     "evidence": {"title": title},
                 }
             ]
-        response = json.dumps(
+        self.json(
             {
                 "choices": [
                     {"message": {"content": json.dumps({"candidates": candidates, "warnings": []})}}
                 ]
             }
-        ).encode()
-        self.send_response(200)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(response)))
-        self.end_headers()
-        self.wfile.write(response)
+        )
 
 
 def server() -> ThreadingHTTPServer:

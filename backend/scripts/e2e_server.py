@@ -24,6 +24,7 @@ command.upgrade(cfg, "head")
 from app.config import Settings  # noqa: E402 - backend path is installed above
 from app.main import create_app  # noqa: E402 - backend path is installed above
 from app.modules.security import LoginLimiter  # noqa: E402
+from app.workers.agent import serve as serve_agent  # noqa: E402
 from app.workers.imports import serve  # noqa: E402 - backend path is installed above
 from scripts.mock_model import server  # noqa: E402 - backend path is installed above
 
@@ -35,11 +36,14 @@ settings = Settings(
     llm_model="local-e2e-fixture",
     llm_api_key="",
     llm_supports_images=True,
+    llm_supports_tools=True,
     source_dir=path.parent / "e2e-sources",
 )
 stop = threading.Event()
 worker = threading.Thread(target=serve, args=(settings, stop), daemon=True)
 worker.start()
+agent_worker = threading.Thread(target=serve_agent, args=(settings, stop), daemon=True)
+agent_worker.start()
 try:
     app = create_app(settings)
     app.state.limiter = LoginLimiter(limit=100)
@@ -47,5 +51,6 @@ try:
 finally:
     stop.set()
     worker.join(timeout=5)
+    agent_worker.join(timeout=5)
     mock.shutdown()
     mock.server_close()

@@ -89,6 +89,12 @@ def get_conversation(conversation_id: str, db: DB, user: UserDep) -> Conversatio
             .order_by(AgentAction.created_at, AgentAction.id)
         )
     )
+    latest = db.scalar(
+        select(AgentRun)
+        .where(AgentRun.conversation_id == conversation.id)
+        .order_by(AgentRun.created_at.desc())
+        .limit(1)
+    )
     return ConversationDetail(
         conversation=ConversationOut.model_validate(conversation),
         messages=[
@@ -97,6 +103,7 @@ def get_conversation(conversation_id: str, db: DB, user: UserDep) -> Conversatio
             if message.role in {"user", "assistant"}
         ],
         actions=[ActionOut.model_validate(action) for action in actions],
+        latest_run=RunOut.model_validate(latest) if latest else None,
     )
 
 

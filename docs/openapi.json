@@ -11328,6 +11328,10 @@
             "type": "string",
             "title": "Id"
           },
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
           "action_key": {
             "type": "string",
             "title": "Action Key"
@@ -11417,6 +11421,7 @@
         "type": "object",
         "required": [
           "id",
+          "run_id",
           "action_key",
           "operation",
           "payload",
@@ -11768,6 +11773,16 @@
             },
             "type": "array",
             "title": "Actions"
+          },
+          "latest_run": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
