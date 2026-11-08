@@ -32,11 +32,28 @@ class Handler(BaseHTTPRequestHandler):
                 }
             )
             return
-        user = next(
-            (item.get("content", "") for item in reversed(messages) if item.get("role") == "user"),
-            "",
+        user_msg = next(
+            (item for item in reversed(messages) if item.get("role") == "user"),
+            None,
         )
-        text = user if isinstance(user, str) else ""
+        content = user_msg.get("content", "") if user_msg else ""
+        if isinstance(content, list) and any(
+            part.get("type") == "image_url" for part in content if isinstance(part, dict)
+        ):
+            self.json(
+                {
+                    "choices": [
+                        {
+                            "message": {
+                                "role": "assistant",
+                                "content": "我看到了你发送的图片。",
+                            }
+                        }
+                    ]
+                }
+            )
+            return
+        text = content if isinstance(content, str) else ""
         title = text.split("：", 1)[-1].split(":", 1)[-1].strip() or "测试任务"
         arguments = json.dumps({"title": title, "estimate_minutes": 30}, ensure_ascii=False)
         self.json(

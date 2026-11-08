@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Button, Input, Select, Spin, Tag, Typography } from "antd";
+import { PaperClipOutlined, CloseOutlined } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   api,
@@ -7,6 +8,7 @@ import {
   type AgentCapabilities,
   type AgentConversation,
   type AgentConversationDetail,
+  type AgentImage,
 } from "../api";
 
 const errorText = (error: unknown) =>
@@ -105,7 +107,9 @@ export default function AgentPanel({ compact = false }: { compact?: boolean }) {
   );
   const [draft, setDraft] = useState("");
   const [busyAction, setBusyAction] = useState("");
+  const [pendingImages, setPendingImages] = useState<AgentImage[]>([]);
   const bottom = useRef<HTMLDivElement | null>(null);
+  const fileInput = useRef<HTMLInputElement | null>(null);
 
   const capabilities = useQuery({
     queryKey: ["agent-capabilities"],
@@ -155,10 +159,15 @@ export default function AgentPanel({ compact = false }: { compact?: boolean }) {
       api<{ run_id: string }>(
         `/agent/conversations/${conversationId}/messages`,
         "POST",
-        { content, idempotency_key: crypto.randomUUID() },
+        {
+          content,
+          idempotency_key: crypto.randomUUID(),
+          image_ids: pendingImages.map((img) => img.id),
+        },
       ),
     onSuccess: () => {
       setDraft("");
+      setPendingImages([]);
       void client.invalidateQueries({ queryKey: ["agent-conversations"] });
       void client.invalidateQueries({ queryKey: ["agent-conversation", conversationId] });
     },
@@ -186,6 +195,7 @@ export default function AgentPanel({ compact = false }: { compact?: boolean }) {
   });
 
   const enabled = capabilities.data?.configured && capabilities.data?.tools;
+  const imagesEnabled = enabled && capabilities.data?.images === true;
   const latest = detail.data?.latest_run;
   const running = latest?.status === "queued" || latest?.status === "running";
   const actionsByRun = useMemo(() => {
@@ -206,6 +216,43 @@ export default function AgentPanel({ compact = false }: { compact?: boolean }) {
     );
   }, [detail.data?.actions, detail.data?.messages]);
   const disabled = !enabled || running || send.isPending || !conversationId;
+
+  const uploadImage = async (file: File) => {
+    if (!conversationId || pendingImages.length >= 4) return;
+    const form = new FormData();
+    form.append("file", file);
+    const result = await api<AgentImage>(
+      `/agent/conversations/${conversationId}/images`,
+      "POST",
+      form,
+    );
+    setPendingImages((prev) => [...prev, result]);
+    void client.invalidateQueries({ queryKey: ["agent-conversation", conversationId] });
+  };
+
+  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) void uploadImage(file);
+    event.target.value = "";
+  };
+
+  const handlePaste = (event: React.ClipboardEvent) => {
+    if (!imagesEnabled) return;
+    const file = Array.from(event.clipboardData.items).find(
+      (item) => item.kind === "file" && item.type.startsWith("image/"),
+    );
+    if (file) {
+      const image = file.getAsFile();
+      if (image) {
+        event.preventDefault();
+        void uploadImage(image);
+      }
+    }
+  };
+
+  const removeImage = (id: string) => {
+    setPendingImages((prev) => prev.filter((img) => img.id !== id));
+  };
 
   return (
     <div className={compact ? "agent-panel compact" : "agent-panel"}>
@@ -261,6 +308,18 @@ export default function AgentPanel({ compact = false }: { compact?: boolean }) {
             return (
               <div key={message.id} className={`agent-message ${message.role}`}>
                 <div className="agent-bubble">{message.content}</div>
+                {message.images && message.images.length > 0 && (
+                  <div className="agent-message-images">
+                    {message.images.map((img) => (
+                      <img
+                        key={img.id}
+                        src={`/api/v1/agent/images/${img.id}`}
+                        alt={img.media_type}
+                        className="agent-message-image"
+                      />
+                    ))}
+                  </div>
+                )}
                 {actions.length > 0 && (
                   <div className="agent-actions">
                     {actions.map((action) => (
@@ -308,27 +367,67 @@ export default function AgentPanel({ compact = false }: { compact?: boolean }) {
       )}
       {conversationId && (
         <div className="agent-compose">
-          <Input.TextArea
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            placeholder="例如：把明天的复习任务改到周五，并提醒我前先检查依赖"
-            autoSize={{ minRows: 2, maxRows: 5 }}
-            disabled={disabled}
-            onPressEnter={(event) => {
-              if (!event.shiftKey) {
-                event.preventDefault();
-                if (draft.trim() && !disabled) send.mutate(draft.trim());
-              }
-            }}
-          />
-          <Button
-            type="primary"
-            loading={send.isPending}
-            disabled={disabled || !draft.trim()}
-            onClick={() => draft.trim() && send.mutate(draft.trim())}
-          >
-            发送
-          </Button>
+          {imagesEnabled && pendingImages.length > 0 && (
+            <div className="agent-image-thumbs">
+              {pendingImages.map((img) => (
+                <div key={img.id} className="agent-image-thumb">
+                  <img
+                    src={`/api/v1/agent/images/${img.id}`}
+                    alt={img.media_type}
+                  />
+                  <Button
+                    size="small"
+                    type="text"
+                    icon={<CloseOutlined />}
+                    onClick={() => removeImage(img.id)}
+                    className="agent-image-remove"
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="agent-compose-row">
+            {imagesEnabled && (
+              <>
+                <input
+                  ref={fileInput}
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  style={{ display: "none" }}
+                  onChange={handleFileSelect}
+                />
+                <Button
+                  size="small"
+                  icon={<PaperClipOutlined />}
+                  disabled={disabled || pendingImages.length >= 4}
+                  onClick={() => fileInput.current?.click()}
+                  title="添加图片（最多 4 张）"
+                />
+              </>
+            )}
+            <Input.TextArea
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              placeholder="例如：把明天的复习任务改到周五，并提醒我前先检查依赖"
+              autoSize={{ minRows: 2, maxRows: 5 }}
+              disabled={disabled}
+              onPaste={handlePaste}
+              onPressEnter={(event) => {
+                if (!event.shiftKey) {
+                  event.preventDefault();
+                  if (draft.trim() && !disabled) send.mutate(draft.trim());
+                }
+              }}
+            />
+            <Button
+              type="primary"
+              loading={send.isPending}
+              disabled={disabled || !draft.trim()}
+              onClick={() => draft.trim() && send.mutate(draft.trim())}
+            >
+              发送
+            </Button>
+          </div>
         </div>
       )}
     </div>

@@ -8,6 +8,7 @@ from app.api.schemas import Schema, Timestamp
 class AgentCapabilities(Schema):
     configured: bool
     tools: bool
+    images: bool = False
     worker_online: bool
     consent_required: bool = True
 
@@ -27,6 +28,7 @@ class ConversationOut(Schema):
 class MessageInput(Schema):
     content: str = Field(min_length=1, max_length=8000)
     idempotency_key: str = Field(min_length=8, max_length=200)
+    image_ids: list[str] = Field(default_factory=list, max_length=4)
 
 
 class RunStart(Schema):
@@ -34,11 +36,21 @@ class RunStart(Schema):
     conversation_id: str
 
 
+class AgentImageOut(Schema):
+    id: str
+    conversation_id: str
+    message_id: str | None = None
+    media_type: str
+    size_bytes: int
+    created_at: Timestamp
+
+
 class MessageOut(Schema):
     id: str
     role: Literal["user", "assistant"]
     content: str
     run_id: str | None = None
+    images: list[AgentImageOut] = Field(default_factory=list)
     created_at: Timestamp
 
 

@@ -17,6 +17,7 @@ def settings(tmp_path: Path) -> Settings:
     settings = Settings(
         database_url=f"sqlite:///{tmp_path / 'test.db'}",
         attachment_dir=tmp_path / "attachments",
+        agent_image_dir=tmp_path / "agent-images",
     )
     cfg = Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))
     cfg.attributes["database_url"] = settings.database_url

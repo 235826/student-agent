@@ -1,7 +1,5 @@
 import hashlib
-import io
 import os
-import warnings
 from datetime import datetime
 from typing import Annotated
 from uuid import uuid4
@@ -9,7 +7,6 @@ from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
-from PIL import Image, UnidentifiedImageError
 from pydantic import ValidationError
 from sqlalchemy import select
 
@@ -39,13 +36,13 @@ from app.db.models import (
 from app.modules.calendar_management import create_series, unambiguous_instant
 from app.modules.event_types import ensure_system_types, resolve_event_type
 from app.modules.idempotency import remember, replay
+from app.modules.images import MAX_IMAGE_BYTES, validate_image
 from app.modules.records import owned, record_change
 from app.modules.security import DB, UserDep
 from app.modules.task_management import apply_task
 from app.providers.chat_completions import configured
 
 router = APIRouter(prefix="/api/v1/imports", tags=["imports"])
-MAX_IMAGE_BYTES = 8 * 1024 * 1024
 
 
 def view(db: DB, job: ImportJob) -> ImportOut:
@@ -192,29 +189,12 @@ def import_image(
     if (parse and not confirmed) or reference_at.tzinfo is None:
         raise HTTPException(422, "需要确认发送图片并提供含时区的参考时间")
     data = file.file.read(MAX_IMAGE_BYTES + 1)
-    if len(data) > MAX_IMAGE_BYTES:
-        raise HTTPException(413, "图片不能超过 8 MiB")
     try:
-        with warnings.catch_warnings():
-            warnings.simplefilter("error", Image.DecompressionBombWarning)
-            with Image.open(io.BytesIO(data)) as decoded:
-                if decoded.format not in {"PNG", "JPEG", "WEBP"}:
-                    raise ValueError()
-                if (
-                    decoded.width * decoded.height > 20_000_000
-                    or getattr(decoded, "n_frames", 1) != 1
-                ):
-                    raise ValueError()
-                media_type = Image.MIME[decoded.format]
-                decoded.verify()
-    except (
-        UnidentifiedImageError,
-        OSError,
-        ValueError,
-        Image.DecompressionBombError,
-        Image.DecompressionBombWarning,
-    ):
-        raise HTTPException(422, "请上传有效的单帧 PNG/JPEG/WebP 图片，最多 2000 万像素") from None
+        media_type = validate_image(data)
+    except ValueError as exc:
+        message = str(exc)
+        status = 413 if "8 MiB" in message else 422
+        raise HTTPException(status, message) from None
     body = ImportText(
         text="图片",
         context=context,

@@ -1,4 +1,9 @@
-from fastapi import APIRouter, HTTPException, Request, Response
+from pathlib import Path
+from typing import Annotated
+from uuid import uuid4
+
+from fastapi import APIRouter, File, HTTPException, Request, Response, UploadFile
+from fastapi.responses import FileResponse
 from sqlalchemy import delete, select
 
 from app.api.agent_schemas import (
@@ -6,6 +11,7 @@ from app.api.agent_schemas import (
     ActionOut,
     ActionReject,
     AgentCapabilities,
+    AgentImageOut,
     ConversationCreate,
     ConversationDetail,
     ConversationOut,
@@ -15,9 +21,11 @@ from app.api.agent_schemas import (
     RunOut,
     RunStart,
 )
+from app.config import Settings
 from app.db.models import (
     AgentAction,
     AgentConversation,
+    AgentImage,
     AgentMessage,
     AgentRun,
     WorkerHeartbeat,
@@ -25,6 +33,7 @@ from app.db.models import (
 )
 from app.modules.agent.executor import execute_action
 from app.modules.idempotency import remember, replay
+from app.modules.images import MAX_IMAGE_BYTES, validate_image
 from app.modules.records import owned, record_change
 from app.modules.security import DB, UserDep
 from app.providers.chat_completions import configured
@@ -41,6 +50,7 @@ def capabilities(request: Request, db: DB, user: UserDep) -> AgentCapabilities:
     return AgentCapabilities(
         configured=configured(settings),
         tools=settings.llm_supports_tools,
+        images=settings.llm_supports_images,
         worker_online=online,
         consent_required=True,
     )
@@ -72,6 +82,82 @@ def list_conversations(db: DB, user: UserDep) -> list[AgentConversation]:
     )
 
 
+def image_path(settings: Settings, image: AgentImage) -> Path:
+    return Path(settings.agent_image_dir) / image.workspace_id / image.id
+
+
+def _message_images(db: DB, message_id: str) -> list[AgentImageOut]:
+    images = list(
+        db.scalars(
+            select(AgentImage)
+            .where(AgentImage.message_id == message_id)
+            .order_by(AgentImage.created_at, AgentImage.id)
+        )
+    )
+    return [AgentImageOut.model_validate(img) for img in images]
+
+
+@router.post(
+    "/conversations/{conversation_id}/images",
+    response_model=AgentImageOut,
+    status_code=201,
+)
+def upload_image(
+    conversation_id: str,
+    request: Request,
+    db: DB,
+    user: UserDep,
+    file: Annotated[UploadFile, File()],
+) -> AgentImageOut:
+    conversation = owned(db, AgentConversation, conversation_id, user)
+    if conversation.consent_at is None:
+        raise HTTPException(403, "请先同意将对话与相关数据发送给模型")
+    data = file.file.read(MAX_IMAGE_BYTES + 1)
+    try:
+        media_type = validate_image(data)
+    except ValueError as exc:
+        message = str(exc)
+        status = 413 if "8 MiB" in message else 422
+        raise HTTPException(status, message) from None
+    image_id = str(uuid4())
+    directory = Path(request.app.state.settings.agent_image_dir) / user.workspace_id
+    directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+    final = directory / image_id
+    temp = directory / f".{image_id}.tmp"
+    try:
+        with temp.open("xb") as stream:
+            stream.write(data)
+            stream.flush()
+        temp.replace(final)
+    except Exception:
+        temp.unlink(missing_ok=True)
+        final.unlink(missing_ok=True)
+        raise
+    image = AgentImage(
+        id=image_id,
+        workspace_id=user.workspace_id,
+        conversation_id=conversation.id,
+        media_type=media_type,
+        size_bytes=len(data),
+    )
+    db.add(image)
+    record_change(db, user, "agent.image.upload", image, scheduling=False)
+    return AgentImageOut.model_validate(image)
+
+
+@router.get("/images/{image_id}")
+def serve_image(image_id: str, request: Request, db: DB, user: UserDep) -> FileResponse:
+    image = owned(db, AgentImage, image_id, user)
+    path = image_path(request.app.state.settings, image)
+    if not path.is_file():
+        raise HTTPException(404, "图片文件不可用")
+    return FileResponse(
+        path,
+        media_type=image.media_type,
+        headers={"Content-Disposition": "inline", "X-Content-Type-Options": "nosniff"},
+    )
+
+
 @router.get("/conversations/{conversation_id}", response_model=ConversationDetail)
 def get_conversation(conversation_id: str, db: DB, user: UserDep) -> ConversationDetail:
     conversation = owned(db, AgentConversation, conversation_id, user)
@@ -98,7 +184,10 @@ def get_conversation(conversation_id: str, db: DB, user: UserDep) -> Conversatio
     return ConversationDetail(
         conversation=ConversationOut.model_validate(conversation),
         messages=[
-            MessageOut.model_validate(message)
+            MessageOut(
+                **MessageOut.model_validate(message).model_dump(exclude={"images"}),
+                images=_message_images(db, message.id),
+            )
             for message in messages
             if message.role in {"user", "assistant"}
         ],
@@ -108,18 +197,27 @@ def get_conversation(conversation_id: str, db: DB, user: UserDep) -> Conversatio
 
 
 @router.delete("/conversations/{conversation_id}", status_code=204)
-def delete_conversation(conversation_id: str, db: DB, user: UserDep) -> Response:
+def delete_conversation(conversation_id: str, request: Request, db: DB, user: UserDep) -> Response:
     conversation = owned(db, AgentConversation, conversation_id, user)
     for run in db.scalars(select(AgentRun).where(AgentRun.conversation_id == conversation.id)):
         if run.status in {"queued", "running"}:
             run.status = "cancelled"
             run.lease_token = ""
             run.lease_until = 0
+    images = list(
+        db.scalars(select(AgentImage).where(AgentImage.conversation_id == conversation.id))
+    )
     db.execute(delete(AgentAction).where(AgentAction.conversation_id == conversation.id))
+    db.execute(delete(AgentImage).where(AgentImage.conversation_id == conversation.id))
     db.execute(delete(AgentMessage).where(AgentMessage.conversation_id == conversation.id))
     db.execute(delete(AgentRun).where(AgentRun.conversation_id == conversation.id))
     db.delete(conversation)
     db.commit()
+    for image in images:
+        try:
+            image_path(request.app.state.settings, image).unlink(missing_ok=True)
+        except OSError:
+            pass
     return Response(status_code=204)
 
 
@@ -166,6 +264,18 @@ def send_message(
     db.add(message)
     db.add(run)
     db.flush()
+    if body.image_ids:
+        linked = list(
+            db.scalars(
+                select(AgentImage).where(
+                    AgentImage.id.in_(body.image_ids),
+                    AgentImage.conversation_id == conversation.id,
+                    AgentImage.message_id.is_(None),
+                )
+            )
+        )
+        for image in linked:
+            image.message_id = message.id
     remember(db, user, body.idempotency_key, payload, run.id)
     if conversation.title == "新对话":
         conversation.title = body.content.strip()[:40] or "新对话"

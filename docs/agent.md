@@ -29,14 +29,18 @@ SA_LLM_BASE_URL=https://你的服务商/API前缀
 SA_LLM_MODEL=支持 tools 的模型名
 SA_LLM_API_KEY=本地密钥
 SA_LLM_SUPPORTS_TOOLS=true
+SA_LLM_SUPPORTS_IMAGES=true
 SA_AGENT_MAX_STEPS=8
 SA_AGENT_TIMEOUT_SECONDS=120
 SA_AGENT_ACTION_TTL_SECONDS=900
 SA_AGENT_MAX_ACTIONS=30
 SA_AGENT_HISTORY_MESSAGES=20
+SA_AGENT_IMAGE_DIR=../data/agent-images
 ```
 
 模型必须支持标准 Chat Completions `tools` / function calling。未配置或未开启时，Agent 界面会显示不可用提示，其他功能不受影响。
+
+`SA_LLM_SUPPORTS_IMAGES=true` 时，用户可以在聊天中上传图片（PNG/JPEG/WebP，最多 4 张，每张不超过 8 MiB），Agent 还可以通过 `read_task_images` 和 `read_import_image` 工具读取任务附件和导入来源中的图片。图片以 base64 data URL 内联在消息中发送给模型，不会存储在转录里。
 
 本地开发需在单独终端启动 Agent worker：
 
@@ -60,6 +64,10 @@ docker compose up -d --build --force-recreate api worker agent-worker
 - `agent_runs`：推理队列、租约和转录
 - `agent_actions`：待确认动作、风险级别、依赖与执行结果
 
+迁移 `0022` 新增：
+
+- `agent_images`：聊天图片元数据，关联会话和消息
+
 接口前缀为 `/api/v1/agent`：
 
 ```text
@@ -68,7 +76,9 @@ POST   /conversations
 GET    /conversations
 GET    /conversations/{id}
 DELETE /conversations/{id}
+POST   /conversations/{id}/images
 POST   /conversations/{id}/messages
+GET    /images/{id}
 GET    /runs/{id}
 POST   /runs/{id}/cancel
 POST   /actions/{id}/confirm
@@ -79,7 +89,9 @@ POST   /actions/{id}/reject
 
 ## 工具边界
 
-只读工具覆盖个人设置、任务与汇总、清单、文件夹、标签、保存筛选、事件、课程、系列、事件类型、当前计划、导入记录、草稿和并行兼容性检查。
+只读工具覆盖个人设置、任务与汇总、清单、文件夹、标签、保存筛选、事件、课程、系列、事件类型、当前计划、导入记录、草稿、任务附件元数据和并行兼容性检查。
+
+当 `SA_LLM_SUPPORTS_IMAGES=true` 时，额外暴露 `read_task_images`（读取任务附件中的图片）和 `read_import_image`（读取导入来源图片）两个只读工具。图片通过 base64 data URL 内联在合成用户消息中发送给模型，不存储在转录里。
 
 写工具覆盖任务增删改、完成/恢复、截止、提醒、旗标、垃圾箱与永久删除、工作日志、清单/文件夹/标签/保存筛选、事件/课程/重复系列、出勤、并行规则、任务类型策略、个人设置、事件类型、计划生成与采用、文本导入、草稿创建与发布。
 

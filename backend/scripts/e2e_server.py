@@ -38,6 +38,7 @@ settings = Settings(
     llm_supports_images=True,
     llm_supports_tools=True,
     source_dir=path.parent / "e2e-sources",
+    agent_image_dir=path.parent / "e2e-agent-images",
 )
 stop = threading.Event()
 worker = threading.Thread(target=serve, args=(settings, stop), daemon=True)

@@ -28,3 +28,4 @@ class Settings(BaseSettings):
     agent_history_messages: int = Field(default=20, ge=0, le=100)
     source_dir: Path = Path("../data/sources")
     attachment_dir: Path = Path("../data/attachments")
+    agent_image_dir: Path = Path("../data/agent-images")

@@ -80,3 +80,4 @@ export type AgentAction = components["schemas"]["ActionOut"];
 export type AgentMessage = components["schemas"]["MessageOut"];
 export type AgentRun = components["schemas"]["RunOut"];
 export type AgentRunDetail = components["schemas"]["RunDetail"];
+export type AgentImage = components["schemas"]["AgentImageOut"];

@@ -1,7 +1,9 @@
+import io
 import json
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
+from PIL import Image
 
 from app.modules.agent.runner import run_once
 from app.providers.agent_chat import AgentReply, ToolCall
@@ -172,3 +174,122 @@ def test_agent_workspace_isolation_and_consent(authenticated: TestClient) -> Non
     assert other.status_code == 201
     authenticated.headers["X-CSRF-Token"] = other.json()["csrf_token"]
     assert authenticated.get(f"/api/v1/agent/conversations/{created['id']}").status_code == 404
+
+
+def _png_bytes() -> bytes:
+    img = Image.new("RGB", (2, 2), color="red")
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def _upload_image(client: TestClient, conversation_id: str) -> dict:
+    response = client.post(
+        f"/api/v1/agent/conversations/{conversation_id}/images",
+        files={"file": ("test.png", _png_bytes(), "image/png")},
+    )
+    assert response.status_code == 201, response.text
+    return response.json()
+
+
+class CheckingScripted:
+    """Provider that pops replies and optionally checks messages for image content."""
+
+    def __init__(self, replies: list[AgentReply], checker=None):
+        self.replies = replies
+        self.checker = checker
+
+    def complete(self, messages: list[dict], tools: list[dict]) -> AgentReply:
+        assert tools
+        assert messages
+        if self.checker:
+            self.checker(messages)
+        return self.replies.pop(0)
+
+
+def test_agent_injects_chat_images(authenticated: TestClient) -> None:
+    configure(authenticated)
+    authenticated.app.state.settings.llm_supports_images = True
+    conv = authenticated.post("/api/v1/agent/conversations", json={"consent": True}).json()
+    image = _upload_image(authenticated, conv["id"])
+    sent = authenticated.post(
+        f"/api/v1/agent/conversations/{conv['id']}/messages",
+        json={
+            "content": "看看这张图",
+            "idempotency_key": str(uuid4()),
+            "image_ids": [image["id"]],
+        },
+    )
+    assert sent.status_code == 202, sent.text
+    run_id = sent.json()["run_id"]
+
+    def checker(messages: list[dict]) -> None:
+        user_msgs = [m for m in messages if m.get("role") == "user"]
+        assert user_msgs, "no user message"
+        last = user_msgs[-1]
+        content = last.get("content")
+        assert isinstance(content, list), f"expected list content, got {type(content)}"
+        assert any(p.get("type") == "image_url" for p in content), "no image_url part"
+
+    provider = CheckingScripted(
+        [
+            AgentReply(
+                content="我看到了图片。",
+                message={"role": "assistant", "content": "我看到了图片。"},
+            )
+        ],
+        checker,
+    )
+    run_once(authenticated.app.state.engine, authenticated.app.state.settings, provider)
+    run = authenticated.get(f"/api/v1/agent/runs/{run_id}").json()
+    assert run["run"]["status"] == "succeeded", run
+
+
+def test_agent_read_task_images_tool(authenticated: TestClient) -> None:
+    configure(authenticated)
+    authenticated.app.state.settings.llm_supports_images = True
+    task = authenticated.post("/api/v1/tasks", json={"title": "带附件的任务"}).json()
+    authenticated.post(
+        f"/api/v1/tasks/{task['id']}/attachments",
+        files={"file": ("attachment.png", _png_bytes(), "image/png")},
+    )
+    session = conversation(authenticated, "读取任务图片")
+    run_id = session["run"]["run_id"]
+    seen_image = {"value": False}
+
+    def checker(messages: list[dict]) -> None:
+        for msg in messages:
+            content = msg.get("content")
+            if isinstance(content, list):
+                for part in content:
+                    if isinstance(part, dict) and part.get("type") == "image_url":
+                        seen_image["value"] = True
+
+    provider = CheckingScripted(
+        [
+            call("read_task_images", {"task_id": task["id"]}),
+            AgentReply(
+                content="我看到了任务附件图片。",
+                message={"role": "assistant", "content": "我看到了任务附件图片。"},
+            ),
+        ],
+        checker,
+    )
+    run_once(authenticated.app.state.engine, authenticated.app.state.settings, provider)
+    run = authenticated.get(f"/api/v1/agent/runs/{run_id}").json()
+    assert run["run"]["status"] == "succeeded", run
+    assert seen_image["value"], "model never received an image_url part"
+
+
+def test_agent_image_tools_gated_without_image_support(authenticated: TestClient) -> None:
+    configure(authenticated)
+    authenticated.app.state.settings.llm_supports_images = False
+    from app.modules.agent.tools import tool_schemas
+
+    names = {t["function"]["name"] for t in tool_schemas(include_images=False)}
+    assert "read_task_images" not in names
+    assert "read_import_image" not in names
+    assert "list_task_attachments" in names
+    names_img = {t["function"]["name"] for t in tool_schemas(include_images=True)}
+    assert "read_task_images" in names_img
+    assert "read_import_image" in names_img

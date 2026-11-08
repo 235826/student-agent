@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date, datetime, time
+from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import HTTPException
@@ -48,7 +49,10 @@ from app.api.schemas import (
 from app.config import Settings
 from app.db.models import (
     Event,
+    ImportJob,
+    ImportSource,
     Task,
+    TaskAttachment,
     User,
     now_ms,
 )
@@ -85,6 +89,14 @@ class ToolSpec:
     execute: Callable[..., Any]
     summarize: Callable[[Any], str]
     risk: Risk = "low"
+    image_only: bool = False
+
+
+@dataclass(frozen=True)
+class ImageRef:
+    path: str
+    media_type: str
+    label: str
 
 
 def _id(value: Any) -> str:
@@ -94,6 +106,10 @@ def _id(value: Any) -> str:
 def _dump(value: Any) -> Any:
     if isinstance(value, list):
         return [_dump(item) for item in value]
+    if isinstance(value, ImageRef):
+        return {"path": value.path, "media_type": value.media_type, "label": value.label}
+    if isinstance(value, dict):
+        return {key: _dump(item) for key, item in value.items()}
     if hasattr(value, "model_dump"):
         return value.model_dump(mode="json")
     table = getattr(value, "__table__", None)
@@ -307,6 +323,10 @@ class PlanIdArgs(Schema):
     plan_id: str
 
 
+class JobIdArgs(Schema):
+    job_id: str
+
+
 class RenameTagArgs(Schema):
     tag_id: str
     name: str = Field(min_length=1, max_length=50)
@@ -396,6 +416,73 @@ def _read_plan(ctx: ToolContext, _: NoArgs) -> Any:
 
 def _read_imports(ctx: ToolContext, _: NoArgs) -> Any:
     return imports_api.imports(db=ctx.db, user=ctx.user)
+
+
+IMAGE_MEDIA_PREFIXES = ("image/",)
+
+
+def _is_image_media(media_type: str) -> bool:
+    return media_type.startswith(IMAGE_MEDIA_PREFIXES)
+
+
+def _list_task_attachments(ctx: ToolContext, args: TaskIdArgs) -> Any:
+    task = owned(ctx.db, Task, args.task_id, ctx.user)
+    attachments = list(
+        ctx.db.scalars(
+            select(TaskAttachment)
+            .where(TaskAttachment.task_id == task.id)
+            .order_by(TaskAttachment.created_at, TaskAttachment.id)
+        )
+    )
+    return [
+        {
+            "id": a.id,
+            "filename": a.filename,
+            "media_type": a.media_type,
+            "size_bytes": a.size_bytes,
+            "is_image": _is_image_media(a.media_type),
+        }
+        for a in attachments
+    ]
+
+
+def _read_task_images(ctx: ToolContext, args: TaskIdArgs) -> Any:
+    task = owned(ctx.db, Task, args.task_id, ctx.user)
+    attachments = list(
+        ctx.db.scalars(
+            select(TaskAttachment)
+            .where(TaskAttachment.task_id == task.id)
+            .order_by(TaskAttachment.created_at, TaskAttachment.id)
+        )
+    )
+    images: list[ImageRef] = []
+    labels: list[dict[str, str]] = []
+    for a in attachments:
+        if not _is_image_media(a.media_type):
+            continue
+        path = str(ctx.settings.attachment_dir / a.workspace_id / a.id)
+        if not Path(path).is_file():
+            continue
+        images.append(ImageRef(path=path, media_type=a.media_type, label=a.filename))
+        labels.append({"filename": a.filename, "media_type": a.media_type})
+    return {"task_id": task.id, "images": labels, "_images": images}
+
+
+def _read_import_image(ctx: ToolContext, args: JobIdArgs) -> Any:
+    job = owned(ctx.db, ImportJob, args.job_id, ctx.user)
+    source = ctx.db.get(ImportSource, job.source_id)
+    if source is None or source.deleted_at is not None or not source.file_name:
+        return {"error": "该导入记录没有图片来源"}
+    if not _is_image_media(source.media_type):
+        return {"error": "该导入来源不是图片"}
+    path = str(ctx.settings.source_dir / source.file_name)
+    if not Path(path).is_file():
+        return {"error": "来源文件不可用"}
+    return {
+        "job_id": job.id,
+        "media_type": source.media_type,
+        "_images": [ImageRef(path=path, media_type=source.media_type, label=source.file_name)],
+    }
 
 
 def _create_task(ctx: ToolContext, args: TaskInput) -> Any:
@@ -767,7 +854,7 @@ def register(tool: ToolSpec) -> None:
     TOOLS[tool.name] = tool
 
 
-def tool_schemas() -> list[dict[str, Any]]:
+def tool_schemas(include_images: bool = False) -> list[dict[str, Any]]:
     return [
         {
             "type": "function",
@@ -778,6 +865,7 @@ def tool_schemas() -> list[dict[str, Any]]:
             },
         }
         for tool in TOOLS.values()
+        if include_images or not tool.image_only
     ]
 
 
@@ -920,6 +1008,38 @@ register(
         NoArgs,
         _read_imports,
         _summary("读取导入记录"),
+    )
+)
+register(
+    ToolSpec(
+        "list_task_attachments",
+        "列出任务的全部附件元数据，包括文件名、类型和大小。",
+        READ,
+        TaskIdArgs,
+        _list_task_attachments,
+        _summary("读取任务附件"),
+    )
+)
+register(
+    ToolSpec(
+        "read_task_images",
+        "读取任务附件中的全部图片，图片会随回复一起发送给模型。",
+        READ,
+        TaskIdArgs,
+        _read_task_images,
+        _summary("读取任务图片"),
+        image_only=True,
+    )
+)
+register(
+    ToolSpec(
+        "read_import_image",
+        "读取导入来源的原始图片，图片会随回复一起发送给模型。",
+        READ,
+        JobIdArgs,
+        _read_import_image,
+        _summary("读取导入图片"),
+        image_only=True,
     )
 )
 register(

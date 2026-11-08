@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import base64
 import json
 from datetime import datetime
+from pathlib import Path
 from secrets import randbelow
 from typing import Any, Protocol
 from uuid import uuid4
@@ -15,6 +17,7 @@ from app.config import Settings
 from app.db.models import (
     AgentAction,
     AgentConversation,
+    AgentImage,
     AgentMessage,
     AgentRun,
     User,
@@ -49,6 +52,25 @@ class RunCancelled(Exception):
     pass
 
 
+def _encode_image(path: str, media_type: str) -> str:
+    data = Path(path).read_bytes()
+    return f"data:{media_type};base64,{base64.b64encode(data).decode()}"
+
+
+def _sanitize_for_transcript(message: dict[str, Any]) -> dict[str, Any]:
+    """Strip base64 image data from a message before storing in the transcript."""
+    content = message.get("content")
+    if isinstance(content, list):
+        cleaned: list[dict[str, Any]] = []
+        for part in content:
+            if isinstance(part, dict) and part.get("type") == "image_url":
+                cleaned.append({"type": "text", "text": "[图片已省略]"})
+            else:
+                cleaned.append(part)
+        return {**message, "content": cleaned}
+    return message
+
+
 def _serialize(value: Any) -> str:
     text = json.dumps(value, ensure_ascii=False, default=str)
     if len(text) > MAX_RESULT_CHARS:
@@ -63,6 +85,20 @@ def _tool_message(call_id: str, name: str, value: Any) -> dict[str, Any]:
         "name": name,
         "content": _serialize(value),
     }
+
+
+def _extract_images(result: Any) -> list[dict[str, str]]:
+    """Pop ``_images`` from a tool result dict, returning the image refs."""
+    if not isinstance(result, dict):
+        return []
+    images = result.pop("_images", [])
+    if not isinstance(images, list):
+        return []
+    return [
+        {"path": img["path"], "media_type": img["media_type"], "label": img.get("label", "")}
+        for img in images
+        if isinstance(img, dict) and "path" in img and "media_type" in img
+    ]
 
 
 def _lease_ok(engine: Engine, run_id: str, token: str) -> bool:
@@ -170,23 +206,53 @@ def _execute(
         now = datetime.now().astimezone()
         messages: list[dict[str, Any]] = [
             system_message(now.isoformat(), user.timezone),
-            *[{"role": message.role, "content": message.content} for message in history],
         ]
+        latest_user_id: str | None = None
+        for message in history:
+            if message.role == "user":
+                latest_user_id = message.id
+            messages.append({"role": message.role, "content": message.content})
+        if settings.llm_supports_images and latest_user_id is not None:
+            images = list(
+                db.scalars(
+                    select(AgentImage)
+                    .where(AgentImage.message_id == latest_user_id)
+                    .order_by(AgentImage.created_at, AgentImage.id)
+                )
+            )
+            if images:
+                for msg in reversed(messages):
+                    if msg.get("role") == "user":
+                        parts: list[dict[str, Any]] = [{"type": "text", "text": msg["content"]}]
+                        for image in images:
+                            path = settings.agent_image_dir / image.workspace_id / image.id
+                            if path.is_file():
+                                parts.append(
+                                    {
+                                        "type": "image_url",
+                                        "image_url": {
+                                            "url": _encode_image(str(path), image.media_type)
+                                        },
+                                    }
+                                )
+                        msg["content"] = parts
+                        break
         user_id = run.user_id
 
     transcript: list[dict[str, Any]] = []
     final_text = ""
     steps = 0
+    include_images = settings.llm_supports_images
     for step in range(settings.agent_max_steps):
         if not _lease_ok(engine, run_id, token):
             raise RunCancelled()
-        reply = provider.complete(messages, tool_schemas())
+        reply = provider.complete(messages, tool_schemas(include_images=include_images))
         steps = step + 1
         assistant = dict(reply.message or {})
         assistant.setdefault("role", "assistant")
         assistant.setdefault("content", reply.content)
         messages.append(assistant)
-        transcript.append(assistant)
+        transcript.append(_sanitize_for_transcript(assistant))
         if not reply.tool_calls:
             final_text = reply.content.strip()
             break
@@ -208,9 +274,25 @@ def _execute(
                         result = _read_tool(engine, settings, user_id, call.name, raw)
                     else:
                         result = _propose_action(engine, settings, run_id, token, call.name, raw)
-            message = _tool_message(call.id, call.name, result)
-            messages.append(message)
-            transcript.append(message)
+            tool_images = _extract_images(result)
+            tool_msg = _tool_message(call.id, call.name, result)
+            messages.append(tool_msg)
+            transcript.append(tool_msg)
+            if tool_images:
+                parts = [{"type": "text", "text": "以下是工具返回的图片："}]
+                for ref in tool_images:
+                    try:
+                        parts.append(
+                            {
+                                "type": "image_url",
+                                "image_url": {"url": _encode_image(ref["path"], ref["media_type"])},
+                            }
+                        )
+                    except OSError:
+                        pass
+                synthetic = {"role": "user", "content": parts}
+                messages.append(synthetic)
+                transcript.append(_sanitize_for_transcript(synthetic))
     else:
         final_text = "本轮工具调用已达到上限。请先逐条确认已提出的操作，或继续发送消息。"
 
