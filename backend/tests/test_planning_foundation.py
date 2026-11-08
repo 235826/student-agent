@@ -897,14 +897,20 @@ def test_task_reminder_and_plan_move(authenticated):
     )
     second = task(c, "计划任务B")
     assert first["remind_at"] is not None
-    assert abs(
-        datetime.fromisoformat(first["remind_at"].replace("Z", "+00:00")).timestamp()
-        - reminder.timestamp()
-    ) < 0.001
-    assert c.patch(
-        f"/api/v1/tasks/{second['id']}/reminder",
-        json={"remind_at": reminder.isoformat()},
-    ).status_code == 200
+    assert (
+        abs(
+            datetime.fromisoformat(first["remind_at"].replace("Z", "+00:00")).timestamp()
+            - reminder.timestamp()
+        )
+        < 0.001
+    )
+    assert (
+        c.patch(
+            f"/api/v1/tasks/{second['id']}/reminder",
+            json={"remind_at": reminder.isoformat()},
+        ).status_code
+        == 200
+    )
     assert c.get(f"/api/v1/tasks/{second['id']}").json()["remind_at"] is not None
 
     moved = c.post(
@@ -921,19 +927,25 @@ def test_task_reminder_and_plan_move(authenticated):
     assert moved.json()[1]["sort_order"] == 2
     record = c.get(f"/api/v1/tasks/{second['id']}").json()
     assert record["deadline_all_day"] is True
-    assert abs(
-        datetime.fromisoformat(record["deadline_at"].replace("Z", "+00:00")).timestamp()
-        - future.timestamp()
-    ) < 0.001
-    assert c.post(
-        "/api/v1/tasks/plan/move",
-        json={
-            "task_id": second["id"],
-            "deadline_at": None,
-            "deadline_all_day": False,
-            "ordered_task_ids": [second["id"]],
-        },
-    ).status_code == 200
+    assert (
+        abs(
+            datetime.fromisoformat(record["deadline_at"].replace("Z", "+00:00")).timestamp()
+            - future.timestamp()
+        )
+        < 0.001
+    )
+    assert (
+        c.post(
+            "/api/v1/tasks/plan/move",
+            json={
+                "task_id": second["id"],
+                "deadline_at": None,
+                "deadline_all_day": False,
+                "ordered_task_ids": [second["id"]],
+            },
+        ).status_code
+        == 200
+    )
     assert c.get(f"/api/v1/tasks/{second['id']}").json()["deadline_at"] is None
 
 
