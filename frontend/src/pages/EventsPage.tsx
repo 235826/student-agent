@@ -104,7 +104,6 @@ export default function EventsPage({ profile }: { profile: Profile }) {
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(
     null,
   );
-  const [skippingId, setSkippingId] = useState<string | null>(null);
   const [form] = Form.useForm();
   const [seriesForm] = Form.useForm();
   const [courseForm] = Form.useForm();
@@ -335,7 +334,6 @@ export default function EventsPage({ profile }: { profile: Profile }) {
   };
   const skip = async (event: Event) => {
     const next = !event.is_skipped;
-    setSkippingId(event.id);
     try {
       await api(`/events/${event.id}/skip`, "PATCH", {
         is_skipped: next,
@@ -367,8 +365,6 @@ export default function EventsPage({ profile }: { profile: Profile }) {
       });
     } catch (error) {
       void message.error(errorText(error));
-    } finally {
-      setSkippingId(null);
     }
   };
   return (
@@ -589,7 +585,6 @@ export default function EventsPage({ profile }: { profile: Profile }) {
                 {event.kind === "course" && (
                   <Button
                     disabled={write.isPending}
-                    loading={skippingId === event.id}
                     onClick={() => void skip(event)}
                   >
                     {event.is_skipped ? "恢复参加" : "本次不参加"}
