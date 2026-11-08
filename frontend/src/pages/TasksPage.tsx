@@ -164,13 +164,11 @@ export default function TasksPage({ profile }: { profile: Profile }) {
   const [listManager, setListManager] = useState(false);
   const [tagManager, setTagManager] = useState(false);
   const [draggingId, setDraggingId] = useState<string | null>(null);
-  const [monthsLoaded, setMonthsLoaded] = useState(1);
   const [dragOverDate, setDragOverDate] = useState<string | null | undefined>(
     undefined,
   );
   const [dropBeforeId, setDropBeforeId] = useState<string | null>(null);
   const [dropPosition, setDropPosition] = useState<"before" | "after">("before");
-  const timelineSentinelRef = useRef<HTMLDivElement>(null);
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkTagOpen, setBulkTagOpen] = useState(false);
@@ -249,20 +247,6 @@ export default function TasksPage({ profile }: { profile: Profile }) {
       ?.querySelector<HTMLElement>(".view-tab.active")
       ?.scrollIntoView({ block: "nearest", inline: "nearest" });
   }, [view]);
-  useEffect(() => {
-    if (!timelineMode || !timelineSentinelRef.current) return;
-    const node = timelineSentinelRef.current;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) {
-          setMonthsLoaded((current) => Math.min(12, current + 1));
-        }
-      },
-      { rootMargin: "240px" },
-    );
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, [timelineMode, monthsLoaded]);
   const closeEditor = () => {
     setEditor(null);
     setPendingCancel(null);
@@ -1032,14 +1016,10 @@ export default function TasksPage({ profile }: { profile: Profile }) {
   };
   const today = DateTime.now().setZone(profile.timezone).startOf("day");
   const todayKey = today.toISODate()!;
-  const timelineEnd =
+  const planEnd =
     view === "today"
       ? today
-      : today
-          .startOf("month")
-          .plus({ months: monthsLoaded })
-          .minus({ days: 1 });
-  const timelineEndKey = timelineEnd.toISODate()!;
+      : today.startOf("month").plus({ months: 12 }).minus({ days: 1 });
   const sortForPlan = (items: Task[]) =>
     [...items].sort(
       (a, b) =>
@@ -1051,6 +1031,32 @@ export default function TasksPage({ profile }: { profile: Profile }) {
     const weekdays = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
     return `${date.toFormat("M月d日")} ${weekdays[date.weekday % 7]}`;
   };
+  const chineseMonths = [
+    "一月",
+    "二月",
+    "三月",
+    "四月",
+    "五月",
+    "六月",
+    "七月",
+    "八月",
+    "九月",
+    "十月",
+    "十一月",
+    "十二月",
+  ];
+  const monthTitle = (date: DateTime) =>
+    date.year === today.year
+      ? chineseMonths[date.month - 1]
+      : `${date.year}年${chineseMonths[date.month - 1]}`;
+  const tasksByDateAll = new Map<string, Task[]>();
+  for (const task of visible) {
+    const key = taskDateKey(task);
+    if (!key) continue;
+    const list = tasksByDateAll.get(key) ?? [];
+    list.push(task);
+    tasksByDateAll.set(key, list);
+  }
   const groupByDate = (items: Task[]) => {
     const map = new Map<string, Task[]>();
     for (const task of items) {
@@ -1079,51 +1085,62 @@ export default function TasksPage({ profile }: { profile: Profile }) {
   const noDateTasks = sortForPlan(
     visible.filter((task) => !taskDateKey(task)),
   );
-  const datedByDate = new Map<string, Task[]>();
-  for (const task of visible) {
-    const key = taskDateKey(task);
-    if (!key || key < todayKey || key > timelineEndKey) continue;
-    const list = datedByDate.get(key) ?? [];
-    list.push(task);
-    datedByDate.set(key, list);
-  }
-  const timelineMonths: Array<{
-    month: string;
-    days: Array<{ key: string; label: string; tasks: Task[] }>;
-  }> = [];
-  for (
-    let cursor = today;
-    cursor <= timelineEnd;
-    cursor = cursor.plus({ days: 1 })
-  ) {
-    const key = cursor.toISODate()!;
-    const month = cursor.toFormat("yyyy年M月");
-    let bucket = timelineMonths[timelineMonths.length - 1];
-    if (!bucket || bucket.month !== month) {
-      bucket = { month, days: [] };
-      timelineMonths.push(bucket);
-    }
-    const diff = cursor.startOf("day").diff(today, "days").days;
-    bucket.days.push({
+  const weekKeys = new Set<string>();
+  const weekDays: Array<{ key: string; label: string; tasks: Task[] }> = [];
+  for (let offset = 0; offset < 7; offset += 1) {
+    const day = today.plus({ days: offset });
+    if (day > planEnd) break;
+    const key = day.toISODate()!;
+    weekKeys.add(key);
+    weekDays.push({
       key,
       label:
-        diff === 0
-          ? `今天 · ${planDateLabel(cursor)}`
-          : diff === 1
-            ? `明天 · ${planDateLabel(cursor)}`
-            : diff === 2
-              ? `后天 · ${planDateLabel(cursor)}`
-              : planDateLabel(cursor),
-      tasks: sortForPlan(datedByDate.get(key) ?? []),
+        offset === 0
+          ? `今天 · ${planDateLabel(day)}`
+          : offset === 1
+            ? `明天 · ${planDateLabel(day)}`
+            : offset === 2
+              ? `后天 · ${planDateLabel(day)}`
+              : planDateLabel(day),
+      tasks: sortForPlan(tasksByDateAll.get(key) ?? []),
     });
   }
-  const tasksByDateAll = new Map<string, Task[]>();
-  for (const task of visible) {
-    const key = taskDateKey(task);
-    if (!key) continue;
-    const list = tasksByDateAll.get(key) ?? [];
-    list.push(task);
-    tasksByDateAll.set(key, list);
+  const currentMonthEndKey = today.endOf("month").toISODate()!;
+  const otherCurrentMonthDays = [...tasksByDateAll.entries()]
+    .filter(
+      ([key]) =>
+        key >= todayKey && key <= currentMonthEndKey && !weekKeys.has(key),
+    )
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, entries]) => ({
+      key,
+      label: planDateLabel(DateTime.fromISO(key, { zone: profile.timezone })),
+      tasks: sortForPlan(entries),
+    }));
+  const futureMonths: Array<{
+    title: string;
+    days: Array<{ key: string; label: string; tasks: Task[] }>;
+  }> = [];
+  if (view !== "today") {
+    for (
+      let cursor = today.startOf("month").plus({ months: 1 });
+      cursor <= planEnd.startOf("month");
+      cursor = cursor.plus({ months: 1 })
+    ) {
+      const monthStartKey = cursor.startOf("month").toISODate()!;
+      const monthEndKey = cursor.endOf("month").toISODate()!;
+      const days = [...tasksByDateAll.entries()]
+        .filter(([key]) => key >= monthStartKey && key <= monthEndKey)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([key, entries]) => ({
+          key,
+          label: planDateLabel(
+            DateTime.fromISO(key, { zone: profile.timezone }),
+          ),
+          tasks: sortForPlan(entries),
+        }));
+      futureMonths.push({ title: monthTitle(cursor), days });
+    }
   }
   const resolvePlanDrop = (x: number, y: number) => {
     const element = document.elementFromPoint(x, y) as HTMLElement | null;
@@ -2644,10 +2661,45 @@ export default function TasksPage({ profile }: { profile: Profile }) {
                   <div className="plan-day-empty">拖到这里可清除日期</div>
                 )}
               </div>
-              {timelineMonths.map((month) => (
-                <section className="plan-month" key={month.month}>
-                  <h2 className="plan-month-title">{month.month}</h2>
-                  {month.days.map((day) => (
+              {weekDays.map((day) => (
+                <div
+                  key={day.key}
+                  data-plan-date={day.key}
+                  className={
+                    dragOverDate === day.key
+                      ? "plan-day drag-over"
+                      : "plan-day"
+                  }
+                >
+                  <div className="plan-day-heading">
+                    <strong>{day.label}</strong>
+                    <span>
+                      {day.tasks.length > 0 ? `${day.tasks.length} 项` : ""}
+                    </span>
+                  </div>
+                  {day.tasks.length > 0 ? (
+                    <div className="plan-day-tasks">
+                      {day.tasks.map((task) => (
+                        <Fragment key={task.id}>
+                          {renderTaskCard(
+                            task,
+                            visible.findIndex((item) => item.id === task.id),
+                            true,
+                          )}
+                        </Fragment>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="plan-day-empty" />
+                  )}
+                </div>
+              ))}
+              {view !== "today" && (
+                <section className="plan-month plan-other-month">
+                  <h2 className="plan-collapsed-title">
+                    {chineseMonths[today.month - 1]}其他时间
+                  </h2>
+                  {otherCurrentMonthDays.map((day) => (
                     <div
                       key={day.key}
                       data-plan-date={day.key}
@@ -2659,13 +2711,42 @@ export default function TasksPage({ profile }: { profile: Profile }) {
                     >
                       <div className="plan-day-heading">
                         <strong>{day.label}</strong>
-                        <span>
-                          {day.tasks.length > 0
-                            ? `${day.tasks.length} 项`
-                            : ""}
-                        </span>
+                        <span>{day.tasks.length} 项</span>
                       </div>
-                      {day.tasks.length > 0 ? (
+                      <div className="plan-day-tasks">
+                        {day.tasks.map((task) => (
+                          <Fragment key={task.id}>
+                            {renderTaskCard(
+                              task,
+                              visible.findIndex((item) => item.id === task.id),
+                              true,
+                            )}
+                          </Fragment>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </section>
+              )}
+              {futureMonths.map((month) => (
+                <section className="plan-month" key={month.title}>
+                  <h2 className="plan-month-title">{month.title}</h2>
+                  {month.days
+                    .filter((day) => !weekKeys.has(day.key))
+                    .map((day) => (
+                      <div
+                        key={day.key}
+                        data-plan-date={day.key}
+                        className={
+                          dragOverDate === day.key
+                            ? "plan-day drag-over"
+                            : "plan-day"
+                        }
+                      >
+                        <div className="plan-day-heading">
+                          <strong>{day.label}</strong>
+                          <span>{day.tasks.length} 项</span>
+                        </div>
                         <div className="plan-day-tasks">
                           {day.tasks.map((task) => (
                             <Fragment key={task.id}>
@@ -2677,18 +2758,10 @@ export default function TasksPage({ profile }: { profile: Profile }) {
                             </Fragment>
                           ))}
                         </div>
-                      ) : (
-                        <div className="plan-day-empty" />
-                      )}
-                    </div>
-                  ))}
+                      </div>
+                    ))}
                 </section>
               ))}
-              {view !== "today" && monthsLoaded < 12 && (
-                <div ref={timelineSentinelRef} className="plan-sentinel">
-                  加载更多月份…
-                </div>
-              )}
             </div>
           ) : !visible.length ? (
             <div className="empty-state">

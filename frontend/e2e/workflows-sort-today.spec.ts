@@ -268,6 +268,9 @@ test("计划视图按日期分组并跨天拖拽", async ({ page }) => {
   await expect(
     page.locator(`[data-plan-date="${tomorrowKey}"] .plan-day-heading strong`),
   ).toContainText("明天");
+  await expect(page.locator("[data-plan-date]")).toHaveCount(7);
+  await expect(page.getByText("其他时间")).toBeVisible();
+  await expect(page.locator(".plan-month-title")).toHaveCount(11);
   const reminderCard = page
     .locator(".task-card")
     .filter({ has: page.getByRole("heading", { name: "提醒任务" }) });

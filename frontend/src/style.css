@@ -1328,17 +1328,20 @@ header {
 .plan-month + .plan-month {
   margin-top: 24px;
 }
-.plan-month-title {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  margin: 0;
-  padding: 12px 0 8px;
-  background: var(--surface-muted);
+.plan-month-title,
+.plan-collapsed-title {
+  margin: 18px 0 4px;
+  padding: 14px 0 8px;
+  border-top: 1px solid var(--border);
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: 22px;
   font-weight: 700;
-  letter-spacing: 1px;
+}
+.plan-collapsed-title {
+  font-size: 20px;
+}
+.plan-other-month {
+  margin-top: 18px;
 }
 .plan-day {
   position: relative;
@@ -1370,20 +1373,23 @@ header {
   flex-direction: column;
 }
 .plan-day-empty {
-  min-height: 24px;
+  min-height: 26px;
   color: var(--text-muted);
   font-size: 12px;
+}
+.plan-day-empty::before {
+  display: block;
+  width: 13px;
+  height: 13px;
+  margin: 4px 0 2px 2px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 50%;
+  content: "";
 }
 .plan-no-date {
   margin-top: 28px;
   border-top: 1px solid var(--border);
   border-bottom: 0;
-}
-.plan-sentinel {
-  padding: 24px 0;
-  color: var(--text-muted);
-  font-size: 13px;
-  text-align: center;
 }
 .plan-drag-handle {
   margin-left: 4px;
@@ -1428,9 +1434,6 @@ header {
 @media (max-width: 700px) {
   .plan-timeline {
     padding-bottom: 80px;
-  }
-  .plan-month-title {
-    top: 0;
   }
   .plan-day-heading strong {
     font-size: 15px;
