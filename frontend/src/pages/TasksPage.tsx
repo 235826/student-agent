@@ -36,6 +36,7 @@ import {
   Form,
   Input,
   InputNumber,
+  Popover,
   Select,
   Space,
   Spin,
@@ -167,6 +168,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
   const [bulkTagValues, setBulkTagValues] = useState<string[]>([]);
   const [saveFilterOpen, setSaveFilterOpen] = useState(false);
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
+  const [mobileActionsOpen, setMobileActionsOpen] = useState(false);
   const [filterName, setFilterName] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [confirmAction, setConfirmAction] = useState<
@@ -1126,6 +1128,64 @@ export default function TasksPage({ profile }: { profile: Profile }) {
       onChange={(e) => setSearch(e.target.value)}
     />
   );
+  const actionButtons = (
+    <>
+      <Button
+        type="text"
+        className="task-action-inline"
+        onClick={() => setListManager(true)}
+      >
+        管理清单
+      </Button>
+      <Button
+        type="text"
+        className="task-action-inline"
+        onClick={() => setTagManager(true)}
+      >
+        管理标签
+      </Button>
+      <Button
+        type="text"
+        aria-pressed={selectionMode}
+        className={`task-action-inline ${
+          selectionMode ? "toolbar-toggle active" : "toolbar-toggle"
+        }`}
+        onClick={() => {
+          setSelectionMode((current) => !current);
+          setSelectedIds(new Set());
+        }}
+      >
+        {selectionMode ? "退出批量" : "批量操作"}
+      </Button>
+      <Button
+        type="text"
+        className="task-action-inline"
+        onClick={() => setSaveFilterOpen(true)}
+      >
+        保存筛选
+      </Button>
+      {savedFilterId && (
+        <Button
+          type="text"
+          className="task-action-inline"
+          danger
+          onClick={() => deleteFilter.mutate(savedFilterId)}
+        >
+          删除筛选
+        </Button>
+      )}
+      {view === "trash" && (
+        <Button
+          type="text"
+          className="task-action-inline"
+          danger
+          onClick={() => setConfirmAction({ kind: "clearTrash" })}
+        >
+          清空垃圾箱
+        </Button>
+      )}
+    </>
+  );
   return (
     <>
       <header>
@@ -1170,46 +1230,24 @@ export default function TasksPage({ profile }: { profile: Profile }) {
               ))}
             </div>
             <Space wrap className="task-toolbar-actions">
-              <Button type="text" onClick={() => setListManager(true)}>
-                管理清单
-              </Button>
-              <Button type="text" onClick={() => setTagManager(true)}>
-                管理标签
-              </Button>
-              <Button
-                type="text"
-                aria-pressed={selectionMode}
-                className={
-                  selectionMode ? "toolbar-toggle active" : "toolbar-toggle"
+              {actionButtons}
+              <Popover
+                trigger="click"
+                open={mobileActionsOpen}
+                onOpenChange={setMobileActionsOpen}
+                content={
+                  <div
+                    className="task-actions-menu"
+                    onClick={() => setMobileActionsOpen(false)}
+                  >
+                    {actionButtons}
+                  </div>
                 }
-                onClick={() => {
-                  setSelectionMode((current) => !current);
-                  setSelectedIds(new Set());
-                }}
               >
-                {selectionMode ? "退出批量" : "批量操作"}
-              </Button>
-              <Button type="text" onClick={() => setSaveFilterOpen(true)}>
-                保存筛选
-              </Button>
-              {savedFilterId && (
-                <Button
-                  type="text"
-                  danger
-                  onClick={() => deleteFilter.mutate(savedFilterId)}
-                >
-                  删除筛选
+                <Button type="text" className="mobile-actions-trigger">
+                  更多操作
                 </Button>
-              )}
-              {view === "trash" && (
-                <Button
-                  type="text"
-                  danger
-                  onClick={() => setConfirmAction({ kind: "clearTrash" })}
-                >
-                  清空垃圾箱
-                </Button>
-              )}
+              </Popover>
               <Button
                 type="text"
                 aria-label="筛选"

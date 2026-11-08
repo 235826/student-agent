@@ -41,7 +41,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
         },
       }}
     >
-      <AntApp>
+      <AntApp message={{ maxCount: 3, duration: 2.5 }}>
         <QueryClientProvider client={client}>
           <BrowserRouter>
             <App />

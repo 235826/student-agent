@@ -1,5 +1,5 @@
 import { test, expect } from "./fixtures";
-import { login } from "./support";
+import { login, openTaskActions } from "./support";
 
 test("任务行展开后保留筛选 URL", async ({ page }) => {
   const headers = await login(page);
@@ -32,6 +32,7 @@ test("批量改期、添加标签与撤销", async ({ page }) => {
     expect(response.status()).toBe(201);
   }
   await page.goto("/tasks");
+  await openTaskActions(page);
   await page.getByRole("button", { name: "批量操作", exact: true }).click();
   await page.getByLabel("选择 批量改期A").check();
   await page.getByLabel("选择 批量改期B").check();
@@ -122,6 +123,7 @@ test("垃圾箱永久删除与清空", async ({ page }) => {
     page.getByRole("heading", { name: "永久删除A" }),
   ).not.toBeVisible();
 
+  await openTaskActions(page);
   await page.getByRole("button", { name: "清空垃圾箱", exact: true }).click();
   await page
     .getByRole("button", { name: "确认清空垃圾箱", exact: true })

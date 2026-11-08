@@ -1,9 +1,10 @@
 import { test, expect } from "./fixtures";
-import { login, openTaskFilters } from "./support";
+import { login, openTaskActions, openTaskFilters } from "./support";
 
 test("清单创建、任务归类、筛选与完成历史", async ({ page }) => {
   await login(page);
   await page.getByRole("link", { name: "任务", exact: true }).click();
+  await openTaskActions(page);
   await page.getByRole("button", { name: "管理清单", exact: true }).click();
   await page.getByLabel("新清单名称").fill("课程");
   await page.getByRole("button", { name: "创建清单", exact: true }).click();
@@ -104,6 +105,7 @@ test("批量选择并完成任务", async ({ page }) => {
     expect(response.status()).toBe(201);
   }
   await page.goto("/tasks");
+  await openTaskActions(page);
   await page.getByRole("button", { name: "批量操作", exact: true }).click();
   await page.getByLabel("选择 批量任务A").check();
   await page.getByLabel("选择 批量任务B").check();

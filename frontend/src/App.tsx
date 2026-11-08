@@ -219,16 +219,6 @@ export default function App() {
             设置
           </NavLink>
         </div>
-        <div className="account">
-          <span>{profile.username}</span>
-          <Button
-            type="text"
-            onClick={() => logout.mutate()}
-            loading={logout.isPending}
-          >
-            退出
-          </Button>
-        </div>
       </aside>
       <main className="content">
         {!online && (

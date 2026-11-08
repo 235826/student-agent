@@ -14,6 +14,13 @@ export async function login(page: Page) {
 }
 
 export async function openTaskFilters(page: Page) {
+  await page.locator(".task-toolbar").waitFor({ state: "visible" });
   const trigger = page.getByRole("button", { name: "筛选", exact: true });
+  if (await trigger.isVisible()) await trigger.click();
+}
+
+export async function openTaskActions(page: Page) {
+  await page.locator(".task-toolbar-actions").waitFor({ state: "visible" });
+  const trigger = page.getByRole("button", { name: "更多操作", exact: true });
   if (await trigger.isVisible()) await trigger.click();
 }

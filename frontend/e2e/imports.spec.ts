@@ -11,6 +11,12 @@ async function login(page: Page) {
   await page.getByRole("link", { name: "收件箱", exact: true }).click();
   await page.getByRole("link", { name: "提交新材料" }).click();
 }
+async function expandImportItem(page: Page, index: number) {
+  const section = page.locator(".candidate").nth(index - 1);
+  const toggle = section.getByRole("button", { name: "展开", exact: true });
+  if (await toggle.isVisible()) await toggle.click();
+}
+
 async function reviewAndPublish(page: Page, count: number) {
   const checks = page.getByRole("checkbox", {
     name: "已核对该条目的标题、日期、时间及关联关系",
@@ -87,6 +93,7 @@ test("课表图片三条课程、确认与移动端布局", async ({ page }, inf
   await page.getByLabel("补充说明", { exact: true }).fill(prefix);
   await page.getByRole("checkbox", { name: /我同意/ }).check();
   await page.getByRole("button", { name: "保存并解析" }).click();
+  await expandImportItem(page, 3);
   await expect(page.getByLabel("条目 3 标题")).toHaveValue(prefix + "-课程2");
   expect(
     await page.evaluate(

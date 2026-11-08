@@ -43,7 +43,11 @@ export default function SettingsPage({
         <Link to="/settings/event-types">事件类型</Link>
         <Link to="/settings/rules">并行规则</Link>
       </Space>
-      <section className="section toolbar">
+      <nav className="settings-nav" aria-label="设置分区">
+        <a href="#account">账号</a>
+        <a href="#availability">时间与可用时段</a>
+      </nav>
+      <section className="section toolbar" id="account">
         <h3>账号</h3>
         <p>{profile.username}</p>
         <Button type="text" onClick={onLogout} loading={loggingOut}>
@@ -120,14 +124,14 @@ export default function SettingsPage({
                           name={[name, "start"]}
                           rules={[{ required: true }]}
                         >
-                          <Input aria-label="窗口开始" type="time" />
+                          <Input className="native-datetime" aria-label="窗口开始" type="time" />
                         </Form.Item>
                         <Form.Item
                           {...rest}
                           name={[name, "end"]}
                           rules={[{ required: true }]}
                         >
-                          <Input aria-label="窗口结束" type="time" />
+                          <Input className="native-datetime" aria-label="窗口结束" type="time" />
                         </Form.Item>
                         <Button onClick={() => remove(name)}>移除</Button>
                       </div>

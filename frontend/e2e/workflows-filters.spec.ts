@@ -1,6 +1,6 @@
 import { test, expect } from "./fixtures";
 import { DateTime } from "luxon";
-import { login, openTaskFilters } from "./support";
+import { login, openTaskActions, openTaskFilters } from "./support";
 
 test("清单文件夹与保存筛选", async ({ page }) => {
   const headers = await login(page);
@@ -11,6 +11,7 @@ test("清单文件夹与保存筛选", async ({ page }) => {
   expect(created.status()).toBe(201);
 
   await page.getByRole("link", { name: "任务", exact: true }).click();
+  await openTaskActions(page);
   await page.getByRole("button", { name: "管理清单", exact: true }).click();
   await page.getByLabel("新文件夹名称").fill("学习");
   await page.getByRole("button", { name: "创建文件夹", exact: true }).click();
@@ -44,6 +45,7 @@ test("清单文件夹与保存筛选", async ({ page }) => {
 
   const search = page.getByLabel("搜索任务");
   await search.fill("数学");
+  await openTaskActions(page);
   await page.getByRole("button", { name: "保存筛选", exact: true }).click();
   await page.getByLabel("筛选名称").fill("数学筛选");
   await page
@@ -70,6 +72,7 @@ test("清单文件夹与保存筛选", async ({ page }) => {
     page.getByRole("heading", { name: "数学作业" }),
   ).toBeVisible();
 
+  await openTaskActions(page);
   await page.getByRole("button", { name: "删除筛选", exact: true }).click();
   await expect(page.getByText("筛选已删除")).toBeVisible();
 });
@@ -123,6 +126,7 @@ test("标签管理重命名、使用次数与删除", async ({ page }) => {
     expect(response.status()).toBe(201);
   }
   await page.goto("/tasks");
+  await openTaskActions(page);
   await page.getByRole("button", { name: "管理标签", exact: true }).click();
   await expect(page.getByText("使用 2 次")).toBeVisible();
   const mathRow = page
@@ -137,6 +141,7 @@ test("标签管理重命名、使用次数与删除", async ({ page }) => {
     page.getByRole("heading", { name: "管理标签", exact: true }),
   ).not.toBeVisible();
 
+  await openTaskActions(page);
   await page.getByRole("button", { name: "管理标签", exact: true }).click();
   const highRow = page
     .locator(".ant-list-item")
@@ -167,6 +172,7 @@ test("清单排序按钮持久化顺序", async ({ page }) => {
     expect(response.status()).toBe(201);
   }
   await page.goto("/tasks");
+  await openTaskActions(page);
   await page.getByRole("button", { name: "管理清单", exact: true }).click();
   await expect(page.getByLabel("清单A 名称")).toBeVisible();
   const listC = page

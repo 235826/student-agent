@@ -208,6 +208,7 @@ export default function ImportsPage({ profile }: { profile: Profile }) {
             相对日期的参考时间（{profile.timezone}）
             <Input
               aria-label="参考时间"
+              className="native-datetime"
               type="datetime-local"
               value={reference}
               onChange={(e) => setReference(e.target.value)}
@@ -294,6 +295,17 @@ function DraftEditor({
   const [confirming, setConfirming] = useState<
     "retry" | "publish" | "source" | null
   >(null);
+  const [expanded, setExpanded] = useState<Set<string>>(
+    () => new Set(job.candidates[0]?.key ? [job.candidates[0].key] : []),
+  );
+  const toggleExpanded = (key: string) => {
+    setExpanded((previous) => {
+      const next = new Set(previous);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
   const busy = ["queued", "running"].includes(job.status);
   const selected = items.filter((i) => i.selected);
   const blockers = selected.filter((i) => !i.reviewed || !i.title.trim());
@@ -357,7 +369,7 @@ function DraftEditor({
         <details open>
           <summary>查看原始材料</summary>
           {job.source.kind === "text" ? (
-            <pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+            <pre className="source-preview">
               {job.source.text}
             </pre>
           ) : (
@@ -454,38 +466,63 @@ function DraftEditor({
           id={`candidate-${item.key}`}
           className="section candidate"
         >
-          <h3>条目 {index + 1}</h3>
-          <Space wrap>
-            <Checkbox
-              checked={item.selected}
-              disabled={readOnly}
-              onChange={(e) => change(index, { selected: e.target.checked })}
-            >
-              纳入本次创建
-            </Checkbox>
-            <Select
-              aria-label={`条目 ${index + 1} 类型`}
-              value={item.kind}
-              disabled={readOnly}
-              options={[
-                { value: "task", label: "任务" },
-                { value: "event", label: "单次事件" },
-                { value: "course", label: "每周课程" },
-              ]}
-              onChange={(kind) =>
-                change(index, { kind, parent_key: null, predecessor_keys: [] })
-              }
-            />
-            <Button
-              disabled={readOnly}
-              onClick={() => {
-                setItems(items.filter((_, i) => i !== index));
-                setDirty(true);
-              }}
-            >
-              移除条目
-            </Button>
-          </Space>
+          <div className="candidate-head">
+            <div className="candidate-heading">
+              <h3>条目 {index + 1}</h3>
+              <span className="candidate-summary">
+                {item.title || "未填写标题"}
+              </span>
+            </div>
+            <Space wrap>
+              <Checkbox
+                checked={item.selected}
+                disabled={readOnly}
+                onChange={(e) => change(index, { selected: e.target.checked })}
+              >
+                纳入本次创建
+              </Checkbox>
+              <Select
+                aria-label={`条目 ${index + 1} 类型`}
+                value={item.kind}
+                disabled={readOnly}
+                options={[
+                  { value: "task", label: "任务" },
+                  { value: "event", label: "单次事件" },
+                  { value: "course", label: "每周课程" },
+                ]}
+                onChange={(kind) =>
+                  change(index, { kind, parent_key: null, predecessor_keys: [] })
+                }
+              />
+              <Checkbox
+                disabled={readOnly}
+                checked={item.reviewed}
+                onChange={(e) => change(index, { reviewed: e.target.checked })}
+              >
+                已核对该条目的标题、日期、时间及关联关系
+              </Checkbox>
+              <Button
+                disabled={readOnly}
+                onClick={() => toggleExpanded(item.key)}
+              >
+                {expanded.has(item.key) ? "收起" : "展开"}
+              </Button>
+              <Button
+                disabled={readOnly}
+                onClick={() => {
+                  setItems(items.filter((_, i) => i !== index));
+                  setDirty(true);
+                }}
+              >
+                移除条目
+              </Button>
+            </Space>
+          </div>
+          <div
+            className={
+              expanded.has(item.key) ? "candidate-body open" : "candidate-body"
+            }
+          >
           <label>
             标题
             <Input
@@ -512,6 +549,7 @@ function DraftEditor({
               <label>
                 截止时间（留空表示待定）
                 <Input
+                  className="native-datetime"
                   type="datetime-local"
                   value={item.deadline_local ?? ""}
                   disabled={readOnly}
@@ -579,6 +617,7 @@ function DraftEditor({
               <label>
                 开始时间
                 <Input
+                  className="native-datetime"
                   type="datetime-local"
                   disabled={readOnly}
                   value={item.start_local ?? ""}
@@ -590,6 +629,7 @@ function DraftEditor({
               <label>
                 结束时间
                 <Input
+                  className="native-datetime"
                   type="datetime-local"
                   disabled={readOnly}
                   value={item.end_local ?? ""}
@@ -627,6 +667,7 @@ function DraftEditor({
                 <label key={field}>
                   {["起始日期", "结束日期", "上课时间", "下课时间"][i]}
                   <Input
+                    className="native-datetime"
                     type={field.endsWith("date") ? "date" : "time"}
                     disabled={readOnly}
                     value={item.recurrence?.[field] ?? ""}
@@ -684,23 +725,19 @@ function DraftEditor({
           {item.uncertainties?.map((text, i) => (
             <Alert key={i} type="warning" message={text} />
           ))}
-          <Checkbox
-            disabled={readOnly}
-            checked={item.reviewed}
-            onChange={(e) => change(index, { reviewed: e.target.checked })}
-          >
-            已核对该条目的标题、日期、时间及关联关系
-          </Checkbox>
+          </div>
         </section>
       ))}
       {!readOnly && (
-        <Space wrap style={{ marginTop: 16 }}>
+        <div className="import-actions">
+          <Space wrap>
           <Button
             onClick={() => {
+              const key = crypto.randomUUID();
               setItems([
                 ...items,
                 {
-                  key: crypto.randomUUID(),
+                  key,
                   kind: "task",
                   title: "",
                   description: "",
@@ -715,6 +752,7 @@ function DraftEditor({
                   reviewed: false,
                 },
               ]);
+              setExpanded((previous) => new Set(previous).add(key));
               setDirty(true);
             }}
           >
@@ -753,12 +791,13 @@ function DraftEditor({
           >
             {confirming === "publish" ? "再次点击确认创建" : "确认创建"}
           </Button>
-          {confirming === "publish" && (
-            <Button type="text" onClick={() => setConfirming(null)}>
-              取消
-            </Button>
-          )}
-        </Space>
+            {confirming === "publish" && (
+              <Button type="text" onClick={() => setConfirming(null)}>
+                取消
+              </Button>
+            )}
+          </Space>
+        </div>
       )}
       {job.published_revision && (
         <Alert
@@ -773,7 +812,8 @@ function DraftEditor({
         />
       )}
       {!job.source.deleted_at && (
-        <div className="toolbar">
+        <div className="import-danger-zone">
+          <span className="muted">危险操作</span>
           {confirming === "source" ? (
             <span className="row-actions">
               <Button
