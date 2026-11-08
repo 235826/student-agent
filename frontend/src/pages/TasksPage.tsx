@@ -114,6 +114,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const paramsRef = useRef(params);
+  const viewTabsRef = useRef<HTMLDivElement>(null);
   const inbox = location.pathname === "/inbox";
   const isNew = location.pathname === "/tasks/new";
   useEffect(() => {
@@ -233,6 +234,11 @@ export default function TasksPage({ profile }: { profile: Profile }) {
       current.trim() === debouncedSearch ? current : debouncedSearch,
     );
   }, [debouncedSearch]);
+  useEffect(() => {
+    viewTabsRef.current
+      ?.querySelector<HTMLElement>(".view-tab.active")
+      ?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [view]);
   const closeEditor = () => {
     setEditor(null);
     setPendingCancel(null);
@@ -1216,7 +1222,12 @@ export default function TasksPage({ profile }: { profile: Profile }) {
       {!inbox && !detailPage && (
         <div className="task-toolbar">
           <div className="task-toolbar-head">
-            <div className="view-tabs" role="group" aria-label="任务视图">
+            <div
+              ref={viewTabsRef}
+              className="view-tabs"
+              role="group"
+              aria-label="任务视图"
+            >
               {views.map(([key, label]) => (
                 <Button
                   key={key}

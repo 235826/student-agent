@@ -1,11 +1,13 @@
-import { Alert, Empty, Spin, Statistic } from "antd";
+import { Alert, Empty, Select, Spin, Statistic } from "antd";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api, type CompletionStats } from "../api";
 
 export default function StatsPage() {
+  const [days, setDays] = useState(14);
   const stats = useQuery({
-    queryKey: ["tasks", "stats", 14],
-    queryFn: () => api<CompletionStats>("/stats/completion?days=14"),
+    queryKey: ["tasks", "stats", days],
+    queryFn: () => api<CompletionStats>(`/stats/completion?days=${days}`),
   });
   if (stats.isPending) return <Spin />;
   if (stats.error)
@@ -17,8 +19,19 @@ export default function StatsPage() {
       <header>
         <div>
           <h1>完成统计</h1>
-          <p className="muted">最近 14 天的任务完成情况。</p>
+          <p className="muted">最近 {days} 天的任务完成情况。</p>
         </div>
+        <Select
+          aria-label="统计范围"
+          value={days}
+          onChange={setDays}
+          options={[
+            { value: 7, label: "最近 7 天" },
+            { value: 14, label: "最近 14 天" },
+            { value: 30, label: "最近 30 天" },
+          ]}
+          style={{ width: 128 }}
+        />
       </header>
       <div className="stats-summary">
         <div className="stat-block">
@@ -32,7 +45,7 @@ export default function StatsPage() {
         </div>
       </div>
       <section className="section toolbar">
-        <h3>最近 14 天</h3>
+        <h3>最近 {days} 天</h3>
         <div className="stats-bars">
           {data.days.map((day) => (
             <div

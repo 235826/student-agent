@@ -332,11 +332,21 @@ export default function PlansPage({ profile }: { profile: Profile }) {
                 <Button
                   type="primary"
                   disabled={active.stale}
+                  title={
+                    active.stale
+                      ? "计划已过期，请重新生成后再采用"
+                      : undefined
+                  }
                   loading={adopt.isPending}
                   onClick={() => setConfirmingAdopt(true)}
                 >
                   确认采用
                 </Button>
+                {active.stale && (
+                  <p className="muted">
+                    计划已过期，请先“重新生成”，确认后再采用。
+                  </p>
+                )}
                 {confirmingAdopt && (
                   <InlineConfirm
                     message={

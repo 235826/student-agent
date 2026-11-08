@@ -5,7 +5,7 @@ import {
   useNavigate,
   useSearchParams,
 } from "react-router-dom";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { backTarget } from "../navigation";
 import { priorities } from "../semantics";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -292,6 +292,15 @@ function DraftEditor({
     eventTypes.find((type) => type.system_key === hint)?.id;
   const [context, setContext] = useState(job.context);
   const [dirty, setDirty] = useState(false);
+  useEffect(() => {
+    if (!dirty) return;
+    const handler = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [dirty]);
   const [confirming, setConfirming] = useState<
     "retry" | "publish" | "source" | null
   >(null);
@@ -459,6 +468,78 @@ function DraftEditor({
             ) : undefined
           }
         />
+      )}
+      {!readOnly && (
+        <div className="import-actions">
+          <Space wrap>
+            {dirty && <Tag color="orange">未保存</Tag>}
+          <Button
+            onClick={() => {
+              const key = crypto.randomUUID();
+              setItems([
+                ...items,
+                {
+                  key,
+                  kind: "task",
+                  title: "",
+                  description: "",
+                  priority: 2,
+                  estimate_is_suggestion: true,
+                  location: "",
+                  event_kind: "other",
+                  predecessor_keys: [],
+                  evidence: {},
+                  uncertainties: [],
+                  selected: true,
+                  reviewed: false,
+                },
+              ]);
+              setExpanded((previous) => new Set(previous).add(key));
+              setDirty(true);
+            }}
+          >
+            添加条目
+          </Button>
+          <Button
+            loading={action.isPending}
+            onClick={() =>
+              act("draft", { revision: job.revision, candidates: items }, "PUT")
+            }
+          >
+            保存校对
+          </Button>
+          <Button
+            type="primary"
+            disabled={
+              dirty ||
+              !items.some((c) => c.selected) ||
+              items.some(
+                (c) => c.selected && (!c.reviewed || !c.title.trim()),
+              ) ||
+              action.isPending
+            }
+            onClick={() => {
+              if (confirming !== "publish") {
+                setConfirming("publish");
+                return;
+              }
+              setConfirming(null);
+              act("publish", {
+                revision: job.revision,
+                confirmed: true,
+                idempotency_key: crypto.randomUUID(),
+              });
+            }}
+          >
+            {confirming === "publish" ? "再次点击确认创建" : "确认创建"}
+          </Button>
+            {confirming === "publish" && (
+              <Button type="text" onClick={() => setConfirming(null)}>
+                取消
+              </Button>
+            )}
+          </Space>
+        </div>
       )}
       {items.map((item, index) => (
         <section
@@ -728,77 +809,6 @@ function DraftEditor({
           </div>
         </section>
       ))}
-      {!readOnly && (
-        <div className="import-actions">
-          <Space wrap>
-          <Button
-            onClick={() => {
-              const key = crypto.randomUUID();
-              setItems([
-                ...items,
-                {
-                  key,
-                  kind: "task",
-                  title: "",
-                  description: "",
-                  priority: 2,
-                  estimate_is_suggestion: true,
-                  location: "",
-                  event_kind: "other",
-                  predecessor_keys: [],
-                  evidence: {},
-                  uncertainties: [],
-                  selected: true,
-                  reviewed: false,
-                },
-              ]);
-              setExpanded((previous) => new Set(previous).add(key));
-              setDirty(true);
-            }}
-          >
-            添加条目
-          </Button>
-          <Button
-            loading={action.isPending}
-            onClick={() =>
-              act("draft", { revision: job.revision, candidates: items }, "PUT")
-            }
-          >
-            保存校对
-          </Button>
-          <Button
-            type="primary"
-            disabled={
-              dirty ||
-              !items.some((c) => c.selected) ||
-              items.some(
-                (c) => c.selected && (!c.reviewed || !c.title.trim()),
-              ) ||
-              action.isPending
-            }
-            onClick={() => {
-              if (confirming !== "publish") {
-                setConfirming("publish");
-                return;
-              }
-              setConfirming(null);
-              act("publish", {
-                revision: job.revision,
-                confirmed: true,
-                idempotency_key: crypto.randomUUID(),
-              });
-            }}
-          >
-            {confirming === "publish" ? "再次点击确认创建" : "确认创建"}
-          </Button>
-            {confirming === "publish" && (
-              <Button type="text" onClick={() => setConfirming(null)}>
-                取消
-              </Button>
-            )}
-          </Space>
-        </div>
-      )}
       {job.published_revision && (
         <Alert
           type="success"
