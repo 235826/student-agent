@@ -73,10 +73,18 @@
 - 事件展示统一按“每周课程 → 课程 → 自定义类型名称 → 其他”解析；颜色来自课程固定色或事件类型颜色，并用于事件卡片、今日议程和周历。
 - 事件类型可新建、改名、改色和归档。归档类型不能用于新事件，但历史事件继续显示原名称和颜色。
 - 页面不存在、对象已删除时提供返回入口；设置、收件箱和日历子路由保持对应导航选中态。
+- 任务详情展开后显示执行记录时间线，可补写、修改和删除实际用时、原因、备注、reflection，并关联同时进行的课程/事件/任务。
+- 事件详情提供活动反馈：整体感受 1–5、可选标签和自由文本，可修改和删除。
+- 任务视图新增“已归档”；归档任务不进入默认列表和排程，可在归档视图搜索并恢复。
+- 计划详情可展开“查看每个计划块的安排依据”，显示安排理由、优先级、截止时间、预计用时、可用窗口和并行规则来源。
+- 设置页新增“数据与隐私”：JSON 导出、导入校验和账号注销。注销采用 7 天冷静期，期间只读并可取消；到期删除业务数据和附件，匿名审计保留 30 天。
+- 首次进入提供可跳过的三步引导：创建任务、导入课表/作业、设置可用时间；设置页可重新打开。
+- 收件箱支持 PDF、DOCX、TXT、Markdown 文件；扫描版 PDF 不自动 OCR，提示改用图片导入。
 
 ## 执行反馈
 
 - 任务完成时可记录实际耗时、原因、备注和 reflection。
+- 执行记录可关联并行情境，活动本身可单独记录反馈，不混同为任务实际耗时。
 - 排程使用“预计用时 − 已记录实际耗时”计算剩余工时。
 - 计划报告显示已记录分钟数；重新生成计划后仍需用户确认采用。
 
@@ -131,6 +139,17 @@
 | `DELETE /event-series/{id}` | `confirmed=true`；删除系列、实例与覆盖，来源关联保留 |
 | `POST /imports/text` | 新增 `parse`，默认 true；`parse=false` 无需模型发送同意 |
 | `POST /imports/image` | multipart 新增 `parse`，默认 true；`parse=false` 可 `confirmed=false` |
+| `POST /imports/file` | 上传 PDF/DOCX/TXT/Markdown，提取文本后进入同一草稿流程；扫描版 PDF 返回 422 并提示改用图片 |
+| `GET /tasks/{id}/worklogs` | 列出执行记录及并行情境 |
+| `POST /tasks/{id}/worklogs` | 新增实际用时、原因、备注、reflection 和 `parallel_contexts` |
+| `PUT /worklogs/{id}` | 修改原因、备注、reflection 和并行情境 |
+| `DELETE /worklogs/{id}` | 删除执行记录并触发剩余工时重算 |
+| `GET/POST/PUT/DELETE /events/{id}/feedback` | 活动反馈；与事件关联，不伪造任务耗时 |
+| `POST /tasks/{id}/archive` / `unarchive` | 归档/恢复任务；归档任务不参与排程 |
+| `GET /data/export` | 导出 JSON v1，不含附件 |
+| `POST /data/import/validate` | 校验导入文件版本、引用和 ID 冲突；完整恢复为 P1 |
+| `GET/POST /account/deletion` | 查询注销状态、提交注销申请 |
+| `POST /account/deletion/cancel` | 冷静期内取消注销 |
 
 事件接口新增 `event_type_id`；`kind` 收敛为 `course/other`，课程事件不能设置自定义类型。非课程事件未指定类型时使用内置“其他”。导入候选可携带 `event_type_id`，模型输出的 `event_kind` 仅作为考试/会议/其他提示。事件和系列接口仍支持 `note`（最多 120 字）与 `details`（最多 5000 字）；事件的 `note_scope`/`details_scope` 分别控制单次或系列写入。读取事件时返回有效 `note`/`details`、系列值和单次值。沿用会话、CSRF、工作区归属、UTC/时区、夏令时拒绝、幂等重放、导入确认、计划 stale 校验；未改动排程算法。
 
