@@ -12,6 +12,9 @@ test("导航、旧路径与详情刷新", async ({ page }) => {
   await page.getByRole("button", { name: "新建任务", exact: true }).click();
   await page.getByLabel("任务标题").fill("可刷新的任务");
   await page.getByRole("button", { name: "创建任务", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "可刷新的任务", exact: true }),
+  ).toBeVisible();
   const tasks = await (await page.request.get("/api/v1/tasks")).json();
   const url = `/tasks/${tasks[0].id}`;
   await page.goto(url);
