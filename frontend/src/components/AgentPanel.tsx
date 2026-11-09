@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Button, Input, Select, Spin, Tag, Typography } from "antd";
 import { PaperClipOutlined, CloseOutlined } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { DateTime } from "luxon";
 import {
   api,
   type AgentAction,
@@ -29,6 +30,80 @@ const statusLabel: Record<string, string> = {
   expired: "已过期",
 };
 
+const previewLabels: Record<string, string> = {
+  title: "标题",
+  event_type: "事件类型",
+  start_at: "开始",
+  end_at: "结束",
+  timezone: "时区",
+  location: "地点",
+  note: "备注",
+  details: "详情",
+  deadline_at: "截止",
+  deadline_all_day: "全天截止",
+  priority: "优先级",
+  status: "状态",
+  tags: "标签",
+  estimate_minutes: "预计用时",
+  flagged: "旗标",
+  description: "描述",
+  links: "链接",
+  recurrence: "重复",
+  recurrence_interval: "重复间隔",
+  name: "名称",
+  color: "颜色",
+  semester: "学期",
+};
+
+const previewHidden = new Set([
+  "id",
+  "event_id",
+  "task_id",
+  "course_id",
+  "series_id",
+  "list_id",
+  "event_type_id",
+  "parent_id",
+  "predecessor_ids",
+  "action_key",
+]);
+
+const dateFields = new Set(["start_at", "end_at", "deadline_at", "remind_at", "created_at"]);
+
+const priorityLabels: Record<number, string> = {
+  1: "最高",
+  2: "高",
+  3: "中",
+  4: "低",
+};
+
+function formatPreviewValue(key: string, value: unknown): string {
+  if (key === "priority" && typeof value === "number") {
+    return `${priorityLabels[value] ?? value}（${value}）`;
+  }
+  if (dateFields.has(key) && typeof value === "string") {
+    const parsed = DateTime.fromISO(value);
+    return parsed.isValid ? parsed.toFormat("yyyy-MM-dd HH:mm") : value;
+  }
+  if (typeof value === "boolean") return value ? "是" : "否";
+  if (Array.isArray(value)) return value.map((item) => String(item)).join("、");
+  return String(value);
+}
+
+function previewEntries(action: AgentAction): Array<[string, string]> {
+  const entries: Array<[string, string]> = [];
+  for (const [key, value] of Object.entries(action.payload)) {
+    if (previewHidden.has(key) || value === null || value === undefined || value === "") {
+      continue;
+    }
+    if (typeof value === "object" && !Array.isArray(value)) continue;
+    if (Array.isArray(value) && value.length === 0) continue;
+    const text = formatPreviewValue(key, value);
+    entries.push([previewLabels[key] ?? key, text.length > 160 ? `${text.slice(0, 160)}…` : text]);
+  }
+  return entries;
+}
+
 function ActionCard({
   action,
   siblings,
@@ -47,6 +122,7 @@ function ActionCard({
     return dependency?.status !== "executed";
   });
   const ready = missing.length === 0;
+  const entries = previewEntries(action);
   return (
     <div className={`agent-action risk-${action.risk}`}>
       <div className="agent-action-head">
@@ -62,8 +138,18 @@ function ActionCard({
           {missing.length > 0 && "（请先确认前面的动作）"}
         </div>
       )}
+      {entries.length > 0 && (
+        <dl className="agent-action-preview">
+          {entries.map(([label, value]) => (
+            <div key={label} className="agent-action-preview-row">
+              <dt>{label}</dt>
+              <dd>{value}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
       <details className="agent-action-payload">
-        <summary>查看操作参数</summary>
+        <summary>查看原始 JSON</summary>
         <pre>{JSON.stringify(action.payload, null, 2)}</pre>
       </details>
       {action.status === "proposed" && (

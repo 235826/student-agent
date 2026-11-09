@@ -1629,6 +1629,30 @@ header {
   color: var(--text-secondary);
   font-size: 12px;
 }
+.agent-action-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--surface-muted);
+  font-size: 13px;
+}
+.agent-action-preview-row {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+}
+.agent-action-preview dt {
+  flex: 0 0 4.5em;
+  color: var(--text-muted);
+}
+.agent-action-preview dd {
+  flex: 1;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
 .agent-action-payload summary {
   color: var(--text-muted);
   font-size: 12px;
