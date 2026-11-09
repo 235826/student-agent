@@ -333,6 +333,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/agent/runs/{run_id}/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Stream Run */
+        get: operations["stream_run_api_v1_agent_runs__run_id__stream_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/agent/runs/{run_id}/cancel": {
         parameters: {
             query?: never;
@@ -1468,6 +1485,10 @@ export interface components {
             payload: {
                 [key: string]: unknown;
             };
+            /** Preview */
+            preview?: {
+                [key: string]: unknown;
+            };
             /** Summary */
             summary: string;
             /**
@@ -2284,6 +2305,12 @@ export interface components {
             idempotency_key: string;
             /** Image Ids */
             image_ids?: string[];
+            /**
+             * Surface
+             * @default agent
+             * @enum {string}
+             */
+            surface: "agent" | "tasks" | "calendar" | "planning" | "imports" | "settings";
         };
         /** MessageOut */
         MessageOut: {
@@ -2573,6 +2600,16 @@ export interface components {
             error: string;
             /** Step Count */
             step_count: number;
+            /**
+             * Phase
+             * @default
+             */
+            phase: string;
+            /**
+             * Partial Content
+             * @default
+             */
+            partial_content: string;
             /**
              * Created At
              * Format: date-time
@@ -5246,6 +5283,91 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RunDetail"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    stream_run_api_v1_agent_runs__run_id__stream_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Unauthorized */

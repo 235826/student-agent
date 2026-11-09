@@ -3,7 +3,9 @@ import { Alert, Button, Input, Select, Spin, Tag, Typography } from "antd";
 import { PaperClipOutlined, CloseOutlined } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { DateTime } from "luxon";
+import { useLocation } from "react-router-dom";
 import {
+  ApiError,
   api,
   type AgentAction,
   type AgentCapabilities,
@@ -31,6 +33,7 @@ const statusLabel: Record<string, string> = {
 };
 
 const previewLabels: Record<string, string> = {
+  target: "对象",
   title: "标题",
   event_type: "事件类型",
   start_at: "开始",
@@ -77,6 +80,39 @@ const priorityLabels: Record<number, string> = {
   4: "低",
 };
 
+function surfaceForPath(pathname: string): string {
+  if (pathname.startsWith("/tasks") || pathname.startsWith("/inbox")) return "tasks";
+  if (
+    pathname.startsWith("/calendar") ||
+    pathname.startsWith("/events") ||
+    pathname.startsWith("/courses") ||
+    pathname.startsWith("/series")
+  ) {
+    return "calendar";
+  }
+  if (pathname.startsWith("/plans") || pathname.startsWith("/compatibility")) return "planning";
+  if (pathname.startsWith("/imports")) return "imports";
+  if (pathname.startsWith("/settings")) return "settings";
+  return "agent";
+}
+
+const relatedQueries: Array<[string, string[]]> = [
+  ["task", ["tasks", "task-lists", "task-list-groups", "tags", "saved-filters"]],
+  ["worklog", ["worklogs", "tasks"]],
+  ["event", ["events", "courses", "series", "event-types", "plans"]],
+  ["course", ["courses", "series", "events", "plans"]],
+  ["series", ["series", "courses", "events", "plans"]],
+  ["plan", ["plans"]],
+  ["compatibility", ["rules"]],
+  ["policy", ["type-policies", "tasks"]],
+  ["import", ["imports", "drafts", "tasks", "events"]],
+  ["draft", ["drafts", "tasks"]],
+  ["profile", ["me"]],
+  ["list", ["task-lists", "task-list-groups", "saved-filters", "me"]],
+  ["tag", ["tags", "saved-filters", "me"]],
+  ["filter", ["saved-filters"]],
+];
+
 function formatPreviewValue(key: string, value: unknown): string {
   if (key === "priority" && typeof value === "number") {
     return `${priorityLabels[value] ?? value}（${value}）`;
@@ -92,7 +128,9 @@ function formatPreviewValue(key: string, value: unknown): string {
 
 function previewEntries(action: AgentAction): Array<[string, string]> {
   const entries: Array<[string, string]> = [];
-  for (const [key, value] of Object.entries(action.payload)) {
+  const preview = action.preview ?? {};
+  const source = Object.keys(preview).length > 0 ? preview : action.payload;
+  for (const [key, value] of Object.entries(source)) {
     if (previewHidden.has(key) || value === null || value === undefined || value === "") {
       continue;
     }
@@ -188,14 +226,19 @@ function ActionCard({
 
 export default function AgentPanel({ compact = false }: { compact?: boolean }) {
   const client = useQueryClient();
+  const location = useLocation();
   const [conversationId, setConversationId] = useState<string>(
     () => localStorage.getItem("agent:conversation") ?? "",
   );
   const [draft, setDraft] = useState("");
   const [busyAction, setBusyAction] = useState("");
   const [pendingImages, setPendingImages] = useState<AgentImage[]>([]);
+  const [streamRunId, setStreamRunId] = useState("");
+  const [streamText, setStreamText] = useState("");
+  const [streamPhase, setStreamPhase] = useState("");
   const bottom = useRef<HTMLDivElement | null>(null);
   const fileInput = useRef<HTMLInputElement | null>(null);
+  const autoRun = useRef("");
 
   const capabilities = useQuery({
     queryKey: ["agent-capabilities"],
@@ -217,6 +260,10 @@ export default function AgentPanel({ compact = false }: { compact?: boolean }) {
   });
 
   const select = (id: string) => {
+    setStreamRunId("");
+    setStreamText("");
+    setStreamPhase("");
+    autoRun.current = "";
     setConversationId(id);
     localStorage.setItem("agent:conversation", id);
   };
@@ -228,8 +275,74 @@ export default function AgentPanel({ compact = false }: { compact?: boolean }) {
   }, [conversationId, conversations.data]);
 
   useEffect(() => {
+    const latest = detail.data?.latest_run;
+    if (
+      latest &&
+      (latest.status === "queued" || latest.status === "running") &&
+      autoRun.current !== latest.id
+    ) {
+      autoRun.current = latest.id;
+      setStreamRunId(latest.id);
+    }
+  }, [detail.data?.latest_run]);
+
+  useEffect(() => {
+    if (!streamRunId) return;
+    setStreamText("");
+    setStreamPhase("");
+    let lastPending = -1;
+    const source = new EventSource(`/api/v1/agent/runs/${streamRunId}/stream`);
+    source.onmessage = (event) => {
+      let data: {
+        status?: string;
+        phase?: string;
+        partial_content?: string;
+        pending_actions?: number;
+      };
+      try {
+        data = JSON.parse(event.data);
+      } catch {
+        return;
+      }
+      setStreamPhase(data.phase ?? "");
+      setStreamText(data.partial_content ?? "");
+      const pending = data.pending_actions ?? 0;
+      if (pending !== lastPending) {
+        lastPending = pending;
+        if (pending > 0) {
+          void client.invalidateQueries({ queryKey: ["agent-conversation", conversationId] });
+        }
+      }
+      if (data.status && !["queued", "running"].includes(data.status)) {
+        source.close();
+        setStreamRunId("");
+        setStreamText("");
+        setStreamPhase("");
+        void client.invalidateQueries({ queryKey: ["agent-conversation", conversationId] });
+        void client.invalidateQueries({ queryKey: ["agent-conversations"] });
+      }
+    };
+    source.onerror = () => {
+      source.close();
+      setStreamRunId("");
+    };
+    return () => source.close();
+  }, [streamRunId, client, conversationId]);
+
+  const invalidateRelated = (operation: string) => {
+    void client.invalidateQueries({ queryKey: ["agent-conversation", conversationId] });
+    for (const [prefix, keys] of relatedQueries) {
+      if (operation.includes(prefix)) {
+        for (const key of keys) {
+          void client.invalidateQueries({ queryKey: [key] });
+        }
+      }
+    }
+  };
+
+  useEffect(() => {
     bottom.current?.scrollIntoView({ behavior: "smooth" });
-  }, [detail.data?.messages.length, detail.data?.actions.length]);
+  }, [detail.data?.messages.length, detail.data?.actions.length, streamText]);
 
   const create = useMutation({
     mutationFn: () =>
@@ -242,18 +355,21 @@ export default function AgentPanel({ compact = false }: { compact?: boolean }) {
 
   const send = useMutation({
     mutationFn: (content: string) =>
-      api<{ run_id: string }>(
+      api<{ run_id: string; conversation_id: string }>(
         `/agent/conversations/${conversationId}/messages`,
         "POST",
         {
           content,
           idempotency_key: crypto.randomUUID(),
           image_ids: pendingImages.map((img) => img.id),
+          surface: surfaceForPath(location.pathname),
         },
       ),
-    onSuccess: () => {
+    onSuccess: (result) => {
       setDraft("");
       setPendingImages([]);
+      autoRun.current = result.run_id;
+      setStreamRunId(result.run_id);
       void client.invalidateQueries({ queryKey: ["agent-conversations"] });
       void client.invalidateQueries({ queryKey: ["agent-conversation", conversationId] });
     },
@@ -264,9 +380,13 @@ export default function AgentPanel({ compact = false }: { compact?: boolean }) {
       api<AgentAction>(`/agent/actions/${id}/confirm`, "POST", {}),
     onMutate: (id) => setBusyAction(id),
     onSettled: () => setBusyAction(""),
-    onSuccess: () => {
-      void client.invalidateQueries({ queryKey: ["agent-conversation", conversationId] });
-      void client.invalidateQueries();
+    onSuccess: (action) => {
+      invalidateRelated(action.operation);
+    },
+    onError: (error) => {
+      if (error instanceof ApiError && error.status === 409) {
+        void client.invalidateQueries({ queryKey: ["agent-conversation", conversationId] });
+      }
     },
   });
 
@@ -278,12 +398,17 @@ export default function AgentPanel({ compact = false }: { compact?: boolean }) {
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: ["agent-conversation", conversationId] });
     },
+    onError: (error) => {
+      if (error instanceof ApiError && error.status === 409) {
+        void client.invalidateQueries({ queryKey: ["agent-conversation", conversationId] });
+      }
+    },
   });
 
   const enabled = capabilities.data?.configured && capabilities.data?.tools;
   const imagesEnabled = enabled && capabilities.data?.images === true;
   const latest = detail.data?.latest_run;
-  const running = latest?.status === "queued" || latest?.status === "running";
+  const running = !!streamRunId || latest?.status === "queued" || latest?.status === "running";
   const actionsByRun = useMemo(() => {
     const groups = new Map<string, AgentAction[]>();
     for (const action of detail.data?.actions ?? []) {
@@ -438,9 +563,16 @@ export default function AgentPanel({ compact = false }: { compact?: boolean }) {
             </div>
           )}
           {running && (
-            <div className="agent-thinking">
-              <Spin size="small" /> 正在理解并准备操作…
-            </div>
+            <>
+              {streamText && (
+                <div className="agent-message assistant">
+                  <div className="agent-bubble">{streamText}</div>
+                </div>
+              )}
+              <div className="agent-thinking">
+                <Spin size="small" /> {streamPhase || "正在理解并准备操作…"}
+              </div>
+            </>
           )}
           {latest?.status === "failed" && latest.error && (
             <Alert type="error" showIcon message={latest.error} />
