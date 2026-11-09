@@ -40,8 +40,7 @@ with tempfile.TemporaryDirectory(prefix="student-agent-perf-") as directory:
             json={
                 "timezone": "Asia/Shanghai",
                 "available_windows": [
-                    {"weekday": day, "start": "08:00", "end": "22:00"}
-                    for day in range(7)
+                    {"weekday": day, "start": "08:00", "end": "22:00"} for day in range(7)
                 ],
                 "rest_windows": [],
             },
@@ -55,9 +54,7 @@ with tempfile.TemporaryDirectory(prefix="student-agent-perf-") as directory:
                         workspace_id=user.workspace_id,
                         title=f"任务 {index}",
                         estimate_minutes=60,
-                        deadline_at=int(
-                            (start + timedelta(days=20)).timestamp() * 1000
-                        ),
+                        deadline_at=int((start + timedelta(days=20)).timestamp() * 1000),
                     )
                 )
             for index in range(500):
@@ -67,9 +64,7 @@ with tempfile.TemporaryDirectory(prefix="student-agent-perf-") as directory:
                         workspace_id=user.workspace_id,
                         title=f"事件 {index}",
                         start_at=int(event_start.timestamp() * 1000),
-                        end_at=int(
-                            (event_start + timedelta(hours=1)).timestamp() * 1000
-                        ),
+                        end_at=int((event_start + timedelta(hours=1)).timestamp() * 1000),
                         timezone="Asia/Shanghai",
                         locked=True,
                     )

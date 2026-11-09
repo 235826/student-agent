@@ -71,9 +71,7 @@ def export_payload(db: Session, user: User) -> dict[str, Any]:
             predecessors.setdefault(dependency.successor_task_id, []).append(
                 dependency.predecessor_task_id
             )
-    for link in db.scalars(
-        select(TaskTag).where(TaskTag.workspace_id == workspace_id)
-    ):
+    for link in db.scalars(select(TaskTag).where(TaskTag.workspace_id == workspace_id)):
         tag = db.get(Tag, link.tag_id)
         if tag and link.task_id in tags_by_task:
             tags_by_task[link.task_id].append(tag.name)
@@ -115,9 +113,7 @@ def export_payload(db: Session, user: User) -> dict[str, Any]:
     for name, model in COLLECTIONS.items():
         if name in {"tasks", "work_logs"}:
             continue
-        rows = list(
-            db.scalars(select(model).where(model.workspace_id == workspace_id))
-        )
+        rows = list(db.scalars(select(model).where(model.workspace_id == workspace_id)))
         payload[name] = [scalar_row(model, row) for row in rows]
     return payload
 
@@ -130,11 +126,7 @@ def _list(payload: dict[str, Any], key: str) -> list[dict[str, Any]]:
 
 
 def _ids(items: list[dict[str, Any]]) -> set[str]:
-    return {
-        str(item["id"])
-        for item in items
-        if isinstance(item.get("id"), str) and item["id"]
-    }
+    return {str(item["id"]) for item in items if isinstance(item.get("id"), str) and item["id"]}
 
 
 def validate_payload(db: Session, user: User, payload: dict[str, Any]) -> DataImportPreview:

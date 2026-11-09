@@ -75,9 +75,7 @@ def generate(db: Session, user: User, body: PlanInput) -> Plan:
     active = {
         t.id: t
         for t in tasks
-        if t.trashed_at is None
-        and t.archived_at is None
-        and t.status in {"todo", "in_progress"}
+        if t.trashed_at is None and t.archived_at is None and t.status in {"todo", "in_progress"}
     }
     if len(active) > 500:
         raise HTTPException(422, "单次排程最多支持 500 项未完成任务")
@@ -108,9 +106,7 @@ def generate(db: Session, user: User, body: PlanInput) -> Plan:
     def pair_result(a: str, b: str) -> PairResult:
         key = (a, b) if a < b else (b, a)
         if key not in pair_cache:
-            pair_cache[key] = evaluate_pair(
-                db, user, activities[a], activities[b], edges
-            )
+            pair_cache[key] = evaluate_pair(db, user, activities[a], activities[b], edges)
         return pair_cache[key]
 
     def compatible(ids: list[str]) -> bool:
@@ -215,9 +211,7 @@ def generate(db: Session, user: User, body: PlanInput) -> Plan:
                     amount = min(len(run), remaining)
                     if amount >= min(body.min_block_minutes, remaining):
                         chosen = run[:amount]
-                        local_start = datetime.fromtimestamp(
-                            chosen[0] / 1000, UTC
-                        ).astimezone(zone)
+                        local_start = datetime.fromtimestamp(chosen[0] / 1000, UTC).astimezone(zone)
                         window = next(
                             (
                                 (day, lower, upper)
@@ -276,11 +270,7 @@ def generate(db: Session, user: User, body: PlanInput) -> Plan:
                                     "policy_sources": result.policy_sources,
                                 }
                             )
-                        parallel_ids = {
-                            item["id"]
-                            for item in parallel
-                            if item["kind"] == "event"
-                        }
+                        parallel_ids = {item["id"] for item in parallel if item["kind"] == "event"}
                         fixed_events: list[dict[str, Any]] = []
                         if window:
                             window_start = int(

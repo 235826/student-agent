@@ -53,8 +53,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except OperationalError:
             logger.warning(json.dumps({"event": "account_purge_skipped"}))
 
-
-
     def error(
         request: Request,
         status: int,

@@ -126,14 +126,10 @@ def purge_user(db: Session, user: User, settings: Settings) -> None:
     drop(TaskTag, TaskTag.workspace_id == workspace_id)
     drop(TaskDependency, TaskDependency.workspace_id == workspace_id)
     db.execute(
-        update(Draft)
-        .where(Draft.workspace_id == workspace_id)
-        .values(published_task_id=None)
+        update(Draft).where(Draft.workspace_id == workspace_id).values(published_task_id=None)
     )
     drop(Draft, Draft.workspace_id == workspace_id)
-    db.execute(
-        update(Plan).where(Plan.workspace_id == workspace_id).values(base_plan_id=None)
-    )
+    db.execute(update(Plan).where(Plan.workspace_id == workspace_id).values(base_plan_id=None))
     drop(Plan, Plan.workspace_id == workspace_id)
     drop(Task, Task.workspace_id == workspace_id)
     drop(TaskList, TaskList.workspace_id == workspace_id)
@@ -165,15 +161,11 @@ def purge_user(db: Session, user: User, settings: Settings) -> None:
 def purge_due_accounts(db: Session, settings: Settings) -> int:
     users = list(
         db.scalars(
-            select(User).where(
-                User.deletion_due_at.is_not(None), User.deletion_due_at <= now_ms()
-            )
+            select(User).where(User.deletion_due_at.is_not(None), User.deletion_due_at <= now_ms())
         )
     )
     for user in users:
         purge_user(db, user, settings)
-    db.execute(
-        delete(DeletedWorkspaceAudit).where(DeletedWorkspaceAudit.expires_at <= now_ms())
-    )
+    db.execute(delete(DeletedWorkspaceAudit).where(DeletedWorkspaceAudit.expires_at <= now_ms()))
     db.commit()
     return len(users)

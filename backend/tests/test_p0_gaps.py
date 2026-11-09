@@ -99,9 +99,7 @@ def test_task_archive_and_plan_basis(authenticated: TestClient) -> None:
         "/api/v1/profile",
         json={
             "timezone": "Asia/Shanghai",
-            "available_windows": [
-                {"weekday": 0, "start": "09:00", "end": "10:00"}
-            ],
+            "available_windows": [{"weekday": 0, "start": "09:00", "end": "10:00"}],
             "rest_windows": [],
         },
     )
@@ -170,9 +168,7 @@ def test_expired_account_is_purged_on_login(authenticated: TestClient) -> None:
     with Session(client.app.state.engine) as db:
         user = db.scalar(select(User).where(User.username == "student"))
         assert user is not None
-        user.deletion_due_at = int(
-            (datetime.now(UTC) - timedelta(minutes=1)).timestamp() * 1000
-        )
+        user.deletion_due_at = int((datetime.now(UTC) - timedelta(minutes=1)).timestamp() * 1000)
         db.commit()
     response = client.post(
         "/api/v1/auth/login",

@@ -1285,9 +1285,7 @@ def delete_course(course_id: str, body: ConfirmInput, db: DB, user: UserDep) -> 
 
 
 @router.get("/events/{event_id}/feedback", response_model=ActivityFeedbackOut | None)
-def get_event_feedback(
-    event_id: str, db: DB, user: UserDep
-) -> ActivityFeedback | None:
+def get_event_feedback(event_id: str, db: DB, user: UserDep) -> ActivityFeedback | None:
     owned(db, Event, event_id, user)
     return db.scalar(
         select(ActivityFeedback).where(
@@ -1370,9 +1368,7 @@ def delete_event(event_id: str, body: ConfirmInput, db: DB, user: UserDep) -> No
     override = instance_override(db, event)
     if override:
         db.delete(override)
-    db.execute(
-        delete(ActivityFeedback).where(ActivityFeedback.event_id == event.id)
-    )
+    db.execute(delete(ActivityFeedback).where(ActivityFeedback.event_id == event.id))
     remove_record(db, user, "event.delete", event)
 
 
@@ -1420,9 +1416,7 @@ def delete_series(series_id: str, body: ConfirmInput, db: DB, user: UserDep) -> 
         db.delete(override)
     event_ids = list(db.scalars(select(Event.id).where(Event.series_id == series.id)))
     if event_ids:
-        db.execute(
-            delete(ActivityFeedback).where(ActivityFeedback.event_id.in_(event_ids))
-        )
+        db.execute(delete(ActivityFeedback).where(ActivityFeedback.event_id.in_(event_ids)))
     for event in db.scalars(select(Event).where(Event.series_id == series.id)):
         db.delete(event)
     db.flush()
