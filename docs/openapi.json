@@ -2407,6 +2407,106 @@
         }
       }
     },
+    "/api/v1/agent/runs/{run_id}/stream": {
+      "get": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Stream Run",
+        "operationId": "stream_run_api_v1_agent_runs__run_id__stream_get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        }
+      }
+    },
     "/api/v1/agent/runs/{run_id}/cancel": {
       "post": {
         "tags": [
@@ -11557,6 +11657,11 @@
             "type": "object",
             "title": "Payload"
           },
+          "preview": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Preview"
+          },
           "summary": {
             "type": "string",
             "title": "Summary"
@@ -13543,6 +13648,19 @@
             "type": "array",
             "maxItems": 4,
             "title": "Image Ids"
+          },
+          "surface": {
+            "type": "string",
+            "enum": [
+              "agent",
+              "tasks",
+              "calendar",
+              "planning",
+              "imports",
+              "settings"
+            ],
+            "title": "Surface",
+            "default": "agent"
           }
         },
         "additionalProperties": false,
@@ -14283,6 +14401,16 @@
           "step_count": {
             "type": "integer",
             "title": "Step Count"
+          },
+          "phase": {
+            "type": "string",
+            "title": "Phase",
+            "default": ""
+          },
+          "partial_content": {
+            "type": "string",
+            "title": "Partial Content",
+            "default": ""
           },
           "created_at": {
             "type": "string",

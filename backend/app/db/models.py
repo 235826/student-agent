@@ -369,6 +369,9 @@ class AgentRun(Owned, Base):
     error: Mapped[str] = mapped_column(default="")
     transcript: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
     step_count: Mapped[int] = mapped_column(default=0)
+    surface: Mapped[str] = mapped_column(String(20), default="agent")
+    phase: Mapped[str] = mapped_column(String(200), default="")
+    partial_content: Mapped[str] = mapped_column(Text, default="")
 
 
 class AgentAction(Owned, Base):
@@ -379,6 +382,7 @@ class AgentAction(Owned, Base):
     action_key: Mapped[str] = mapped_column(String(64))
     operation: Mapped[str] = mapped_column(String(80))
     payload: Mapped[dict[str, Any]] = mapped_column(JSON)
+    preview: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     summary: Mapped[str] = mapped_column(String(1000), default="")
     risk: Mapped[str] = mapped_column(String(20), default="low")
     status: Mapped[str] = mapped_column(default="proposed", index=True)

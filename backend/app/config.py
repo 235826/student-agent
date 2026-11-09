@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     agent_timeout_seconds: int = Field(default=120, ge=10, le=600)
     agent_action_ttl_seconds: int = Field(default=900, ge=60, le=86400)
     agent_max_actions: int = Field(default=30, ge=1, le=100)
-    agent_history_messages: int = Field(default=20, ge=0, le=100)
+    agent_history_messages: int = Field(default=12, ge=0, le=100)
     source_dir: Path = Path("../data/sources")
     attachment_dir: Path = Path("../data/attachments")
     agent_image_dir: Path = Path("../data/agent-images")

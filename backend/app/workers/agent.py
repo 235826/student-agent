@@ -49,7 +49,7 @@ def serve(settings: Settings, stopped: threading.Event, engine: Engine | None = 
                     last_cleanup = now_ms()
             except Exception:
                 logging.getLogger("student_agent.agent_worker").error("agent_worker_cycle_failed")
-            stopped.wait(2)
+            stopped.wait(0.4)
     finally:
         if engine is None:
             database.dispose()

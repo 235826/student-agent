@@ -13,6 +13,9 @@ class AgentCapabilities(Schema):
     consent_required: bool = True
 
 
+AgentSurface = Literal["agent", "tasks", "calendar", "planning", "imports", "settings"]
+
+
 class ConversationCreate(Schema):
     consent: bool
 
@@ -29,6 +32,7 @@ class MessageInput(Schema):
     content: str = Field(min_length=1, max_length=8000)
     idempotency_key: str = Field(min_length=8, max_length=200)
     image_ids: list[str] = Field(default_factory=list, max_length=4)
+    surface: AgentSurface = "agent"
 
 
 class RunStart(Schema):
@@ -60,6 +64,7 @@ class ActionOut(Schema):
     action_key: str
     operation: str
     payload: dict[str, Any]
+    preview: dict[str, Any] = Field(default_factory=dict)
     summary: str
     risk: Literal["low", "medium", "high"]
     status: Literal["proposed", "confirmed", "rejected", "executed", "failed", "expired"]
@@ -77,6 +82,8 @@ class RunOut(Schema):
     status: Literal["queued", "running", "succeeded", "failed", "cancelled"]
     error: str
     step_count: int
+    phase: str = ""
+    partial_content: str = ""
     created_at: Timestamp
     updated_at: Timestamp
 

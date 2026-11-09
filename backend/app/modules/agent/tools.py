@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date, datetime, time
 from pathlib import Path
 from typing import Any, Literal
+from zoneinfo import ZoneInfo
 
 from fastapi import HTTPException
 from pydantic import Field
@@ -92,6 +94,7 @@ class ToolSpec:
     risk: Risk = "low"
     image_only: bool = False
     check: Callable[[ToolContext, Any], None] | None = None
+    render: Callable[[ToolContext, Any], tuple[str, dict[str, Any]]] | None = None
 
 
 @dataclass(frozen=True)
@@ -399,6 +402,26 @@ class CompatibilityArgs(CompatibilityInput):
 
 class NoArgs(Schema):
     pass
+
+
+ToolGroup = Literal["tasks", "lists", "calendar", "planning", "imports", "settings"]
+
+TOOL_GROUP_INFO: dict[str, str] = {
+    "tasks": "任务增删改、完成、截止、提醒、旗标、垃圾箱、工作日志",
+    "lists": "任务清单、清单文件夹、标签、保存筛选",
+    "calendar": "事件、课程、每周课程系列、事件类型、出勤",
+    "planning": "学习计划、并行兼容规则、任务类型策略",
+    "imports": "文本/图片导入、导入草稿",
+    "settings": "个人时区与可用时间设置",
+}
+
+
+class LoadGroupArgs(Schema):
+    groups: list[ToolGroup] = Field(
+        min_length=1,
+        max_length=6,
+        description="需要加载的工具分组，可一次加载多个",
+    )
 
 
 def current_task_input(db: Session, user: User, task_id: str) -> TaskInput:
@@ -710,8 +733,56 @@ def _resolve_event_type(ctx: ToolContext, name: str) -> EventType:
 def _check_event_args(ctx: ToolContext, args: Any) -> None:
     if isinstance(args, CreateEventArgs):
         _resolve_event_type(ctx, args.event_type)
-    elif isinstance(args, UpdateEventArgs) and args.event_type is not None:
-        _resolve_event_type(ctx, args.event_type)
+    elif isinstance(args, UpdateEventArgs):
+        if args.event_type is not None:
+            _resolve_event_type(ctx, args.event_type)
+        current_event_input(ctx.db, ctx.user, args.event_id)
+    elif isinstance(args, (EventIdArgs, SkipEventArgs)):
+        owned(ctx.db, Event, args.event_id, ctx.user)
+
+
+def _render_create_event(ctx: ToolContext, args: CreateEventArgs) -> tuple[str, dict[str, Any]]:
+    return (
+        f"创建事件「{args.title}」（{args.event_type}）",
+        {
+            "title": args.title,
+            "event_type": args.event_type,
+            "start_at": args.start_at.isoformat(),
+            "end_at": args.end_at.isoformat(),
+            "timezone": args.timezone or ctx.user.timezone,
+            "location": args.location,
+            "note": args.note,
+            "details": args.details,
+        },
+    )
+
+
+def _render_update_event(ctx: ToolContext, args: UpdateEventArgs) -> tuple[str, dict[str, Any]]:
+    event = owned(ctx.db, Event, args.event_id, ctx.user)
+    view = event_view(ctx.db, event)
+    current_type = view.event_type.name if view.event_type else "其他"
+    preview: dict[str, Any] = {
+        "target": view.title,
+        "start_at": (args.start_at or view.start_at)
+        .astimezone(ZoneInfo(args.timezone or view.timezone))
+        .isoformat(),
+        "end_at": (args.end_at or view.end_at)
+        .astimezone(ZoneInfo(args.timezone or view.timezone))
+        .isoformat(),
+        "timezone": args.timezone or view.timezone,
+        "event_type": (
+            f"{current_type} → {args.event_type}"
+            if args.event_type and args.event_type != current_type
+            else current_type
+        ),
+    }
+    for key in ("location", "note", "details"):
+        value = getattr(args, key)
+        if value is not None:
+            preview[key] = value if value else "（已清空）"
+    if args.title and args.title != view.title:
+        preview["title"] = f"{view.title} → {args.title}"
+    return f"修改事件「{view.title}」", preview
 
 
 def _create_event(ctx: ToolContext, args: CreateEventArgs) -> Any:
@@ -924,19 +995,158 @@ def register(tool: ToolSpec) -> None:
     TOOLS[tool.name] = tool
 
 
-def tool_schemas(include_images: bool = False) -> list[dict[str, Any]]:
-    return [
-        {
-            "type": "function",
-            "function": {
-                "name": tool.name,
-                "description": tool.description,
-                "parameters": tool.args.model_json_schema(),
-            },
-        }
-        for tool in TOOLS.values()
-        if include_images or not tool.image_only
-    ]
+TOOL_GROUPS: dict[str, str] = {
+    "get_profile": "settings",
+    "get_task_summary": "core",
+    "search_tasks": "core",
+    "get_task": "core",
+    "list_task_lists": "core",
+    "list_tags": "core",
+    "list_events": "core",
+    "list_event_types": "core",
+    "get_current_plan": "core",
+    "list_drafts": "imports",
+    "list_task_attachments": "tasks",
+    "read_task_images": "tasks",
+    "read_import_image": "imports",
+    "list_courses": "calendar",
+    "list_series": "calendar",
+    "list_imports": "imports",
+    "list_task_list_groups": "lists",
+    "list_saved_filters": "lists",
+    "check_compatibility": "planning",
+    "create_task": "tasks",
+    "update_task": "tasks",
+    "complete_task": "tasks",
+    "reopen_task": "tasks",
+    "set_task_deadline": "tasks",
+    "set_task_reminder": "tasks",
+    "flag_task": "tasks",
+    "trash_task": "tasks",
+    "restore_task": "tasks",
+    "purge_task": "tasks",
+    "purge_trash": "tasks",
+    "add_worklog": "tasks",
+    "update_worklog": "tasks",
+    "create_task_list": "lists",
+    "update_task_list": "lists",
+    "delete_task_list": "lists",
+    "create_task_list_group": "lists",
+    "update_task_list_group": "lists",
+    "delete_task_list_group": "lists",
+    "rename_tag": "lists",
+    "delete_tag": "lists",
+    "create_saved_filter": "lists",
+    "update_saved_filter": "lists",
+    "delete_saved_filter": "lists",
+    "create_event": "calendar",
+    "update_event": "calendar",
+    "delete_event": "calendar",
+    "skip_event": "calendar",
+    "create_course": "calendar",
+    "update_course": "calendar",
+    "delete_course": "calendar",
+    "create_series": "calendar",
+    "update_series": "calendar",
+    "delete_series": "calendar",
+    "set_series_attendance": "calendar",
+    "update_profile": "settings",
+    "create_compatibility_rule": "planning",
+    "disable_compatibility_rule": "planning",
+    "set_task_type_policy": "planning",
+    "create_event_type": "calendar",
+    "update_event_type": "calendar",
+    "archive_event_type": "calendar",
+    "generate_plan": "planning",
+    "adopt_plan": "planning",
+    "start_text_import": "imports",
+    "create_draft": "imports",
+    "publish_draft": "imports",
+}
+
+SURFACE_GROUPS: dict[str, set[str]] = {
+    "agent": {"tasks", "calendar"},
+    "tasks": {"tasks", "lists"},
+    "calendar": {"calendar"},
+    "planning": {"planning", "tasks"},
+    "imports": {"imports"},
+    "settings": {"settings"},
+}
+
+LOAD_GROUP_SCHEMA: dict[str, Any] = {
+    "type": "function",
+    "function": {
+        "name": "load_tool_group",
+        "description": (
+            "加载当前未提供的工具分组。需要某类操作但工具列表中没有对应工具时先调用。"
+            "可用分组：" + "；".join(f"{name}：{text}" for name, text in TOOL_GROUP_INFO.items())
+        ),
+        "parameters": LoadGroupArgs.model_json_schema(),
+    },
+}
+
+
+def tool_group(name: str) -> str:
+    return TOOL_GROUPS.get(name, "core")
+
+
+def groups_for_surface(surface: str) -> set[str]:
+    return set(SURFACE_GROUPS.get(surface, SURFACE_GROUPS["agent"]))
+
+
+def tool_names_for_groups(groups: set[str]) -> list[str]:
+    return sorted(
+        name for name in TOOLS if tool_group(name) == "core" or tool_group(name) in groups
+    )
+
+
+def group_catalog() -> str:
+    return "\n".join(f"- {name}：{text}" for name, text in TOOL_GROUP_INFO.items())
+
+
+def _compact_schema(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {key: _compact_schema(item) for key, item in value.items() if key != "title"}
+    if isinstance(value, list):
+        return [_compact_schema(item) for item in value]
+    return value
+
+
+def tool_schemas(
+    include_images: bool = False, groups: set[str] | None = None
+) -> list[dict[str, Any]]:
+    schemas: list[dict[str, Any]] = []
+    for tool in TOOLS.values():
+        if groups is not None and tool_group(tool.name) not in groups | {"core"}:
+            continue
+        if not include_images and tool.image_only:
+            continue
+        schemas.append(
+            {
+                "type": "function",
+                "function": {
+                    "name": tool.name,
+                    "description": tool.description,
+                    "parameters": _compact_schema(tool.args.model_json_schema()),
+                },
+            }
+        )
+    if groups is not None:
+        schemas.append(
+            {
+                "type": "function",
+                "function": {
+                    "name": "load_tool_group",
+                    "description": LOAD_GROUP_SCHEMA["function"]["description"],
+                    "parameters": _compact_schema(LoadGroupArgs.model_json_schema()),
+                },
+            }
+        )
+    return schemas
+
+
+def tool_schema_chars() -> int:
+    return len(json.dumps(tool_schemas(), ensure_ascii=False))
 
 
 # Read tools
@@ -1413,6 +1623,7 @@ register(
         lambda args: f"创建事件「{args.title}」（{args.event_type}）",
         "medium",
         check=_check_event_args,
+        render=_render_create_event,
     )
 )
 register(
@@ -1425,6 +1636,7 @@ register(
         lambda args: f"修改事件「{args.title or args.event_id}」",
         "medium",
         check=_check_event_args,
+        render=_render_update_event,
     )
 )
 register(
@@ -1436,6 +1648,7 @@ register(
         _delete_event,
         lambda args: "删除事件（不可恢复）",
         "high",
+        check=_check_event_args,
     )
 )
 register(
@@ -1447,6 +1660,7 @@ register(
         _skip_event,
         lambda args: "标记课程是否参加",
         "medium",
+        check=_check_event_args,
     )
 )
 register(
@@ -1687,6 +1901,13 @@ def check_tool(ctx: ToolContext, name: str, args: Schema) -> None:
     tool = TOOLS.get(name)
     if tool is not None and tool.check is not None:
         tool.check(ctx, args)
+
+
+def tool_render(ctx: ToolContext, name: str, args: Schema) -> tuple[str, dict[str, Any]]:
+    tool = TOOLS.get(name)
+    if tool is not None and tool.render is not None:
+        return tool.render(ctx, args)
+    return tool_summary(name, args), {}
 
 
 def tool_summary(name: str, args: Schema) -> str:

@@ -1,10 +1,15 @@
+import asyncio
+import json
+from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Annotated
 from uuid import uuid4
 
 from fastapi import APIRouter, File, HTTPException, Request, Response, UploadFile
-from fastapi.responses import FileResponse
-from sqlalchemy import delete, select
+from fastapi.responses import FileResponse, StreamingResponse
+from sqlalchemy import Engine, delete, func, select
+from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from app.api.agent_schemas import (
     ActionConfirm,
@@ -235,7 +240,7 @@ def send_message(
     settings = request.app.state.settings
     if not configured(settings) or not settings.llm_supports_tools:
         raise HTTPException(503, "模型尚未配置或未启用工具调用")
-    payload = {"conversation_id": conversation.id, "content": body.content}
+    payload = {"conversation_id": conversation.id, "content": body.content, "surface": body.surface}
     existing = replay(db, user, body.idempotency_key, payload)
     if existing:
         return RunStart(run_id=existing, conversation_id=conversation.id)
@@ -260,6 +265,7 @@ def send_message(
         status="queued",
         transcript=[],
         next_run_at=0,
+        surface=body.surface,
     )
     db.add(message)
     db.add(run)
@@ -297,6 +303,67 @@ def get_run(run_id: str, db: DB, user: UserDep) -> RunDetail:
     return RunDetail(
         run=RunOut.model_validate(run),
         actions=[ActionOut.model_validate(action) for action in actions],
+    )
+
+
+def _run_stream_snapshot(engine: Engine, run_id: str) -> dict[str, object]:
+    with Session(engine) as db:
+        run = db.get(AgentRun, run_id)
+        if run is None:
+            return {"status": "missing"}
+        pending = db.scalar(
+            select(func.count(AgentAction.id)).where(
+                AgentAction.run_id == run_id, AgentAction.status == "proposed"
+            )
+        )
+        return {
+            "status": run.status,
+            "phase": run.phase,
+            "partial_content": run.partial_content,
+            "pending_actions": pending or 0,
+            "updated_at": run.updated_at,
+        }
+
+
+@router.get("/runs/{run_id}/stream")
+async def stream_run(
+    run_id: str,
+    request: Request,
+    db: DB,
+    user: UserDep,
+) -> StreamingResponse:
+    owned(db, AgentRun, run_id, user)
+    engine = request.app.state.engine
+
+    async def events() -> AsyncIterator[str]:
+        previous: dict[str, object] | None = None
+        idle = 0
+        while True:
+            snapshot = await run_in_threadpool(_run_stream_snapshot, engine, run_id)
+            if snapshot.get("status") == "missing":
+                yield 'data: {"status":"missing"}\n\n'
+                return
+            if snapshot != previous:
+                previous = snapshot
+                idle = 0
+                yield f"data: {json.dumps(snapshot, ensure_ascii=False)}\n\n"
+            else:
+                idle += 1
+                if idle >= 50:
+                    idle = 0
+                    yield ": ping\n\n"
+            if snapshot["status"] not in {"queued", "running"}:
+                return
+            await asyncio.sleep(0.2)
+
+    return StreamingResponse(
+        events(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
     )
 
 

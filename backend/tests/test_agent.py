@@ -36,9 +36,11 @@ class Scripted:
     def __init__(self, replies: list[AgentReply]):
         self.replies = replies
 
-    def complete(self, messages: list[dict], tools: list[dict]) -> AgentReply:
+    def complete(self, messages: list[dict], tools: list[dict], on_delta=None) -> AgentReply:
         assert tools
         assert messages
+        if on_delta is not None:
+            on_delta(self.replies[0].content)
         return self.replies.pop(0)
 
 
@@ -199,7 +201,7 @@ class CheckingScripted:
         self.replies = replies
         self.checker = checker
 
-    def complete(self, messages: list[dict], tools: list[dict]) -> AgentReply:
+    def complete(self, messages: list[dict], tools: list[dict], on_delta=None) -> AgentReply:
         assert tools
         assert messages
         if self.checker:
@@ -390,3 +392,183 @@ def test_agent_updates_event_type_by_name(authenticated: TestClient) -> None:
     updated = authenticated.get("/api/v1/events").json()[0]
     assert updated["event_type"]["name"] == "考试"
     assert updated["title"] == "软保期末"
+
+
+def test_agent_context_lists_executed_objects(authenticated: TestClient) -> None:
+    configure(authenticated)
+    session = conversation(authenticated, "明天考试")
+    run_once(
+        authenticated.app.state.engine,
+        authenticated.app.state.settings,
+        Scripted(
+            [
+                call(
+                    "create_event",
+                    {
+                        "title": "软保期末",
+                        "start_at": "2027-01-03T08:00:00+08:00",
+                        "end_at": "2027-01-03T10:00:00+08:00",
+                        "event_type": "考试",
+                    },
+                ),
+                final(),
+            ]
+        ),
+    )
+    action = authenticated.get(f"/api/v1/agent/runs/{session['run']['run_id']}").json()["actions"][
+        0
+    ]
+    assert (
+        authenticated.post(f"/api/v1/agent/actions/{action['id']}/confirm", json={}).status_code
+        == 200
+    )
+    event = authenticated.get("/api/v1/events").json()[0]
+
+    seen: dict[str, str] = {}
+
+    def checker(messages: list[dict]) -> None:
+        seen["system"] = str(messages[0].get("content"))
+
+    follow_up = authenticated.post(
+        f"/api/v1/agent/conversations/{session['conversation']['id']}/messages",
+        json={
+            "content": "把刚才创建的事件改成考试",
+            "idempotency_key": str(uuid4()),
+        },
+    )
+    assert follow_up.status_code == 202, follow_up.text
+    run_once(
+        authenticated.app.state.engine,
+        authenticated.app.state.settings,
+        CheckingScripted([final()], checker),
+    )
+    assert "最近已执行的对象" in seen["system"]
+    assert "软保期末" in seen["system"]
+    assert event["id"] in seen["system"]
+
+
+def test_agent_update_rejects_unknown_event_at_proposal(authenticated: TestClient) -> None:
+    configure(authenticated)
+    session = conversation(authenticated, "把刚才创建的事件改成考试")
+    run_once(
+        authenticated.app.state.engine,
+        authenticated.app.state.settings,
+        Scripted(
+            [
+                call(
+                    "update_event",
+                    {
+                        "event_id": "6fd37935-31e6-4fe6-b833-4b94d7fb7d36",
+                        "event_type": "考试",
+                    },
+                ),
+                final(),
+            ]
+        ),
+    )
+    detail = authenticated.get(f"/api/v1/agent/runs/{session['run']['run_id']}").json()
+    assert detail["run"]["status"] == "succeeded", detail
+    assert detail["actions"] == []
+
+
+def test_agent_update_preview_shows_target(authenticated: TestClient) -> None:
+    configure(authenticated)
+    event = authenticated.post(
+        "/api/v1/events",
+        json={
+            "title": "软保期末",
+            "start_at": "2027-01-03T08:00:00+08:00",
+            "end_at": "2027-01-03T10:00:00+08:00",
+            "timezone": "Asia/Shanghai",
+        },
+    ).json()
+    session = conversation(authenticated, "把软保期末改成考试")
+    run_once(
+        authenticated.app.state.engine,
+        authenticated.app.state.settings,
+        Scripted(
+            [
+                call("update_event", {"event_id": event["id"], "event_type": "考试"}),
+                final(),
+            ]
+        ),
+    )
+    action = authenticated.get(f"/api/v1/agent/runs/{session['run']['run_id']}").json()["actions"][
+        0
+    ]
+    assert action["summary"] == "修改事件「软保期末」"
+    assert action["preview"]["target"] == "软保期末"
+    assert action["preview"]["event_type"] == "其他 → 考试"
+    assert action["preview"]["start_at"].startswith("2027-01-03T08:00:00")
+
+
+def test_agent_tool_groups_reduce_schema(authenticated: TestClient) -> None:
+    from app.modules.agent.tools import (
+        groups_for_surface,
+        tool_schema_chars,
+        tool_schemas,
+    )
+
+    all_names = {item["function"]["name"] for item in tool_schemas()}
+    calendar = tool_schemas(groups=groups_for_surface("calendar"))
+    calendar_names = {item["function"]["name"] for item in calendar}
+    assert "create_event" in calendar_names
+    assert "create_task" not in calendar_names
+    assert "load_tool_group" in calendar_names
+    assert tool_schema_chars() < 32000
+    assert len(all_names) == 64
+    assert len({item["function"]["name"] for item in tool_schemas(include_images=True)}) == 66
+
+
+def test_agent_stream_reports_finished_run(authenticated: TestClient) -> None:
+    configure(authenticated)
+    session = conversation(authenticated, "测试流式状态")
+    run_id = session["run"]["run_id"]
+    with authenticated.app.state.engine.begin() as connection:
+        connection.exec_driver_sql(
+            "UPDATE agent_runs SET status = 'succeeded', phase = '', partial_content = '' "
+            "WHERE id = ?",
+            (run_id,),
+        )
+    response = authenticated.get(f"/api/v1/agent/runs/{run_id}/stream")
+    assert response.status_code == 200, response.text
+    assert '"status": "succeeded"' in response.text
+
+
+class ToolRecorder:
+    def __init__(self, replies: list[AgentReply], seen: list[set[str]]):
+        self.replies = replies
+        self.seen = seen
+
+    def complete(self, messages: list[dict], tools: list[dict], on_delta=None) -> AgentReply:
+        self.seen.append({item["function"]["name"] for item in tools})
+        return self.replies.pop(0)
+
+
+def test_agent_loads_tool_group_on_demand(authenticated: TestClient) -> None:
+    configure(authenticated)
+    created = authenticated.post("/api/v1/agent/conversations", json={"consent": True}).json()
+    sent = authenticated.post(
+        f"/api/v1/agent/conversations/{created['id']}/messages",
+        json={
+            "content": "在日历页加个复习任务",
+            "idempotency_key": str(uuid4()),
+            "surface": "calendar",
+        },
+    )
+    assert sent.status_code == 202, sent.text
+    seen: list[set[str]] = []
+    provider = ToolRecorder(
+        [
+            call("load_tool_group", {"groups": ["tasks"]}),
+            call("create_task", {"title": "复习"}, "call-task"),
+            final(),
+        ],
+        seen,
+    )
+    run_once(authenticated.app.state.engine, authenticated.app.state.settings, provider)
+    assert "create_task" not in seen[0]
+    assert "load_tool_group" in seen[0]
+    assert "create_task" in seen[1]
+    actions = authenticated.get(f"/api/v1/agent/runs/{sent.json()['run_id']}").json()["actions"]
+    assert [item["operation"] for item in actions] == ["create_task"]

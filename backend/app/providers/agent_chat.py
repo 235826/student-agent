@@ -2,6 +2,7 @@
 
 import json
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import urlsplit
@@ -35,7 +36,12 @@ class AgentChat:
         self.settings = settings
         self.transport = transport
 
-    def complete(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> AgentReply:
+    def complete(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+        on_delta: Callable[[str], None] | None = None,
+    ) -> AgentReply:
         config = self.settings
         if not configured(config):
             raise ParseFailure("尚未配置模型地址和模型名")
@@ -50,6 +56,8 @@ class AgentChat:
             raise ParseFailure("远程模型接口必须使用 HTTPS")
         try:
             started = time.monotonic()
+            content_parts: list[str] = []
+            calls: dict[int, dict[str, Any]] = {}
             with httpx.Client(
                 timeout=config.llm_timeout_seconds,
                 transport=self.transport,
@@ -68,39 +76,92 @@ class AgentChat:
                         "messages": messages,
                         "tools": tools,
                         "tool_choice": "auto",
+                        "stream": True,
                     },
                 ) as response:
                     if response.status_code != 200:
                         raise provider_failure(response, url.hostname or "")
-                    chunks = bytearray()
-                    for chunk in response.iter_bytes():
-                        chunks.extend(chunk)
-                        if len(chunks) > 1024 * 1024:
-                            raise ParseFailure("模型返回内容过大，请缩短对话后重试")
+                    for line in response.iter_lines():
                         if time.monotonic() - started > config.agent_timeout_seconds:
                             raise ParseFailure("模型请求超时", transient=True)
-            envelope = json.loads(chunks)
-            message = envelope["choices"][0]["message"]
-            content = message.get("content") or ""
-            if not isinstance(content, str):
-                content = json.dumps(content, ensure_ascii=False)
-            calls: list[ToolCall] = []
-            for item in message.get("tool_calls") or []:
-                function = item.get("function") or {}
-                name = function.get("name")
-                arguments = function.get("arguments", "{}")
-                if not isinstance(name, str) or not name:
+                        line = line.strip()
+                        if not line:
+                            continue
+                        if line.startswith("data:"):
+                            data = line[5:].strip()
+                            if data == "[DONE]":
+                                break
+                        elif line.startswith("{"):
+                            data = line
+                        else:
+                            continue
+                        try:
+                            envelope = json.loads(data)
+                        except ValueError:
+                            continue
+                        choices = envelope.get("choices") or []
+                        if not choices:
+                            continue
+                        choice = choices[0]
+                        delta = choice.get("delta")
+                        if delta is None and isinstance(choice.get("message"), dict):
+                            full = choice["message"]
+                            delta = {
+                                "content": full.get("content"),
+                                "tool_calls": [
+                                    {**item, "index": index}
+                                    for index, item in enumerate(full.get("tool_calls") or [])
+                                ],
+                            }
+                        if not isinstance(delta, dict):
+                            continue
+                        text = delta.get("content")
+                        if isinstance(text, str) and text:
+                            content_parts.append(text)
+                            if on_delta is not None:
+                                on_delta(text)
+                        for item in delta.get("tool_calls") or []:
+                            index = item.get("index", 0)
+                            if not isinstance(index, int):
+                                index = 0
+                            slot = calls.setdefault(index, {"id": "", "name": "", "arguments": ""})
+                            if item.get("id"):
+                                slot["id"] = str(item["id"])
+                            function = item.get("function") or {}
+                            if function.get("name"):
+                                slot["name"] = str(function["name"])
+                            arguments = function.get("arguments")
+                            if isinstance(arguments, str):
+                                slot["arguments"] += arguments
+            content = "".join(content_parts)
+            tool_calls: list[ToolCall] = []
+            for index in sorted(calls):
+                slot = calls[index]
+                name = slot["name"]
+                if not name:
                     raise ParseFailure("模型返回了无效的工具调用")
-                if not isinstance(arguments, str):
-                    arguments = json.dumps(arguments, ensure_ascii=False)
-                calls.append(
+                arguments = slot["arguments"] or "{}"
+                tool_calls.append(
                     ToolCall(
-                        id=str(item.get("id") or f"call_{len(calls)}"),
+                        id=slot["id"] or f"call_{index}",
                         name=name,
                         arguments=arguments,
                     )
                 )
-            return AgentReply(content=content, tool_calls=calls, message=message)
+            message: dict[str, Any] = {
+                "role": "assistant",
+                "content": content or None,
+            }
+            if tool_calls:
+                message["tool_calls"] = [
+                    {
+                        "id": call.id,
+                        "type": "function",
+                        "function": {"name": call.name, "arguments": call.arguments},
+                    }
+                    for call in tool_calls
+                ]
+            return AgentReply(content=content, tool_calls=tool_calls, message=message)
         except (httpx.TimeoutException, httpx.NetworkError):
             raise ParseFailure("模型连接失败或超时", transient=True) from None
         except (httpx.HTTPError, ValueError, KeyError, IndexError, TypeError):

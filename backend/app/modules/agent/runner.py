@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import base64
 import json
+import time
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 from secrets import randbelow
@@ -14,6 +16,7 @@ from fastapi import HTTPException
 from sqlalchemy import Engine, func, or_, select
 from sqlalchemy.orm import Session
 
+from app.api import event_types as event_types_api
 from app.config import Settings
 from app.db.models import (
     AgentAction,
@@ -29,12 +32,16 @@ from app.modules.agent.executor import collect_refs, placeholder_refs
 from app.modules.agent.prompt import system_message
 from app.modules.agent.tools import (
     TOOLS,
+    LoadGroupArgs,
     ToolContext,
     check_tool,
     execute_tool,
+    group_catalog,
+    groups_for_surface,
+    tool_names_for_groups,
+    tool_render,
     tool_risk,
     tool_schemas,
-    tool_summary,
     validate_tool,
 )
 from app.providers.agent_chat import AgentReply
@@ -46,7 +53,10 @@ MAX_TRANSCRIPT_MESSAGES = 80
 
 class Provider(Protocol):
     def complete(
-        self, messages: list[dict[str, Any]], tools: list[dict[str, Any]]
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+        on_delta: Callable[[str], None] | None = None,
     ) -> AgentReply: ...
 
 
@@ -109,6 +119,60 @@ def _lease_ok(engine: Engine, run_id: str, token: str) -> bool:
         return run is not None and run.status == "running" and run.lease_token == token
 
 
+def _update_progress(
+    engine: Engine,
+    run_id: str,
+    token: str,
+    *,
+    partial: str | None = None,
+    phase: str | None = None,
+) -> None:
+    with Session(engine) as db:
+        run = db.get(AgentRun, run_id)
+        if run is None or run.status != "running" or run.lease_token != token:
+            return
+        if partial is not None:
+            run.partial_content = partial[-24000:]
+        if phase is not None:
+            run.phase = phase[:200]
+        run.updated_at = now_ms()
+        db.commit()
+
+
+def _recent_context(db: Session, conversation_id: str) -> str:
+    actions = list(
+        db.scalars(
+            select(AgentAction)
+            .where(
+                AgentAction.conversation_id == conversation_id,
+                AgentAction.status == "executed",
+            )
+            .order_by(AgentAction.executed_at.desc(), AgentAction.created_at.desc())
+            .limit(10)
+        )
+    )
+    lines: list[str] = []
+    for action in reversed(actions):
+        result = action.result or {}
+        if not isinstance(result, dict):
+            result = {}
+        line = f"- {action.summary}"
+        object_id = result.get("id")
+        if isinstance(object_id, str) and object_id:
+            line += f" id={object_id}"
+        for key, label in (("start_at", "开始"), ("end_at", "结束"), ("deadline_at", "截止")):
+            value = result.get(key)
+            if isinstance(value, str) and value:
+                line += f" {label}={value}"
+        event_type = result.get("event_type")
+        if isinstance(event_type, dict):
+            name = event_type.get("name")
+            if isinstance(name, str) and name:
+                line += f" 类型={name}"
+        lines.append(line)
+    return "\n".join(lines)
+
+
 def _read_tool(
     engine: Engine, settings: Settings, user_id: str, name: str, raw: dict[str, Any]
 ) -> Any:
@@ -143,8 +207,8 @@ def _propose_action(
             if action.operation == name and action.payload == raw:
                 return {
                     "status": "proposed",
-                    "action_id": action.id,
                     "action_key": action.action_key,
+                    "summary": action.summary,
                     "duplicate": True,
                 }
         if len(actions) >= settings.agent_max_actions:
@@ -157,11 +221,9 @@ def _propose_action(
             user = db.get(User, run.user_id)
             if user is None:
                 raise HTTPException(404, "账号不存在")
-            check_tool(
-                ToolContext(db=db, user=user, settings=settings),
-                name,
-                args,
-            )
+            context = ToolContext(db=db, user=user, settings=settings)
+            check_tool(context, name, args)
+            summary, preview = tool_render(context, name, args)
         except Exception as exc:
             db.rollback()
             detail = getattr(exc, "detail", None) or str(exc) or "参数校验失败"
@@ -174,7 +236,8 @@ def _propose_action(
             action_key=action_key,
             operation=name,
             payload=raw,
-            summary=tool_summary(name, args),
+            preview=preview,
+            summary=summary,
             risk=tool_risk(name),
             status="proposed",
             depends_on=collect_refs(raw),
@@ -184,7 +247,6 @@ def _propose_action(
         db.commit()
         return {
             "status": "proposed",
-            "action_id": action.id,
             "action_key": action.action_key,
             "summary": action.summary,
             "risk": action.risk,
@@ -215,8 +277,20 @@ def _execute(
             history[-settings.agent_history_messages :] if settings.agent_history_messages else []
         )
         now = datetime.now().astimezone()
+        recent_actions = _recent_context(db, run.conversation_id)
+        event_types = "、".join(
+            item.name for item in event_types_api.list_event_types(db=db, user=user)
+        )
+        loaded_groups = groups_for_surface(run.surface)
+        db.commit()
         messages: list[dict[str, Any]] = [
-            system_message(now.isoformat(), user.timezone),
+            system_message(
+                now.isoformat(),
+                user.timezone,
+                event_types=event_types,
+                recent_actions=recent_actions,
+                tool_groups=group_catalog(),
+            ),
         ]
         latest_user_id: str | None = None
         for message in history:
@@ -257,7 +331,26 @@ def _execute(
     for step in range(settings.agent_max_steps):
         if not _lease_ok(engine, run_id, token):
             raise RunCancelled()
-        reply = provider.complete(messages, tool_schemas(include_images=include_images))
+        _update_progress(engine, run_id, token, partial="", phase="正在理解你的请求")
+        chunks: list[str] = []
+        last_write = [0.0]
+
+        def on_delta(
+            text: str,
+            pieces: list[str] = chunks,
+            last: list[float] = last_write,
+        ) -> None:
+            pieces.append(text)
+            now = time.monotonic()
+            if now - last[0] >= 0.25:
+                last[0] = now
+                _update_progress(engine, run_id, token, partial="".join(pieces))
+
+        reply = provider.complete(
+            messages,
+            tool_schemas(include_images=include_images, groups=loaded_groups),
+            on_delta,
+        )
         steps = step + 1
         assistant = dict(reply.message or {})
         assistant.setdefault("role", "assistant")
@@ -269,22 +362,33 @@ def _execute(
             break
         if not _lease_ok(engine, run_id, token):
             raise RunCancelled()
+        _update_progress(engine, run_id, token, phase="正在查询并准备操作")
         for call in reply.tool_calls:
             tool = TOOLS.get(call.name)
-            if tool is None:
-                result: Any = {"error": "未知工具"}
+            try:
+                raw = json.loads(call.arguments or "{}")
+                if not isinstance(raw, dict):
+                    raise ValueError("工具参数必须是对象")
+            except (ValueError, TypeError):
+                result: Any = {"error": "工具参数不是有效的 JSON 对象"}
             else:
-                try:
-                    raw = json.loads(call.arguments or "{}")
-                    if not isinstance(raw, dict):
-                        raise ValueError("工具参数必须是对象")
-                except (ValueError, TypeError):
-                    result = {"error": "工具参数不是有效的 JSON 对象"}
-                else:
-                    if tool.kind == "read":
-                        result = _read_tool(engine, settings, user_id, call.name, raw)
+                if call.name == "load_tool_group":
+                    try:
+                        requested = LoadGroupArgs.model_validate(raw)
+                    except Exception as exc:
+                        result = {"error": f"工具分组参数不合法：{exc}"}
                     else:
-                        result = _propose_action(engine, settings, run_id, token, call.name, raw)
+                        loaded_groups.update(requested.groups)
+                        result = {
+                            "loaded": sorted(requested.groups),
+                            "tools": tool_names_for_groups(loaded_groups),
+                        }
+                elif tool is None:
+                    result = {"error": "未知工具"}
+                elif tool.kind == "read":
+                    result = _read_tool(engine, settings, user_id, call.name, raw)
+                else:
+                    result = _propose_action(engine, settings, run_id, token, call.name, raw)
             tool_images = _extract_images(result)
             tool_msg = _tool_message(call.id, call.name, result)
             messages.append(tool_msg)
@@ -319,6 +423,8 @@ def _execute(
         run.error = ""
         run.lease_until = 0
         run.lease_token = ""
+        run.phase = ""
+        run.partial_content = ""
         run.transcript = transcript[-MAX_TRANSCRIPT_MESSAGES:]
         run.step_count = steps
         run.updated_at = now_ms()
@@ -347,6 +453,8 @@ def _retry_or_fail(engine: Engine, run_id: str, token: str, failure: ParseFailur
         run.lease_until = 0
         run.lease_token = ""
         run.error = str(failure)
+        run.phase = ""
+        run.partial_content = ""
         if failure.transient and run.attempts < 3:
             run.status = "queued"
             delay = 10 * run.attempts + (randbelow(16) if failure.rate_limited else 0)

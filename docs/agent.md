@@ -5,26 +5,44 @@
 ## 处理流程
 
 ```text
-浏览器发送消息
+浏览器发送消息（附带当前页面 surface）
   → API 创建 AgentRun 并入队（202）
   → agent-worker 领取
-  → 模型多轮调用 tools
+  → 注入可用事件类型、本会话最近已执行对象、工具分组目录
+  → 模型多轮调用 tools（文本增量实时写入 run）
        只读工具：立即查询，结果回填模型
        写工具：只生成 AgentAction，不执行
   → 保存助手回复和待确认动作
-  → 前端轮询 run 状态
+  → 前端通过 SSE 接收增量文本与阶段，轮询作为降级
   → 用户逐条确认或忽略动作
   → 执行器复用现有业务服务执行单条动作
-  → 审计、幂等和前端缓存刷新
+  → 审计、幂等和按模块刷新前端缓存
 ```
 
 写操作必须逐条确认，不提供整批执行。删除事件/课程/系列、永久删除/清空垃圾箱、修改设置与规则、发起导入、采用计划标记为高风险。
 
 ## 事件类型与确认卡片
 
-Agent 的事件工具不接受内部 `event_type_id`，只接受 `event_type` 名称。创建或修改事件前模型必须调用 `list_event_types`，并在提出动作时明确填写「考试」「会议」「其他」或已有的自定义类型；省略或填写未知名称会在提出阶段被拒绝并返回可用类型。事件标题不会被当作类型，用户明确说考试时不能标成其他。时区省略时使用用户设置。
+Agent 的事件工具不接受内部 `event_type_id`，只接受 `event_type` 名称。可用类型会随系统上下文一起注入，模型在提出动作时必须明确填写「考试」「会议」「其他」或已有的自定义类型；省略或填写未知名称会在提出阶段被拒绝并返回可用类型。事件标题不会被当作类型，用户明确说考试时不能标成其他。时区省略时使用用户设置。
 
-确认卡片直接展示动作的关键字段（标题、起止时间、事件类型、地点、备注等），只有原始 JSON 放在折叠区，用户无需展开即可核对。
+确认卡片直接展示动作的关键字段（标题、起止时间、事件类型、地点、备注等），只有原始 JSON 放在折叠区，用户无需展开即可核对。更新类动作会额外展示目标对象名称和修改后的类型，避免只显示裸 ID。
+
+## 多轮对象引用
+
+每轮开始时会从本会话已执行的动作中提取最近 10 个真实对象，连同标题、ID、起止时间和类型注入系统上下文。模型说“刚才创建的”“那几个”时直接使用这些 ID，不再把动作 ID 当对象 ID。动作 ID 不会出现在模型可见的工具结果中，`action_key` 只用于 `$ref`。
+
+## 流式输出与速度
+
+- `AgentChat` 解析 Chat Completions SSE，文本增量通过 `GET /runs/{id}/stream` 推送给前端。
+- `AgentRun` 保存 `phase` 和 `partial_content`；阶段包括理解请求、查询并准备操作等。
+- Agent worker 空闲轮询间隔为 0.4 秒。
+- 模型回复中的文本会边生成边展示；工具阶段先展示阶段提示，动作生成后立即刷新卡片。
+
+## 工具分组与 Token
+
+工具按 `tasks`、`lists`、`calendar`、`planning`、`imports`、`settings` 分组。每轮只暴露核心工具和当前页面相关分组；缺少工具时模型调用 `load_tool_group` 加载。系统上下文保留紧凑的分组目录。工具 Schema 会去掉冗余标题字段。
+
+`surface` 由前端按当前路由发送，取值为 `agent`、`tasks`、`calendar`、`planning`、`imports` 或 `settings`。
 
 ## 配置
 
@@ -40,7 +58,7 @@ SA_AGENT_MAX_STEPS=8
 SA_AGENT_TIMEOUT_SECONDS=120
 SA_AGENT_ACTION_TTL_SECONDS=900
 SA_AGENT_MAX_ACTIONS=30
-SA_AGENT_HISTORY_MESSAGES=20
+SA_AGENT_HISTORY_MESSAGES=12
 SA_AGENT_IMAGE_DIR=../data/agent-images
 ```
 
@@ -74,6 +92,12 @@ docker compose up -d --build --force-recreate api worker agent-worker
 
 - `agent_images`：聊天图片元数据，关联会话和消息
 
+迁移 `0023` 新增：
+
+- `agent_actions.preview`：面向确认卡片的结构化展示字段
+- `agent_runs.surface`：消息来源页面，用于选择初始工具分组
+- `agent_runs.phase`、`partial_content`：流式阶段与增量文本
+
 接口前缀为 `/api/v1/agent`：
 
 ```text
@@ -86,6 +110,7 @@ POST   /conversations/{id}/images
 POST   /conversations/{id}/messages
 GET    /images/{id}
 GET    /runs/{id}
+GET    /runs/{id}/stream
 POST   /runs/{id}/cancel
 POST   /actions/{id}/confirm
 POST   /actions/{id}/reject
@@ -94,6 +119,8 @@ POST   /actions/{id}/reject
 前端提供任意页面可呼出的全局抽屉，以及 `/agent` 历史页面。
 
 ## 工具边界
+
+工具按页面与领域分组加载，默认暴露核心只读工具和 `surface` 相关分组；需要其他领域时模型先调用 `load_tool_group`。这样每轮只发送必要的 Schema，减少上下文体积和首字延迟。
 
 只读工具覆盖个人设置、任务与汇总、清单、文件夹、标签、保存筛选、事件、课程、系列、事件类型、当前计划、导入记录、草稿、任务附件元数据和并行兼容性检查。
 
