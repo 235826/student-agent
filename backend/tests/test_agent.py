@@ -293,3 +293,100 @@ def test_agent_image_tools_gated_without_image_support(authenticated: TestClient
     names_img = {t["function"]["name"] for t in tool_schemas(include_images=True)}
     assert "read_task_images" in names_img
     assert "read_import_image" in names_img
+
+
+def test_agent_event_requires_explicit_type_name(authenticated: TestClient) -> None:
+    configure(authenticated)
+    session = conversation(authenticated, "明天下午四点考试")
+    run_id = session["run"]["run_id"]
+    provider = Scripted(
+        [
+            call(
+                "create_event",
+                {
+                    "title": "软保期末",
+                    "start_at": "2027-01-03T08:00:00+08:00",
+                    "end_at": "2027-01-03T10:00:00+08:00",
+                    "event_type": "考试",
+                },
+            ),
+            final(),
+        ]
+    )
+    run_once(authenticated.app.state.engine, authenticated.app.state.settings, provider)
+    detail = authenticated.get(f"/api/v1/agent/runs/{run_id}").json()
+    assert detail["run"]["status"] == "succeeded", detail
+    action = detail["actions"][0]
+    assert action["status"] == "proposed"
+    assert action["payload"]["event_type"] == "考试"
+    assert "考试" in action["summary"]
+
+    confirmed = authenticated.post(f"/api/v1/agent/actions/{action['id']}/confirm", json={})
+    assert confirmed.status_code == 200, confirmed.text
+    events = authenticated.get("/api/v1/events").json()
+    assert events[0]["event_type"]["name"] == "考试"
+
+
+def test_agent_event_rejects_missing_or_unknown_type(authenticated: TestClient) -> None:
+    configure(authenticated)
+    session = conversation(authenticated, "安排一场考试")
+    run_id = session["run"]["run_id"]
+    provider = Scripted(
+        [
+            call(
+                "create_event",
+                {
+                    "title": "软保期末",
+                    "start_at": "2027-01-03T08:00:00+08:00",
+                    "end_at": "2027-01-03T10:00:00+08:00",
+                },
+                "call-missing",
+            ),
+            call(
+                "create_event",
+                {
+                    "title": "数据库期末",
+                    "start_at": "2027-01-08T08:00:00+08:00",
+                    "end_at": "2027-01-08T10:00:00+08:00",
+                    "event_type": "期末考试",
+                },
+                "call-unknown",
+            ),
+            final(),
+        ]
+    )
+    run_once(authenticated.app.state.engine, authenticated.app.state.settings, provider)
+    detail = authenticated.get(f"/api/v1/agent/runs/{run_id}").json()
+    assert detail["run"]["status"] == "succeeded", detail
+    assert detail["actions"] == []
+    assert authenticated.get("/api/v1/events").json() == []
+
+
+def test_agent_updates_event_type_by_name(authenticated: TestClient) -> None:
+    configure(authenticated)
+    event = authenticated.post(
+        "/api/v1/events",
+        json={
+            "title": "软保期末",
+            "start_at": "2027-01-03T08:00:00+08:00",
+            "end_at": "2027-01-03T10:00:00+08:00",
+            "timezone": "Asia/Shanghai",
+        },
+    ).json()
+    assert event["event_type"]["name"] == "其他"
+
+    session = conversation(authenticated, "把软保期末改成考试")
+    run_id = session["run"]["run_id"]
+    provider = Scripted(
+        [
+            call("update_event", {"event_id": event["id"], "event_type": "考试"}),
+            final(),
+        ]
+    )
+    run_once(authenticated.app.state.engine, authenticated.app.state.settings, provider)
+    action = authenticated.get(f"/api/v1/agent/runs/{run_id}").json()["actions"][0]
+    confirmed = authenticated.post(f"/api/v1/agent/actions/{action['id']}/confirm", json={})
+    assert confirmed.status_code == 200, confirmed.text
+    updated = authenticated.get("/api/v1/events").json()[0]
+    assert updated["event_type"]["name"] == "考试"
+    assert updated["title"] == "软保期末"

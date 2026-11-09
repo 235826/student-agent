@@ -10,6 +10,7 @@ from secrets import randbelow
 from typing import Any, Protocol
 from uuid import uuid4
 
+from fastapi import HTTPException
 from sqlalchemy import Engine, func, or_, select
 from sqlalchemy.orm import Session
 
@@ -29,6 +30,7 @@ from app.modules.agent.prompt import system_message
 from app.modules.agent.tools import (
     TOOLS,
     ToolContext,
+    check_tool,
     execute_tool,
     tool_risk,
     tool_schemas,
@@ -152,9 +154,18 @@ def _propose_action(
             }
         try:
             args = validate_tool(name, placeholder_refs(raw))
+            user = db.get(User, run.user_id)
+            if user is None:
+                raise HTTPException(404, "账号不存在")
+            check_tool(
+                ToolContext(db=db, user=user, settings=settings),
+                name,
+                args,
+            )
         except Exception as exc:
             db.rollback()
-            return {"error": f"工具参数不合法，请修正后重试：{exc}"}
+            detail = getattr(exc, "detail", None) or str(exc) or "参数校验失败"
+            return {"error": f"工具参数不合法，请修正后重试：{detail}"}
         action_key = f"k{len(actions) + 1}"
         action = AgentAction(
             workspace_id=run.workspace_id,

@@ -49,6 +49,7 @@ from app.api.schemas import (
 from app.config import Settings
 from app.db.models import (
     Event,
+    EventType,
     ImportJob,
     ImportSource,
     Task,
@@ -90,6 +91,7 @@ class ToolSpec:
     summarize: Callable[[Any], str]
     risk: Risk = "low"
     image_only: bool = False
+    check: Callable[[ToolContext, Any], None] | None = None
 
 
 @dataclass(frozen=True)
@@ -206,20 +208,50 @@ class UpdateTaskListArgs(TaskListInput):
     list_id: str
 
 
+class CreateEventArgs(Schema):
+    title: str = Field(min_length=1, max_length=200, description="事件标题")
+    start_at: datetime = Field(description="开始时间，带 UTC 偏移的 ISO 8601 时间")
+    end_at: datetime = Field(description="结束时间，带 UTC 偏移的 ISO 8601 时间")
+    event_type: str = Field(
+        min_length=1,
+        max_length=100,
+        description=(
+            "事件类型名称，例如「考试」「会议」「其他」或用户已有的自定义类型；"
+            "先调用 list_event_types"
+        ),
+    )
+    timezone: str | None = Field(
+        default=None,
+        description="IANA 时区；省略时使用用户设置中的时区",
+    )
+    location: str = Field(default="", max_length=500, description="地点，可为空")
+    note: str = Field(default="", max_length=120, description="简短备注，可为空")
+    details: str = Field(default="", max_length=5000, description="详细说明，可为空")
+
+
 class UpdateEventArgs(Schema):
-    event_id: str
-    title: str | None = Field(default=None, min_length=1, max_length=200)
-    start_at: datetime | None = None
-    end_at: datetime | None = None
-    timezone: str | None = None
-    location: str | None = Field(default=None, max_length=500)
-    note: str | None = Field(default=None, max_length=120)
-    details: str | None = Field(default=None, max_length=5000)
+    event_id: str = Field(description="要修改的事件 ID")
+    title: str | None = Field(default=None, min_length=1, max_length=200, description="新标题")
+    start_at: datetime | None = Field(
+        default=None, description="新开始时间，带 UTC 偏移的 ISO 8601 时间"
+    )
+    end_at: datetime | None = Field(
+        default=None, description="新结束时间，带 UTC 偏移的 ISO 8601 时间"
+    )
+    timezone: str | None = Field(default=None, description="新时区")
+    location: str | None = Field(default=None, max_length=500, description="新地点")
+    note: str | None = Field(default=None, max_length=120, description="新备注")
+    details: str | None = Field(default=None, max_length=5000, description="新详细说明")
     note_scope: Literal["single", "series"] | None = None
     details_scope: Literal["single", "series"] | None = None
     locked: bool | None = None
     course_id: str | None = None
-    event_type_id: str | None = None
+    event_type: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=100,
+        description="新事件类型名称；不修改类型时不要传",
+    )
     kind: Literal["course", "other"] | None = None
 
 
@@ -660,20 +692,58 @@ def _delete_filter(ctx: ToolContext, args: FilterIdArgs) -> Any:
     return {"id": args.filter_id, "deleted": True}
 
 
-def _create_event(ctx: ToolContext, args: EventInput) -> Any:
-    return base_routes.create_event(args, ctx.db, ctx.user)
+def _resolve_event_type(ctx: ToolContext, name: str) -> EventType:
+    types = event_types_api.list_event_types(db=ctx.db, user=ctx.user)
+    for item in types:
+        if item.name == name or (item.system_key is not None and item.system_key == name):
+            event_type = ctx.db.get(EventType, item.id)
+            assert event_type is not None
+            return event_type
+    available = "、".join(item.name for item in types)
+    raise HTTPException(
+        422,
+        f"未知事件类型「{name}」。可用类型：{available}。"
+        "请先调用 list_event_types 并使用其中的名称。",
+    )
+
+
+def _check_event_args(ctx: ToolContext, args: Any) -> None:
+    if isinstance(args, CreateEventArgs):
+        _resolve_event_type(ctx, args.event_type)
+    elif isinstance(args, UpdateEventArgs) and args.event_type is not None:
+        _resolve_event_type(ctx, args.event_type)
+
+
+def _create_event(ctx: ToolContext, args: CreateEventArgs) -> Any:
+    event_type = _resolve_event_type(ctx, args.event_type)
+    return base_routes.create_event(
+        EventInput(
+            title=args.title,
+            start_at=args.start_at,
+            end_at=args.end_at,
+            timezone=args.timezone or ctx.user.timezone,
+            location=args.location,
+            note=args.note,
+            details=args.details,
+            event_type_id=event_type.id,
+            kind="other",
+        ),
+        ctx.db,
+        ctx.user,
+    )
 
 
 def _update_event(ctx: ToolContext, args: UpdateEventArgs) -> Any:
     current = current_event_input(ctx.db, ctx.user, args.event_id)
     data = current.model_dump(mode="json")
-    data.update(
-        {
-            key: value
-            for key, value in args.model_dump(mode="json", exclude_unset=True).items()
-            if key != "event_id"
-        }
-    )
+    changes = args.model_dump(mode="json", exclude_unset=True)
+    changes.pop("event_id", None)
+    event_type_name = changes.pop("event_type", None)
+    data.update(changes)
+    if event_type_name is not None:
+        if data.get("kind") == "course":
+            raise HTTPException(409, "课程事件不能使用自定义事件类型")
+        data["event_type_id"] = _resolve_event_type(ctx, event_type_name).id
     return base_routes.update_event(
         args.event_id, EventInput.model_validate(data), ctx.db, ctx.user
     )
@@ -983,7 +1053,7 @@ register(
 register(
     ToolSpec(
         "list_event_types",
-        "列出事件类型。",
+        "列出可用事件类型（含内置考试、会议、其他和自定义类型）。创建或修改事件前先调用。",
         READ,
         NoArgs,
         lambda ctx, _: event_types_api.list_event_types(db=ctx.db, user=ctx.user),
@@ -1335,23 +1405,26 @@ register(
 register(
     ToolSpec(
         "create_event",
-        "创建单次事件，例如会议、考试或其他安排。",
+        "创建单次事件，例如会议、考试或其他安排。必须先调用 list_event_types，"
+        "并在 event_type 中填写返回的类型名称；用户说是考试时必须用「考试」。",
         WRITE,
-        EventInput,
+        CreateEventArgs,
         _create_event,
-        lambda args: f"创建事件「{args.title}」",
+        lambda args: f"创建事件「{args.title}」（{args.event_type}）",
         "medium",
+        check=_check_event_args,
     )
 )
 register(
     ToolSpec(
         "update_event",
-        "修改单次事件，只需提供要修改的字段。",
+        "修改单次事件，只需提供要修改的字段。修改事件类型时填写 event_type 名称，不修改则不要传。",
         WRITE,
         UpdateEventArgs,
         _update_event,
         lambda args: f"修改事件「{args.title or args.event_id}」",
         "medium",
+        check=_check_event_args,
     )
 )
 register(
@@ -1608,6 +1681,12 @@ def validate_tool(name: str, raw: dict[str, Any]) -> Schema:
     if tool is None:
         raise HTTPException(404, "未知的 Agent 工具")
     return tool.args.model_validate(raw)
+
+
+def check_tool(ctx: ToolContext, name: str, args: Schema) -> None:
+    tool = TOOLS.get(name)
+    if tool is not None and tool.check is not None:
+        tool.check(ctx, args)
 
 
 def tool_summary(name: str, args: Schema) -> str:
