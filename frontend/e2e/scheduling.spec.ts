@@ -13,6 +13,7 @@ test("排程预览、确认、版本保留及失效提示", async ({ page }, inf
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto("/");
+  await page.evaluate(() => localStorage.setItem("onboarding_done", "1"));
   await page.getByLabel("用户名").fill("student");
   await page.getByLabel("密码", { exact: true }).fill("test-password-123");
   await page

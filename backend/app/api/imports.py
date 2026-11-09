@@ -40,6 +40,7 @@ from app.modules.images import MAX_IMAGE_BYTES, validate_image
 from app.modules.records import owned, record_change
 from app.modules.security import DB, UserDep
 from app.modules.task_management import apply_task
+from app.modules.text_extract import MAX_SOURCE_BYTES, extract_text
 from app.providers.chat_completions import configured
 
 router = APIRouter(prefix="/api/v1/imports", tags=["imports"])
@@ -108,15 +109,19 @@ def create_job(
     body: ImportText,
     image: bytes | None = None,
     media_type: str = "",
+    source_file: bytes | None = None,
+    source_name: str = "",
 ) -> ImportOut:
-    digest = hashlib.sha256(image if image is not None else body.text.encode()).hexdigest()
+    binary = image if image is not None else source_file
+    digest = hashlib.sha256(binary if binary is not None else body.text.encode()).hexdigest()
     payload = {
         "operation": "import.create",
         "digest": digest,
-        "kind": "image" if image is not None else "text",
+        "kind": "image" if image is not None else ("file" if source_file is not None else "text"),
         "context": body.context,
         "parse": body.parse,
         "reference_at": body.reference_at.isoformat(),
+        "file_name": source_name,
     }
     existing = replay(db, user, body.idempotency_key, payload)
     if existing:
@@ -132,14 +137,14 @@ def create_job(
         remember(db, user, body.idempotency_key, payload, job.id)
         return view(db, job)
     name = ""
-    if image is not None:
+    if binary is not None:
         directory = settings.source_dir
         directory.mkdir(parents=True, exist_ok=True, mode=0o700)
         name = str(uuid4())
         temporary = directory / (name + ".tmp")
         with temporary.open("xb") as stream:
             os.chmod(temporary, 0o600)
-            stream.write(image)
+            stream.write(binary)
             stream.flush()
             os.fsync(stream.fileno())
         temporary.replace(directory / name)
@@ -206,6 +211,48 @@ def import_image(
     return create_job(db, user, request.app.state.settings, body, data, media_type)
 
 
+@router.post("/file", response_model=ImportOut, status_code=202)
+def import_file(
+    request: Request,
+    db: DB,
+    user: UserDep,
+    file: Annotated[UploadFile, File()],
+    idempotency_key: Annotated[str, Form(min_length=8, max_length=200)],
+    reference_at: Annotated[datetime, Form()],
+    confirmed: Annotated[bool, Form()],
+    context: Annotated[str, Form(max_length=4000)] = "",
+    parse: Annotated[bool, Form()] = True,
+) -> ImportOut:
+    if (parse and not confirmed) or reference_at.tzinfo is None:
+        raise HTTPException(422, "需要确认发送文件内容并提供含时区的参考时间")
+    data = file.file.read(MAX_SOURCE_BYTES + 1)
+    if len(data) > MAX_SOURCE_BYTES:
+        raise HTTPException(413, "文件不能超过 20 MiB")
+    if not data:
+        raise HTTPException(422, "文件不能为空")
+    try:
+        text = extract_text(file.filename, file.content_type or "", data)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from None
+    body = ImportText(
+        text=text,
+        context=context,
+        reference_at=reference_at,
+        confirmed=confirmed,
+        parse=parse,
+        idempotency_key=idempotency_key,
+    )
+    return create_job(
+        db,
+        user,
+        request.app.state.settings,
+        body,
+        media_type=file.content_type or "application/octet-stream",
+        source_file=data,
+        source_name=file.filename or "",
+    )
+
+
 @router.get("/{job_id}", response_model=ImportOut)
 def get_job(job_id: str, db: DB, user: UserDep) -> ImportOut:
     return view(db, owned(db, ImportJob, job_id, user))
@@ -216,7 +263,7 @@ def get_source(job_id: str, request: Request, db: DB, user: UserDep) -> FileResp
     job = owned(db, ImportJob, job_id, user)
     source = db.get(ImportSource, job.source_id)
     if source is None or source.deleted_at is not None or not source.file_name:
-        raise HTTPException(404, "图片来源不存在或已删除")
+        raise HTTPException(404, "来源文件不存在或已删除")
     path = request.app.state.settings.source_dir / source.file_name
     if not path.is_file():
         raise HTTPException(404, "来源文件不可用")

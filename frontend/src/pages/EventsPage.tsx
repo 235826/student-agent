@@ -9,6 +9,7 @@ import {
 } from "react-router-dom";
 import SourceButton from "../components/SourceButton";
 import InlineConfirm from "../components/InlineConfirm";
+import ActivityFeedbackPanel from "../components/ActivityFeedbackPanel";
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -335,18 +336,18 @@ export default function EventsPage({ profile }: { profile: Profile }) {
   const skip = async (event: Event) => {
     const next = !event.is_skipped;
     try {
-      await api(`/events/${event.id}/skip`, "PATCH", {
+      const updated = await api<Event>(`/events/${event.id}/skip`, "PATCH", {
         is_skipped: next,
         confirmed: true,
       });
       client.setQueryData<Event[]>(["events"], (current) =>
-        current?.map((item) =>
-          item.id === event.id ? { ...item, is_skipped: next } : item,
-        ),
+        current?.map((item) => (item.id === event.id ? updated : item)),
       );
-      void client.invalidateQueries({ queryKey: ["events"] });
       void client.invalidateQueries({ queryKey: ["series"] });
       void client.invalidateQueries({ queryKey: ["plans"] });
+      if (updated.replan_suggested) {
+        void message.warning("恢复参加后与当前计划重叠，建议重新生成安排。");
+      }
       message.open({
         type: "success",
         duration: 8,
@@ -511,6 +512,7 @@ export default function EventsPage({ profile }: { profile: Profile }) {
               {id && event.details && (
                 <p className="event-details">{event.details}</p>
               )}
+              {id && <ActivityFeedbackPanel eventId={event.id} />}
               {event.start_at !== event.original_start_at && (
                 <p className="muted">
                   原定：
@@ -519,6 +521,14 @@ export default function EventsPage({ profile }: { profile: Profile }) {
                     profile.timezone,
                   )} — {displayTime(event.original_end_at, profile.timezone)}
                 </p>
+              )}
+              {id && event.replan_suggested && (
+                <Alert
+                  type="warning"
+                  showIcon
+                  message="恢复参加后与当前计划重叠，建议重新生成安排。"
+                  action={<Link to="/plans/new">重新安排</Link>}
+                />
               )}
               {id && (
                 <Select

@@ -13,6 +13,8 @@ dependencies = [
   "httpx>=0.28,<1",
   "python-multipart>=0.0.20,<1",
   "pillow>=11,<13",
+  "pypdf>=5,<7",
+  "python-docx>=1.1,<2",
 ]
 [dependency-groups]
 dev = ["pytest>=8,<10", "httpx>=0.28,<1", "ruff>=0.11,<1", "mypy>=1.15,<2", "hypothesis>=6,<7"]

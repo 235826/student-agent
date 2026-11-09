@@ -2,6 +2,7 @@ import { test, expect } from "./fixtures";
 
 test("自定义事件类型可创建并用于事件", async ({ page }) => {
   await page.goto("/");
+  await page.evaluate(() => localStorage.setItem("onboarding_done", "1"));
   await page.getByLabel("用户名").fill("student");
   await page.getByLabel("密码", { exact: true }).fill("test-password-123");
   await page

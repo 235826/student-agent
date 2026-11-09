@@ -58,10 +58,15 @@ def current_session(request: Request, db: DB) -> LoginSession:
 SessionDep = Annotated[LoginSession, Depends(current_session)]
 
 
-def current_user(db: DB, session: SessionDep) -> User:
+def current_user(request: Request, db: DB, session: SessionDep) -> User:
     user = db.get(User, session.user_id)
     if not user:
         raise HTTPException(401, "账号不存在")
+    if user.deletion_due_at is not None:
+        read_only = request.method in {"GET", "HEAD", "OPTIONS"}
+        cancelling = request.url.path.rstrip("/").endswith("/account/deletion/cancel")
+        if not read_only and not cancelling:
+            raise HTTPException(423, "账号处于注销冷静期，只能导出数据或取消注销")
     return user
 
 

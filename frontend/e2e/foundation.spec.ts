@@ -4,6 +4,7 @@ test("账号、任务、事件、设置和手机布局闭环", async ({ page }, 
   const pageErrors: string[] = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
   await page.goto("/");
+  await page.evaluate(() => localStorage.setItem("onboarding_done", "1"));
   await page.getByLabel("用户名").fill("student");
   await page.getByLabel("密码", { exact: true }).fill("test-password-123");
   await page

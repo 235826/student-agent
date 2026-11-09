@@ -7,7 +7,7 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.schemas import ActivityRef, PlanInput, PlanOut
+from app.api.schemas import ActivityRef, PairResult, PlanInput, PlanOut
 from app.db.models import Event, Plan, Task, TaskDependency, User, WorkLog, Workspace, now_ms
 from app.modules.calendar_management import event_view
 from app.modules.compatibility import activity, evaluate_pair
@@ -73,7 +73,11 @@ def generate(db: Session, user: User, body: PlanInput) -> Plan:
         raise HTTPException(422, "排程开始时间不能早于当前时间")
     tasks = list(db.scalars(select(Task).where(Task.workspace_id == user.workspace_id)))
     active = {
-        t.id: t for t in tasks if t.trashed_at is None and t.status in {"todo", "in_progress"}
+        t.id: t
+        for t in tasks
+        if t.trashed_at is None
+        and t.archived_at is None
+        and t.status in {"todo", "in_progress"}
     }
     if len(active) > 500:
         raise HTTPException(422, "单次排程最多支持 500 项未完成任务")
@@ -97,17 +101,21 @@ def generate(db: Session, user: User, body: PlanInput) -> Plan:
     refs = {t.id: ActivityRef(kind="task", id=t.id) for t in active.values()}
     refs.update({e.id: ActivityRef(kind="event", id=e.id) for e in events})
     activities = {key: activity(db, user, ref) for key, ref in refs.items()}
+    event_by_id = {e.id: e for e in events}
     edges = graph(db, user)
-    pair_cache: dict[tuple[str, str], bool] = {}
+    pair_cache: dict[tuple[str, str], PairResult] = {}
+
+    def pair_result(a: str, b: str) -> PairResult:
+        key = (a, b) if a < b else (b, a)
+        if key not in pair_cache:
+            pair_cache[key] = evaluate_pair(
+                db, user, activities[a], activities[b], edges
+            )
+        return pair_cache[key]
 
     def compatible(ids: list[str]) -> bool:
         for a, b in combinations(sorted(set(ids)), 2):
-            key = (a, b)
-            if key not in pair_cache:
-                pair_cache[key] = evaluate_pair(
-                    db, user, activities[a], activities[b], edges
-                ).allowed
-            if not pair_cache[key]:
+            if not pair_result(a, b).allowed:
                 return False
         return True
 
@@ -122,9 +130,27 @@ def generate(db: Session, user: User, body: PlanInput) -> Plan:
     ]
     slots: dict[int, list[str]] = {}
     first = ((start + MINUTE - 1) // MINUTE) * MINUTE
+    event_intervals = sorted(
+        (
+            int(event.start_at.timestamp() * 1000),
+            int(event.end_at.timestamp() * 1000),
+            event.id,
+        )
+        for event in events
+    )
+    event_index = 0
+    active_events: list[tuple[int, int, str]] = []
     for instant in range(first, end - MINUTE + 1, MINUTE):
         local = datetime.fromtimestamp(instant / 1000, UTC).astimezone(zone)
         finish = datetime.fromtimestamp((instant + MINUTE - 1) / 1000, UTC).astimezone(zone)
+        while (
+            event_index < len(event_intervals)
+            and event_intervals[event_index][0] < instant + MINUTE
+        ):
+            active_events.append(event_intervals[event_index])
+            event_index += 1
+        if active_events:
+            active_events = [event for event in active_events if event[1] > instant]
         if not any(
             day == local.weekday() and lower <= local.time() and finish.time() < upper
             for day, lower, upper in available
@@ -135,12 +161,7 @@ def generate(db: Session, user: User, body: PlanInput) -> Plan:
             for day, lower, upper in rest
         ):
             continue
-        slots[instant] = [
-            e.id
-            for e in events
-            if e.start_at.timestamp() * 1000 < instant + MINUTE
-            and e.end_at.timestamp() * 1000 > instant
-        ]
+        slots[instant] = [event[2] for event in active_events]
     blocks: list[dict[str, Any]] = []
     reports: list[dict[str, Any]] = []
     logged: dict[str, int] = {}
@@ -194,12 +215,132 @@ def generate(db: Session, user: User, body: PlanInput) -> Plan:
                     amount = min(len(run), remaining)
                     if amount >= min(body.min_block_minutes, remaining):
                         chosen = run[:amount]
+                        local_start = datetime.fromtimestamp(
+                            chosen[0] / 1000, UTC
+                        ).astimezone(zone)
+                        window = next(
+                            (
+                                (day, lower, upper)
+                                for day, lower, upper in available
+                                if day == local_start.weekday()
+                                and lower <= local_start.time() < upper
+                            ),
+                            None,
+                        )
+                        parallel: list[dict[str, Any]] = []
+                        event_ids = sorted(
+                            {
+                                event_id
+                                for slot in chosen
+                                for event_id in slots[slot]
+                                if event_id in event_by_id
+                            }
+                        )
+                        task_ids = sorted(
+                            {
+                                task_id
+                                for slot in chosen
+                                for task_id in slots[slot]
+                                if task_id in active
+                            }
+                        )
+                        for event_id in event_ids:
+                            result = pair_result(task.id, event_id)
+                            if not result.allowed:
+                                continue
+                            event = event_by_id[event_id]
+                            parallel.append(
+                                {
+                                    "kind": "event",
+                                    "id": event.id,
+                                    "title": event.title,
+                                    "start_at": int(event.start_at.timestamp() * 1000),
+                                    "end_at": int(event.end_at.timestamp() * 1000),
+                                    "reason": result.reason,
+                                    "rule_ids": result.rule_ids,
+                                    "policy_sources": result.policy_sources,
+                                }
+                            )
+                        for parallel_task_id in task_ids:
+                            result = pair_result(task.id, parallel_task_id)
+                            if not result.allowed:
+                                continue
+                            parallel_task = active[parallel_task_id]
+                            parallel.append(
+                                {
+                                    "kind": "task",
+                                    "id": parallel_task.id,
+                                    "title": parallel_task.title,
+                                    "reason": result.reason,
+                                    "rule_ids": result.rule_ids,
+                                    "policy_sources": result.policy_sources,
+                                }
+                            )
+                        parallel_ids = {
+                            item["id"]
+                            for item in parallel
+                            if item["kind"] == "event"
+                        }
+                        fixed_events: list[dict[str, Any]] = []
+                        if window:
+                            window_start = int(
+                                datetime.combine(
+                                    local_start.date(), window[1], tzinfo=zone
+                                ).timestamp()
+                                * 1000
+                            )
+                            window_end = int(
+                                datetime.combine(
+                                    local_start.date(), window[2], tzinfo=zone
+                                ).timestamp()
+                                * 1000
+                            )
+                            for event in events:
+                                if event.id in parallel_ids:
+                                    continue
+                                event_start = int(event.start_at.timestamp() * 1000)
+                                event_end = int(event.end_at.timestamp() * 1000)
+                                if event_start < window_end and event_end > window_start:
+                                    fixed_events.append(
+                                        {
+                                            "id": event.id,
+                                            "title": event.title,
+                                            "start_at": event_start,
+                                            "end_at": event_end,
+                                        }
+                                    )
+                        fixed_total = len(fixed_events)
+                        fixed_events = fixed_events[:10]
+                        basis: dict[str, Any] = {
+                            "priority": task.priority,
+                            "deadline_at": task.deadline_at,
+                            "estimate_minutes": task.estimate_minutes,
+                            "logged_minutes": logged_minutes,
+                            "fixed_events": fixed_events,
+                            "fixed_event_total": fixed_total,
+                            "window": (
+                                {
+                                    "weekday": window[0],
+                                    "start": window[1].strftime("%H:%M"),
+                                    "end": window[2].strftime("%H:%M"),
+                                }
+                                if window
+                                else None
+                            ),
+                            "parallel_with": parallel,
+                            "summary": (
+                                "在可用时段内安排，并与已确认允许的固定活动并行"
+                                if parallel
+                                else "在可用时段内按截止时间、优先级和创建顺序安排"
+                            ),
+                        }
                         blocks.append(
                             {
                                 "task_id": task.id,
                                 "title": task.title,
                                 "start_at": chosen[0],
                                 "end_at": chosen[-1] + MINUTE,
+                                "basis": basis,
                             }
                         )
                         for slot in chosen:

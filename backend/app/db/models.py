@@ -44,6 +44,8 @@ class User(Record, Base):
     timezone: Mapped[str] = mapped_column(default="Asia/Shanghai")
     available_windows: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
     rest_windows: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    deletion_requested_at: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    deletion_due_at: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
 
 
 class Session(Record, Base):
@@ -110,6 +112,7 @@ class Task(Owned, Base):
     )
     subtask_order: Mapped[int] = mapped_column(default=0, server_default="0")
     completed_at: Mapped[int | None] = mapped_column(BigInteger, index=True)
+    archived_at: Mapped[int | None] = mapped_column(BigInteger, index=True, nullable=True)
     trashed_at: Mapped[int | None] = mapped_column(BigInteger, index=True)
     parent_id: Mapped[str | None] = mapped_column(ForeignKey("tasks.id"), index=True)
     parallel_policy: Mapped[str | None]
@@ -233,6 +236,29 @@ class WorkLog(Owned, Base):
     ended_at: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
 
 
+class WorkLogContext(Owned, Base):
+    __tablename__ = "work_log_contexts"
+    __table_args__ = (
+        UniqueConstraint("work_log_id", "object_kind", "object_id"),
+        CheckConstraint("object_kind IN ('event','task')"),
+    )
+    work_log_id: Mapped[str] = mapped_column(ForeignKey("work_logs.id"), index=True)
+    object_kind: Mapped[str] = mapped_column(String(10))
+    object_id: Mapped[str] = mapped_column(String(36), index=True)
+
+
+class ActivityFeedback(Owned, Base):
+    __tablename__ = "activity_feedback"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "event_id"),
+        CheckConstraint("rating BETWEEN 1 AND 5"),
+    )
+    event_id: Mapped[str] = mapped_column(ForeignKey("events.id"), index=True)
+    rating: Mapped[int]
+    tags: Mapped[list[str]] = mapped_column(JSON, default=list)
+    reflection: Mapped[str] = mapped_column(Text, default="")
+
+
 class Draft(Owned, Base):
     __tablename__ = "drafts"
     object_type: Mapped[str] = mapped_column(default="task")
@@ -275,6 +301,13 @@ class Audit(Owned, Base):
     __tablename__ = "audit_records"
     action: Mapped[str]
     object_id: Mapped[str]
+
+
+class DeletedWorkspaceAudit(Record, Base):
+    __tablename__ = "deleted_workspace_audits"
+    deleted_at: Mapped[int] = mapped_column(BigInteger)
+    expires_at: Mapped[int] = mapped_column(BigInteger, index=True)
+    actions: Mapped[dict[str, int]] = mapped_column(JSON, default=dict)
 
 
 class Plan(Owned, Base):

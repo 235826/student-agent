@@ -11,6 +11,7 @@ import {
 } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Alert, Button, Spin, Result } from "antd";
+import { DateTime } from "luxon";
 import {
   api,
   ApiError,
@@ -20,6 +21,7 @@ import {
   type TaskSummary,
 } from "./api";
 import AgentDrawer from "./components/AgentDrawer";
+import OnboardingWizard from "./components/OnboardingWizard";
 const AgentPage = lazy(() => import("./pages/AgentPage"));
 const HierarchyPage = lazy(() => import("./pages/HierarchyPage"));
 const Login = lazy(() => import("./pages/Login"));
@@ -111,6 +113,12 @@ export default function App() {
       setCsrf("");
       client.removeQueries({ predicate: (q) => q.queryKey[0] !== "me" });
       await client.resetQueries({ queryKey: ["me"] });
+    },
+  });
+  const cancelDeletion = useMutation({
+    mutationFn: () => api("/account/deletion/cancel", "POST"),
+    onSuccess: async () => {
+      await client.invalidateQueries({ queryKey: ["me"] });
     },
   });
   if (me.isPending)
@@ -229,6 +237,26 @@ export default function App() {
         </div>
       </aside>
       <main className="content">
+        {profile.deletion_due_at && (
+          <Alert
+            type="warning"
+            showIcon
+            className="toolbar"
+            message={`账号将在 ${DateTime.fromISO(profile.deletion_due_at)
+              .setZone(profile.timezone)
+              .toFormat("yyyy年M月d日 HH:mm")} 删除`}
+            description="冷静期内账号只读。可以导出数据，或取消注销。"
+            action={
+              <Button
+                size="small"
+                loading={cancelDeletion.isPending}
+                onClick={() => cancelDeletion.mutate()}
+              >
+                取消注销
+              </Button>
+            }
+          />
+        )}
         {!online && (
           <Alert
             type="warning"
@@ -362,6 +390,7 @@ export default function App() {
         </Suspense>
       </main>
       <AgentDrawer />
+      <OnboardingWizard />
     </div>
   );
 }

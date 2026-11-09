@@ -1,5 +1,5 @@
 from datetime import UTC, date, datetime, time
-from typing import Annotated, Literal, Self
+from typing import Annotated, Any, Literal, Self
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import (
@@ -22,7 +22,9 @@ def from_epoch(value: object) -> object:
 Timestamp = Annotated[datetime, BeforeValidator(from_epoch)]
 Title = Annotated[str, Field(min_length=1, max_length=200)]
 Status = Literal["todo", "in_progress", "done", "cancelled"]
-TaskView = Literal["all", "today", "scheduled", "unscheduled", "flagged", "done", "trash"]
+TaskView = Literal[
+    "all", "today", "scheduled", "unscheduled", "flagged", "done", "archived", "trash"
+]
 Recurrence = Literal["daily", "weekly", "monthly", "yearly", "weekdays"]
 Policy = Literal["none", "allow_selected"]
 TagName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=50)]
@@ -70,6 +72,8 @@ class ProfileInput(Schema):
 class ProfileOut(ProfileInput):
     id: str
     username: str
+    deletion_requested_at: Timestamp | None = None
+    deletion_due_at: Timestamp | None = None
 
 
 class SetupInput(Credentials):
@@ -153,6 +157,7 @@ class TaskOut(TaskInput):
     deadline_at: Timestamp | None
     remind_at: Timestamp | None
     completed_at: Timestamp | None
+    archived_at: Timestamp | None = None
     trashed_at: Timestamp | None
     created_at: Timestamp
     updated_at: Timestamp
@@ -331,6 +336,20 @@ WorkCause = Literal[
 ]
 
 
+ContextKind = Literal["event", "task"]
+
+
+class WorkLogContextInput(Schema):
+    object_kind: ContextKind
+    object_id: Annotated[str, Field(min_length=1, max_length=36)]
+
+
+class WorkLogContextOut(WorkLogContextInput):
+    title: str
+    start_at: Timestamp | None = None
+    end_at: Timestamp | None = None
+
+
 class WorkLogInput(Schema):
     actual_minutes: Annotated[int, Field(gt=0, le=100000)]
     cause: WorkCause = "unknown"
@@ -338,6 +357,7 @@ class WorkLogInput(Schema):
     reflection: Annotated[str, Field(max_length=5000)] = ""
     started_at: datetime | None = None
     ended_at: datetime | None = None
+    parallel_contexts: list[WorkLogContextInput] = Field(default_factory=list, max_length=20)
     complete: bool = False
 
 
@@ -345,6 +365,7 @@ class WorkLogUpdate(Schema):
     cause: WorkCause | None = None
     note: Annotated[str, Field(max_length=2000)] | None = None
     reflection: Annotated[str, Field(max_length=5000)] | None = None
+    parallel_contexts: list[WorkLogContextInput] | None = Field(default=None, max_length=20)
 
 
 class WorkLogOut(Schema):
@@ -356,6 +377,22 @@ class WorkLogOut(Schema):
     reflection: str
     started_at: Timestamp | None = None
     ended_at: Timestamp | None = None
+    parallel_contexts: list[WorkLogContextOut] = Field(default_factory=list)
+    created_at: Timestamp
+    updated_at: Timestamp
+
+
+class ActivityFeedbackInput(Schema):
+    rating: Annotated[int, Field(ge=1, le=5)]
+    tags: list[Annotated[str, Field(min_length=1, max_length=30)]] = Field(
+        default_factory=list, max_length=10
+    )
+    reflection: Annotated[str, Field(max_length=5000)] = ""
+
+
+class ActivityFeedbackOut(ActivityFeedbackInput):
+    id: str
+    event_id: str
     created_at: Timestamp
     updated_at: Timestamp
 
@@ -406,6 +443,7 @@ class EventOut(EventInput):
     original_end_at: Timestamp
     start_at: Timestamp
     end_at: Timestamp
+    replan_suggested: bool = False
     created_at: Timestamp
     updated_at: Timestamp
 
@@ -607,6 +645,7 @@ class PlanBlockOut(Schema):
     title: str
     start_at: Timestamp
     end_at: Timestamp
+    basis: dict[str, Any] | None = None
 
 
 class PlanReport(Schema):
@@ -644,6 +683,36 @@ class PlanOut(Schema):
 
 class AdoptPlan(Schema):
     confirmed: Literal[True]
+
+
+class DeletionRequest(Schema):
+    password: Annotated[
+        str, StringConstraints(strip_whitespace=False, min_length=10, max_length=128)
+    ]
+    confirmed: Literal[True]
+
+
+class DeletionStatus(Schema):
+    requested_at: Timestamp | None = None
+    due_at: Timestamp | None = None
+    cooling_days: int = 7
+
+
+class DataImportRequest(Schema):
+    payload: dict[str, Any]
+    strategy: Literal["skip", "merge", "new"] = "skip"
+    confirmed: Literal[True]
+
+
+class DataImportPreview(Schema):
+    version: str
+    counts: dict[str, int]
+    warnings: list[str]
+    conflicts: list[str]
+
+
+class DataImportOut(DataImportPreview):
+    imported: bool = False
 
 
 class ConfirmInput(Schema):

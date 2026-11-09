@@ -65,6 +65,12 @@ export type TypePolicy = components["schemas"]["TypePolicyOut"];
 export type Compatibility = components["schemas"]["CompatibilityOut"];
 
 export type Plan = components["schemas"]["PlanOut"];
+export type PlanBlock = components["schemas"]["PlanBlockOut"];
+export type WorkLog = components["schemas"]["WorkLogOut"];
+export type WorkLogContext = components["schemas"]["WorkLogContextOut"];
+export type ActivityFeedback = components["schemas"]["ActivityFeedbackOut"];
+export type DataImportPreview = components["schemas"]["DataImportPreview"];
+export type DeletionStatus = components["schemas"]["DeletionStatus"];
 
 export type ImportJob = components["schemas"]["ImportOut"];
 export type ImportCandidate = components["schemas"]["ImportCandidate"];

@@ -9,10 +9,12 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError, OperationalError
+from sqlalchemy.orm import Session
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api.agent import router as agent_router
 from app.api.attachments import router as attachments_router
+from app.api.data_transfer import router as data_transfer_router
 from app.api.event_types import router as event_types_router
 from app.api.imports import router as imports_router
 from app.api.planning_foundation import router as planning_router
@@ -21,6 +23,7 @@ from app.api.scheduling import router as scheduling_router
 from app.api.schemas import ErrorOut, Health
 from app.config import Settings
 from app.db.session import build_engine
+from app.modules.account import purge_due_accounts
 from app.modules.security import LoginLimiter, hasher
 
 logger = logging.getLogger("student_agent")
@@ -41,6 +44,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.engine = build_engine(config.database_url)
     app.state.limiter = LoginLimiter()
     app.state.dummy_hash = hasher.hash(secrets.token_urlsafe(24))
+
+    @app.on_event("startup")
+    def purge_expired_accounts() -> None:
+        try:
+            with Session(app.state.engine) as db:
+                purge_due_accounts(db, config)
+        except OperationalError:
+            logger.warning(json.dumps({"event": "account_purge_skipped"}))
+
+
 
     def error(
         request: Request,
@@ -115,7 +128,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         try:
             with app.state.engine.connect() as connection:
                 version = connection.scalar(text("SELECT version_num FROM alembic_version"))
-                if version != "0023":
+                if version != "0024":
                     raise HTTPException(503, "数据库版本不匹配，请执行迁移")
         except OperationalError:
             raise HTTPException(503, "数据库尚未就绪，请执行迁移") from None
@@ -124,6 +137,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(router)
     app.include_router(agent_router)
     app.include_router(attachments_router)
+    app.include_router(data_transfer_router)
     app.include_router(event_types_router)
     app.include_router(imports_router)
     app.include_router(planning_router)

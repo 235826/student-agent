@@ -6,6 +6,7 @@ import {
   App,
   Button,
   Collapse,
+  Descriptions,
   Empty,
   Form,
   Input,
@@ -25,7 +26,12 @@ import { api } from "../api";
 import type { Plan, Profile, Event } from "../api";
 import { displayTime, toInstant } from "../time";
 import { withFrom } from "../navigation";
-import { eventTypeColor, eventTypeLabel, staleInfo } from "../semantics";
+import {
+  eventTypeColor,
+  eventTypeLabel,
+  priorityLabel,
+  staleInfo,
+} from "../semantics";
 import InlineConfirm from "../components/InlineConfirm";
 
 export default function PlansPage({ profile }: { profile: Profile }) {
@@ -431,6 +437,125 @@ export default function PlansPage({ profile }: { profile: Profile }) {
               </article>
             ))}
           </div>
+          {active.blocks.some((block) => block.basis) && (
+            <Collapse
+              className="toolbar"
+              items={[
+                {
+                  key: "basis",
+                  label: "查看每个计划块的安排依据",
+                  children: (
+                    <div className="rows">
+                      {active.blocks.map((block) => {
+                        const basis = block.basis ?? {};
+                        const window = basis.window as
+                          | { weekday?: number; start?: string; end?: string }
+                          | null
+                          | undefined;
+                        const parallel = (basis.parallel_with ?? []) as {
+                          id: string;
+                          title: string;
+                          reason?: string;
+                          rule_ids?: string[];
+                          policy_sources?: string[];
+                        }[];
+                        const fixedEvents = (basis.fixed_events ?? []) as {
+                          id: string;
+                          title: string;
+                        }[];
+                        const weekdays = [
+                          "周一",
+                          "周二",
+                          "周三",
+                          "周四",
+                          "周五",
+                          "周六",
+                          "周日",
+                        ];
+                        return (
+                          <article
+                            key={`${block.task_id}-${block.start_at}`}
+                            className="task-row plan-basis"
+                          >
+                            <div className="task-row-main">
+                              <h3>{block.title}</h3>
+                              <p>
+                                {displayTime(
+                                  block.start_at,
+                                  profile.timezone,
+                                )}{" "}
+                                — {displayTime(block.end_at, profile.timezone)}
+                              </p>
+                              <Descriptions size="small" column={1}>
+                                <Descriptions.Item label="安排理由">
+                                  {String(
+                                    basis.summary ??
+                                      "按可用时间、截止时间和优先级安排",
+                                  )}
+                                </Descriptions.Item>
+                                <Descriptions.Item label="优先级">
+                                  {typeof basis.priority === "number"
+                                    ? priorityLabel(basis.priority)
+                                    : "未设置"}
+                                </Descriptions.Item>
+                                <Descriptions.Item label="截止时间">
+                                  {basis.deadline_at
+                                    ? displayTime(
+                                        String(basis.deadline_at),
+                                        profile.timezone,
+                                      )
+                                    : "无截止时间"}
+                                </Descriptions.Item>
+                                <Descriptions.Item label="预计用时">
+                                  {basis.estimate_minutes
+                                    ? `${basis.estimate_minutes} 分钟`
+                                    : "未设置"}
+                                </Descriptions.Item>
+                                <Descriptions.Item label="可用窗口">
+                                  {window?.start && window?.end
+                                    ? `${weekdays[((window.weekday ?? 0) + 7) % 7]} ${window.start}–${window.end}`
+                                    : "按用户可用时间"}
+                                </Descriptions.Item>
+                                <Descriptions.Item label="同一可用窗口内的固定安排">
+                                  {fixedEvents.length
+                                    ? [
+                                        ...fixedEvents.map((item) => (
+                                          <Tag key={item.id}>{item.title}</Tag>
+                                        )),
+                                        ...(typeof basis.fixed_event_total ===
+                                          "number" &&
+                                        basis.fixed_event_total >
+                                          fixedEvents.length
+                                          ? [
+                                              `等 ${basis.fixed_event_total} 项`,
+                                            ]
+                                          : []),
+                                      ]
+                                    : "无"}
+                                </Descriptions.Item>
+                                <Descriptions.Item label="并行安排">
+                                  {parallel.length
+                                    ? parallel.map((item) => (
+                                        <Tag key={item.id} color="green">
+                                          {item.title}
+                                          {item.rule_ids?.length
+                                            ? ` · 规则 ${item.rule_ids.join("、")}`
+                                            : ""}
+                                        </Tag>
+                                      ))
+                                    : "无"}
+                                </Descriptions.Item>
+                              </Descriptions>
+                            </div>
+                          </article>
+                        );
+                      })}
+                    </div>
+                  ),
+                },
+              ]}
+            />
+          )}
         </>
       )}
     </>

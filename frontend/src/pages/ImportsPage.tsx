@@ -112,7 +112,12 @@ export default function ImportsPage({ profile }: { profile: Profile }) {
         form.append("idempotency_key", key);
         form.append("confirmed", String(parse && consent));
         form.append("parse", String(parse));
-        return api<ImportJob>("/imports/image", "POST", form);
+        const image = file.type.startsWith("image/");
+        return api<ImportJob>(
+          image ? "/imports/image" : "/imports/file",
+          "POST",
+          form,
+        );
       }
       return api<ImportJob>("/imports/text", "POST", {
         text,
@@ -168,12 +173,12 @@ export default function ImportsPage({ profile }: { profile: Profile }) {
             />
           </label>
           <label>
-            或上传课表图片（PNG/JPEG/WebP，最大 8 MiB）
+            或上传文件（PDF / DOCX / TXT / Markdown，最大 20 MiB；图片最大 8 MiB）
             <input
               ref={fileInput}
-              aria-label="课表图片"
+              aria-label="导入文件"
               type="file"
-              accept="image/png,image/jpeg,image/webp"
+              accept=".pdf,.docx,.txt,.md,.markdown,image/png,image/jpeg,image/webp"
               onChange={(e) => setFile(e.target.files?.[0] ?? null)}
             />
           </label>
@@ -184,14 +189,19 @@ export default function ImportsPage({ profile }: { profile: Profile }) {
                 if (fileInput.current) fileInput.current.value = "";
               }}
             >
-              移除图片 / 切回文本输入
+              移除文件 / 切回文本输入
             </Button>
           )}
-          {file && !capabilities.data?.images && (
+          {file?.type.startsWith("image/") && !capabilities.data?.images && (
             <Alert
               type="warning"
               message="当前模型未启用图片输入；可手动整理，或配置图片模型后重试。"
             />
+          )}
+          {file && !file.type.startsWith("image/") && (
+            <p className="muted">
+              扫描版 PDF 暂不支持 OCR；如果提取不到文字，请改用图片导入。
+            </p>
           )}
           <label>
             补充说明
@@ -381,7 +391,7 @@ function DraftEditor({
             <pre className="source-preview">
               {job.source.text}
             </pre>
-          ) : (
+          ) : job.source.kind === "image" ? (
             <a
               href={`/api/v1/imports/${job.id}/source`}
               target="_blank"
@@ -393,6 +403,13 @@ function DraftEditor({
                 style={{ maxWidth: "100%", maxHeight: 480 }}
               />
             </a>
+          ) : (
+            <>
+              <pre className="source-preview">{job.source.text}</pre>
+              <a href={`/api/v1/imports/${job.id}/source`}>
+                下载原始文件
+              </a>
+            </>
           )}
         </details>
       )}

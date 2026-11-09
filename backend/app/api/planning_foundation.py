@@ -8,6 +8,8 @@ from sqlalchemy import String, and_, cast, delete, func, or_, select, update
 from sqlalchemy.orm import Session
 
 from app.api.schemas import (
+    ActivityFeedbackInput,
+    ActivityFeedbackOut,
     CompatibilityInput,
     CompatibilityOut,
     CompletionDay,
@@ -51,11 +53,14 @@ from app.api.schemas import (
     TaskView,
     TypePolicyInput,
     TypePolicyOut,
+    WorkLogContextInput,
+    WorkLogContextOut,
     WorkLogInput,
     WorkLogOut,
     WorkLogUpdate,
 )
 from app.db.models import (
+    ActivityFeedback,
     Audit,
     CompatibilityRule,
     Course,
@@ -63,6 +68,7 @@ from app.db.models import (
     Event,
     EventOverride,
     EventSeries,
+    Plan,
     SavedFilter,
     Tag,
     Task,
@@ -73,6 +79,8 @@ from app.db.models import (
     TaskTypePolicy,
     User,
     WorkLog,
+    WorkLogContext,
+    Workspace,
     now_ms,
 )
 from app.modules.calendar_management import (
@@ -418,6 +426,10 @@ def list_tasks(
         query = query.where(Task.trashed_at.is_not(None))
     else:
         query = query.where(Task.trashed_at.is_(None))
+        if scope == "archived":
+            query = query.where(Task.archived_at.is_not(None))
+        else:
+            query = query.where(Task.archived_at.is_(None))
 
     active = Task.status.notin_(["done", "cancelled"])
     if scope == "today":
@@ -497,7 +509,11 @@ def list_tasks(
 @router.get("/tasks/summary", response_model=TaskSummaryOut)
 def task_summary(db: DB, user: UserDep) -> TaskSummaryOut:
     now_ms, tomorrow_ms = task_day_bounds(user)
-    base = (Task.workspace_id == user.workspace_id, Task.trashed_at.is_(None))
+    base = (
+        Task.workspace_id == user.workspace_id,
+        Task.trashed_at.is_(None),
+        Task.archived_at.is_(None),
+    )
     active = (*base, Task.status.notin_(["done", "cancelled"]))
 
     def count(*conditions: Any) -> int:
@@ -798,6 +814,24 @@ def reopen_task(task_id: str, db: DB, user: UserDep) -> TaskOut:
     return task_view(db, task)
 
 
+@router.post("/tasks/{task_id}/archive", response_model=TaskOut)
+def archive_task(task_id: str, db: DB, user: UserDep) -> TaskOut:
+    task = active_task(db, user, task_id)
+    if task.archived_at is None:
+        task.archived_at = now_ms()
+        record_change(db, user, "task.archive", task)
+    return task_view(db, task)
+
+
+@router.post("/tasks/{task_id}/unarchive", response_model=TaskOut)
+def unarchive_task(task_id: str, db: DB, user: UserDep) -> TaskOut:
+    task = active_task(db, user, task_id)
+    if task.archived_at is not None:
+        task.archived_at = None
+        record_change(db, user, "task.unarchive", task)
+    return task_view(db, task)
+
+
 @router.patch("/tasks/{task_id}/deadline", response_model=TaskOut)
 def update_deadline(task_id: str, body: DeadlineInput, db: DB, user: UserDep) -> TaskOut:
     task = active_task(db, user, task_id)
@@ -873,11 +907,83 @@ def owned_task(db: Session, user: User, task_id: str) -> Task:
     return task
 
 
+def worklog_view(db: Session, log: WorkLog) -> WorkLogOut:
+    contexts: list[WorkLogContextOut] = []
+    for context in db.scalars(
+        select(WorkLogContext)
+        .where(WorkLogContext.work_log_id == log.id)
+        .order_by(WorkLogContext.created_at, WorkLogContext.id)
+    ):
+        if context.object_kind == "event":
+            event = db.get(Event, context.object_id)
+            if event is None:
+                continue
+            view = event_view(db, event)
+            contexts.append(
+                WorkLogContextOut(
+                    object_kind="event",
+                    object_id=event.id,
+                    title=view.title,
+                    start_at=view.start_at,
+                    end_at=view.end_at,
+                )
+            )
+        else:
+            task = db.get(Task, context.object_id)
+            if task is None:
+                continue
+            contexts.append(
+                WorkLogContextOut(
+                    object_kind="task",
+                    object_id=task.id,
+                    title=task.title,
+                )
+            )
+    return WorkLogOut.model_validate(
+        {
+            **{
+                c.name: getattr(log, c.name)
+                for c in WorkLog.__table__.columns
+                if c.name in WorkLogOut.model_fields
+            },
+            "parallel_contexts": contexts,
+        }
+    )
+
+
+def replace_worklog_contexts(
+    db: Session,
+    user: User,
+    log: WorkLog,
+    items: list[WorkLogContextInput],
+) -> None:
+    keys = [(item.object_kind, item.object_id) for item in items]
+    if len(set(keys)) != len(keys):
+        raise HTTPException(422, "并行情境不能重复")
+    db.execute(delete(WorkLogContext).where(WorkLogContext.work_log_id == log.id))
+    for item in items:
+        if item.object_kind == "task":
+            task = owned(db, Task, item.object_id, user)
+            if task.id == log.task_id:
+                raise HTTPException(422, "不能把任务自身作为并行情境")
+        else:
+            owned(db, Event, item.object_id, user)
+        db.add(
+            WorkLogContext(
+                workspace_id=user.workspace_id,
+                work_log_id=log.id,
+                object_kind=item.object_kind,
+                object_id=item.object_id,
+            )
+        )
+    db.flush()
+
+
 @router.get("/tasks/{task_id}/worklogs", response_model=list[WorkLogOut])
 def list_worklogs(task_id: str, db: DB, user: UserDep) -> list[WorkLogOut]:
     owned_task(db, user, task_id)
     return [
-        WorkLogOut.model_validate(log)
+        worklog_view(db, log)
         for log in db.scalars(
             select(WorkLog)
             .where(
@@ -904,6 +1010,7 @@ def add_worklog(task_id: str, body: WorkLogInput, db: DB, user: UserDep) -> Work
     )
     db.add(log)
     db.flush()
+    replace_worklog_contexts(db, user, log, body.parallel_contexts)
     record_change(db, user, "worklog.create", log)
     if body.complete:
         if task.status != "done":
@@ -919,16 +1026,33 @@ def add_worklog(task_id: str, body: WorkLogInput, db: DB, user: UserDep) -> Work
                 generate_next_occurrence(db, user, task)
         task.status = "done"
         record_change(db, user, "task.complete", task)
-    return WorkLogOut.model_validate(log)
+    return worklog_view(db, log)
 
 
 @router.put("/worklogs/{worklog_id}", response_model=WorkLogOut)
 def update_worklog(worklog_id: str, body: WorkLogUpdate, db: DB, user: UserDep) -> WorkLogOut:
     log = owned(db, WorkLog, worklog_id, user)
-    for key, value in body.model_dump(exclude_none=True).items():
+    data = body.model_dump(exclude_none=True, exclude={"parallel_contexts"})
+    for key, value in data.items():
         setattr(log, key, value)
+    if body.parallel_contexts is not None:
+        replace_worklog_contexts(db, user, log, body.parallel_contexts)
     record_change(db, user, "worklog.update", log, scheduling=False)
-    return WorkLogOut.model_validate(log)
+    return worklog_view(db, log)
+
+
+@router.delete("/worklogs/{worklog_id}", status_code=204)
+def delete_worklog(worklog_id: str, db: DB, user: UserDep) -> None:
+    log = owned(db, WorkLog, worklog_id, user)
+    db.execute(delete(WorkLogContext).where(WorkLogContext.work_log_id == log.id))
+    db.add(Audit(workspace_id=user.workspace_id, action="worklog.delete", object_id=log.id))
+    db.delete(log)
+    db.execute(
+        update(Workspace)
+        .where(Workspace.id == user.workspace_id)
+        .values(scheduling_revision=Workspace.scheduling_revision + 1)
+    )
+    db.commit()
 
 
 @router.get("/drafts", response_model=list[DraftOut])
@@ -1025,7 +1149,25 @@ def skip_event(event_id: str, body: SkipInput, db: DB, user: UserDep) -> EventOu
     assert target is not None
     target.is_skipped = body.is_skipped
     record_change(db, user, "event.skip" if body.is_skipped else "event.restore_attendance", event)
-    return event_view(db, event)
+    result = event_view(db, event)
+    if not body.is_skipped:
+        plan = db.scalar(
+            select(Plan).where(
+                Plan.workspace_id == user.workspace_id,
+                Plan.status == "adopted",
+            )
+        )
+        start = int(result.start_at.timestamp() * 1000)
+        end = int(result.end_at.timestamp() * 1000)
+        result.replan_suggested = bool(
+            plan
+            and any(
+                block["start_at"] < end and block["end_at"] > start
+                for block in plan.blocks
+                if isinstance(block, dict)
+            )
+        )
+    return result
 
 
 @router.patch("/events/{event_id}/parallel-policy", response_model=EventOut)
@@ -1142,12 +1284,95 @@ def delete_course(course_id: str, body: ConfirmInput, db: DB, user: UserDep) -> 
     remove_record(db, user, "course.delete", course)
 
 
+@router.get("/events/{event_id}/feedback", response_model=ActivityFeedbackOut | None)
+def get_event_feedback(
+    event_id: str, db: DB, user: UserDep
+) -> ActivityFeedback | None:
+    owned(db, Event, event_id, user)
+    return db.scalar(
+        select(ActivityFeedback).where(
+            ActivityFeedback.workspace_id == user.workspace_id,
+            ActivityFeedback.event_id == event_id,
+        )
+    )
+
+
+@router.post("/events/{event_id}/feedback", response_model=ActivityFeedbackOut, status_code=201)
+def create_event_feedback(
+    event_id: str, body: ActivityFeedbackInput, db: DB, user: UserDep
+) -> ActivityFeedback:
+    owned(db, Event, event_id, user)
+    existing = db.scalar(
+        select(ActivityFeedback).where(
+            ActivityFeedback.workspace_id == user.workspace_id,
+            ActivityFeedback.event_id == event_id,
+        )
+    )
+    if existing:
+        raise HTTPException(409, "该事件已有反馈，请直接修改")
+    feedback = ActivityFeedback(
+        workspace_id=user.workspace_id,
+        event_id=event_id,
+        rating=body.rating,
+        tags=body.tags,
+        reflection=body.reflection,
+    )
+    db.add(feedback)
+    record_change(db, user, "activity_feedback.create", feedback, scheduling=False)
+    return feedback
+
+
+@router.put("/events/{event_id}/feedback", response_model=ActivityFeedbackOut)
+def update_event_feedback(
+    event_id: str, body: ActivityFeedbackInput, db: DB, user: UserDep
+) -> ActivityFeedback:
+    owned(db, Event, event_id, user)
+    feedback = db.scalar(
+        select(ActivityFeedback).where(
+            ActivityFeedback.workspace_id == user.workspace_id,
+            ActivityFeedback.event_id == event_id,
+        )
+    )
+    if feedback is None:
+        raise HTTPException(404, "该事件还没有反馈")
+    feedback.rating = body.rating
+    feedback.tags = body.tags
+    feedback.reflection = body.reflection
+    record_change(db, user, "activity_feedback.update", feedback, scheduling=False)
+    return feedback
+
+
+@router.delete("/events/{event_id}/feedback", status_code=204)
+def delete_event_feedback(event_id: str, db: DB, user: UserDep) -> None:
+    owned(db, Event, event_id, user)
+    feedback = db.scalar(
+        select(ActivityFeedback).where(
+            ActivityFeedback.workspace_id == user.workspace_id,
+            ActivityFeedback.event_id == event_id,
+        )
+    )
+    if feedback is None:
+        return
+    db.add(
+        Audit(
+            workspace_id=user.workspace_id,
+            action="activity_feedback.delete",
+            object_id=feedback.id,
+        )
+    )
+    db.delete(feedback)
+    db.commit()
+
+
 @router.delete("/events/{event_id}", status_code=204)
 def delete_event(event_id: str, body: ConfirmInput, db: DB, user: UserDep) -> None:
     event = owned(db, Event, event_id, user)
     override = instance_override(db, event)
     if override:
         db.delete(override)
+    db.execute(
+        delete(ActivityFeedback).where(ActivityFeedback.event_id == event.id)
+    )
     remove_record(db, user, "event.delete", event)
 
 
@@ -1193,6 +1418,11 @@ def delete_series(series_id: str, body: ConfirmInput, db: DB, user: UserDep) -> 
     series = owned(db, EventSeries, series_id, user)
     for override in db.scalars(select(EventOverride).where(EventOverride.series_id == series.id)):
         db.delete(override)
+    event_ids = list(db.scalars(select(Event.id).where(Event.series_id == series.id)))
+    if event_ids:
+        db.execute(
+            delete(ActivityFeedback).where(ActivityFeedback.event_id.in_(event_ids))
+        )
     for event in db.scalars(select(Event).where(Event.series_id == series.id)):
         db.delete(event)
     db.flush()

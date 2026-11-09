@@ -11,6 +11,8 @@ from app.api.schemas import (
     CourseInput,
     CourseOut,
     Credentials,
+    DeletionRequest,
+    DeletionStatus,
     EventInput,
     EventOut,
     ProfileInput,
@@ -21,6 +23,12 @@ from app.api.schemas import (
 )
 from app.db.models import Course, Event, User, Workspace, now_ms
 from app.db.models import Session as LoginSession
+from app.modules.account import (
+    COOLING_DAYS,
+    cancel_deletion,
+    purge_due_accounts,
+    request_deletion,
+)
 from app.modules.calendar_management import event_view, update_event_record
 from app.modules.event_types import ensure_system_types, resolve_event_type
 from app.modules.records import owned, record_change
@@ -101,6 +109,7 @@ def register(body: SetupInput, request: Request, response: Response, db: DB) -> 
 @router.post("/auth/login", response_model=AuthOut)
 def login(body: Credentials, request: Request, response: Response, db: DB) -> AuthOut:
     request.app.state.limiter.check(request.client.host if request.client else "unknown")
+    purge_due_accounts(db, request.app.state.settings)
     user = db.scalar(select(User).where(User.username == body.username))
     try:
         hasher.verify(user.password_hash if user else request.app.state.dummy_hash, body.password)
@@ -121,6 +130,32 @@ def logout(response: Response, db: DB, session: SessionDep) -> None:
     db.delete(session)
     db.commit()
     response.delete_cookie(COOKIE)
+
+
+@router.get("/account/deletion", response_model=DeletionStatus)
+def deletion_status(user: UserDep) -> DeletionStatus:
+    return DeletionStatus.model_validate(
+        {
+            "requested_at": user.deletion_requested_at,
+            "due_at": user.deletion_due_at,
+            "cooling_days": COOLING_DAYS,
+        }
+    )
+
+
+@router.post("/account/deletion", response_model=ProfileOut)
+def request_account_deletion(
+    body: DeletionRequest, response: Response, db: DB, user: UserDep
+) -> ProfileOut:
+    assert body.confirmed
+    updated = request_deletion(db, user, body.password)
+    response.delete_cookie(COOKIE)
+    return ProfileOut.model_validate(updated)
+
+
+@router.post("/account/deletion/cancel", response_model=ProfileOut)
+def cancel_account_deletion(db: DB, user: UserDep) -> ProfileOut:
+    return ProfileOut.model_validate(cancel_deletion(db, user))
 
 
 @router.get("/profile", response_model=ProfileOut)

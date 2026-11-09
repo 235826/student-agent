@@ -3,6 +3,7 @@ import TaskListManager from "../components/TaskListManager";
 import TagManager from "../components/TagManager";
 import SubtaskChecklist from "../components/SubtaskChecklist";
 import AttachmentPanel from "../components/AttachmentPanel";
+import WorkLogPanel from "../components/WorkLogPanel";
 import {
   Link,
   useNavigate,
@@ -86,6 +87,7 @@ const views = [
   ["unscheduled", "无日期"],
   ["flagged", "已标记"],
   ["done", "已完成"],
+  ["archived", "已归档"],
   ["trash", "垃圾箱"],
 ] as const;
 type View = (typeof views)[number][0];
@@ -658,6 +660,18 @@ export default function TasksPage({ profile }: { profile: Profile }) {
     onSuccess: () => {
       refresh();
       void message.success("任务已永久删除");
+    },
+    onError: (e: unknown) => void message.error(errorText(e)),
+  });
+  const archiveTask = useMutation({
+    mutationFn: ({ task, archived }: { task: Task; archived: boolean }) =>
+      api(
+        `/tasks/${task.id}/${archived ? "unarchive" : "archive"}`,
+        "POST",
+      ),
+    onSuccess: (_data, { archived }) => {
+      refresh();
+      void message.success(archived ? "任务已恢复" : "任务已归档");
     },
     onError: (e: unknown) => void message.error(errorText(e)),
   });
@@ -1681,6 +1695,12 @@ export default function TasksPage({ profile }: { profile: Profile }) {
                         <>
                           <SubtaskChecklist parent={task} />
                           <AttachmentPanel taskId={task.id} />
+                          {expanded && (
+                            <WorkLogPanel
+                              taskId={task.id}
+                              timezone={profile.timezone}
+                            />
+                          )}
                         </>
                       )}
                       {confirmAction?.kind === "trash" &&
@@ -1768,6 +1788,22 @@ export default function TasksPage({ profile }: { profile: Profile }) {
                               {task.flagged ? "取消标记" : "标记"}
                             </Button>
                             <SourceButton objectId={task.id} />
+                            <Button
+                              type="text"
+                              size="small"
+                              loading={
+                                archiveTask.isPending &&
+                                archiveTask.variables?.task.id === task.id
+                              }
+                              onClick={() =>
+                                archiveTask.mutate({
+                                  task,
+                                  archived: !!task.archived_at,
+                                })
+                              }
+                            >
+                              {task.archived_at ? "恢复归档" : "归档"}
+                            </Button>
                             <Button
                               type="text"
                               size="small"

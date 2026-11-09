@@ -20,6 +20,7 @@ test("草稿发布、重复课程单次变更与规则检查", async ({ page }, 
   const title = `阅读计划-${info.project.name}`;
   const course = `阅读课程-${info.project.name}`;
   await page.goto("/");
+  await page.evaluate(() => localStorage.setItem("onboarding_done", "1"));
   await page.getByLabel("用户名").fill("student");
   await page.getByLabel("密码", { exact: true }).fill("test-password-123");
   await page

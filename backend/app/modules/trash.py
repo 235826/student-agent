@@ -11,6 +11,7 @@ from app.db.models import (
     TaskDependency,
     TaskTag,
     WorkLog,
+    WorkLogContext,
 )
 
 TRASH_RETENTION_MS = 30 * 24 * 60 * 60 * 1000
@@ -42,6 +43,11 @@ def purge_tasks(
     )
     db.execute(delete(TaskAttachment).where(TaskAttachment.task_id.in_(ids)))
     db.execute(delete(TaskTag).where(TaskTag.task_id.in_(ids)))
+    log_ids = list(db.scalars(select(WorkLog.id).where(WorkLog.task_id.in_(ids))))
+    if log_ids:
+        db.execute(
+            delete(WorkLogContext).where(WorkLogContext.work_log_id.in_(log_ids))
+        )
     db.execute(delete(WorkLog).where(WorkLog.task_id.in_(ids)))
     db.execute(
         delete(TaskDependency).where(

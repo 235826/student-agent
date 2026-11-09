@@ -17,4 +17,15 @@ export const test = base.extend<{ isolatedDatabase: void }>({
     { auto: true },
   ],
 });
+
+// Most flows assume the first-use wizard is not covering the page.
+test.beforeEach(async ({ context }) => {
+  await context.addInitScript(() => {
+    try {
+      localStorage.setItem("onboarding_done", "1");
+    } catch {
+      // Ignore opaque origins such as about:blank.
+    }
+  });
+});
 export { expect };

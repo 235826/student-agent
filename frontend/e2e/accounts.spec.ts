@@ -2,6 +2,7 @@ import { test, expect } from "./fixtures";
 
 test("可创建第二个账号且数据互相隔离", async ({ page }) => {
   await page.goto("/");
+  await page.evaluate(() => localStorage.setItem("onboarding_done", "1"));
   await page.getByLabel("用户名").fill("student");
   await page.getByLabel("密码", { exact: true }).fill("test-password-123");
   await page

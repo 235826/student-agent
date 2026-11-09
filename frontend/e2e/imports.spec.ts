@@ -3,6 +3,7 @@ import { test, expect } from "./fixtures";
 
 async function login(page: Page) {
   await page.goto("/");
+  await page.evaluate(() => localStorage.setItem("onboarding_done", "1"));
   await page.getByLabel("用户名").fill("student");
   await page.getByLabel("密码", { exact: true }).fill("test-password-123");
   await page
@@ -85,7 +86,7 @@ test("课表图片三条课程、确认与移动端布局", async ({ page }, inf
     .getByRole("heading", { name: "先整理，再确认" })
     .screenshot();
   const prefix = `图片导入-${info.project.name}`;
-  await page.getByLabel("课表图片", { exact: true }).setInputFiles({
+  await page.getByLabel("导入文件", { exact: true }).setInputFiles({
     name: "timetable.png",
     mimeType: "image/png",
     buffer: image,

@@ -65,7 +65,7 @@ def run_once(engine: Engine, settings: Settings, provider: Provider) -> bool:
     result = None
     failure = None
     try:
-        if file_name:
+        if file_name and request.media_type.startswith("image/"):
             request = ParseInput(
                 request.text,
                 (settings.source_dir / file_name).read_bytes(),
