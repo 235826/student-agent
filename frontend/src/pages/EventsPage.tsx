@@ -53,9 +53,10 @@ export default function EventsPage({ profile }: { profile: Profile }) {
   const navigate = useNavigate();
   const isNewEvent = location.pathname === "/calendar/events/new";
   const isNewSeries = location.pathname === "/calendar/series/new";
+  const viewParam = params.get("view");
   const fallbackWeek = DateTime.now()
     .setZone(profile.timezone)
-    .startOf("week")
+    .startOf(viewParam === "dayGridMonth" ? "month" : "week")
     .toISODate()!;
   const weekParam = params.get("week");
   const week =
@@ -64,9 +65,10 @@ export default function EventsPage({ profile }: { profile: Profile }) {
     DateTime.fromISO(weekParam, { zone: profile.timezone }).isValid
       ? weekParam
       : fallbackWeek;
-  const viewParam = params.get("view");
   const calendarView =
-    viewParam === "timeGridWeek" || viewParam === "listWeek"
+    viewParam === "dayGridMonth" ||
+    viewParam === "timeGridWeek" ||
+    viewParam === "listWeek"
       ? viewParam
       : undefined;
   const calendarUrl = `${
@@ -78,16 +80,12 @@ export default function EventsPage({ profile }: { profile: Profile }) {
     to: calendarUrl,
     label: "返回日历",
   });
-  const setWeek = (day: string) => {
-    if (!weekParam && day === week) return;
+  const setCalendarDates = (day: string, value: string) => {
+    if (!["dayGridMonth", "timeGridWeek", "listWeek"].includes(value)) return;
+    if ((day === weekParam || (!weekParam && day === week)) && value === viewParam)
+      return;
     const next = new URLSearchParams(params);
-    next.set("week", day);
-    setParams(next, { replace: true });
-  };
-  const setView = (value: string) => {
-    if (value !== "timeGridWeek" && value !== "listWeek") return;
-    if (value === viewParam) return;
-    const next = new URLSearchParams(params);
+    if (weekParam || day !== week) next.set("week", day);
     next.set("view", value);
     setParams(next, { replace: true });
   };
@@ -263,15 +261,18 @@ export default function EventsPage({ profile }: { profile: Profile }) {
     },
     onError: (e) => void message.error(e.message),
   });
+  const monthView = calendarView === "dayGridMonth";
+  const rangeStart = monthView
+    ? DateTime.fromISO(week, { zone: profile.timezone }).startOf("month")
+    : DateTime.fromISO(week, { zone: profile.timezone });
+  const rangeEnd = monthView
+    ? rangeStart.plus({ months: 1 })
+    : rangeStart.plus({ days: 7 });
   const visible = (events.data ?? []).filter((e) =>
     id
       ? e.id === id
-      : DateTime.fromISO(e.start_at) <
-          DateTime.fromISO(week, { zone: profile.timezone }).plus({
-            days: 7,
-          }) &&
-        DateTime.fromISO(e.end_at) >
-          DateTime.fromISO(week, { zone: profile.timezone }),
+      : DateTime.fromISO(e.start_at) < rangeEnd &&
+        DateTime.fromISO(e.end_at) > rangeStart,
   );
   const edit = (event: Event | null) => {
     form.resetFields();
@@ -441,8 +442,7 @@ export default function EventsPage({ profile }: { profile: Profile }) {
                   profile={profile}
                   week={week}
                   view={calendarView}
-                  onWeekChange={setWeek}
-                  onViewChange={setView}
+                  onDatesChange={setCalendarDates}
                   onSelect={(start, end) =>
                     openNewEvent(
                       DateTime.fromJSDate(start)
@@ -456,7 +456,11 @@ export default function EventsPage({ profile }: { profile: Profile }) {
                 />
               )}
               <p className="muted">
-                选中周：{week}（仅显示本周事件，点击日历或下方事件进入详情）
+                {monthView
+                  ? `选中月：${rangeStart.toFormat("yyyy-MM")}`
+                  : `选中周：${week}`}
+                （下方列出{monthView ? "本月" : "本周"}事件，点击日历或事件可查看详情
+                {monthView ? "；点击日期可新建事件" : ""}）
               </p>
             </div>
           </div>
@@ -472,7 +476,7 @@ export default function EventsPage({ profile }: { profile: Profile }) {
         <Spin />
       ) : !visible.length ? (
         <div className="empty-state">
-          <Empty description={id ? "事件不存在或已删除" : "本周没有事件"} />
+          <Empty description={id ? "事件不存在或已删除" : monthView ? "本月没有事件" : "本周没有事件"} />
         </div>
       ) : (
         <div className="rows">

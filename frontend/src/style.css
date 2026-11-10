@@ -892,6 +892,64 @@ header {
   min-width: 0;
   overflow: hidden;
 }
+.calendar-day-add {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  padding: 3px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+.calendar-day-add:hover,
+.calendar-day-add:focus-visible {
+  background: var(--primary);
+  color: white;
+}
+.fc-daygrid-event .fc-event-body {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  width: 100%;
+}
+.fc-daygrid-event .fc-event-title {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.fc-daygrid-event .fc-event-time {
+  flex-shrink: 0;
+}
+.fc-daygrid-event .fc-event-type,
+.fc-daygrid-event .fc-event-note {
+  display: none;
+}
+.fc-daygrid .fc-daygrid-day-frame {
+  min-height: 80px;
+}
+.fc-more-popover .fc-event-body {
+  display: block;
+}
+.fc-more-popover .fc-popover-body {
+  max-height: 60vh;
+  max-width: calc(100vw - 48px);
+  overflow-y: auto;
+  box-sizing: border-box;
+}
+.fc-more-popover .fc-event-title {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.fc-more-popover .fc-event-type,
+.fc-more-popover .fc-event-note {
+  display: block;
+}
+.fc-more-popover .fc-event-note {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
 .fc-event-note {
   overflow: hidden;
   font-size: 11px;

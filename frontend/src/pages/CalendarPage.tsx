@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Alert } from "antd";
 import FullCalendar from "@fullcalendar/react";
 import timeGridPlugin from "@fullcalendar/timegrid";
+import dayGridPlugin from "@fullcalendar/daygrid";
 import listPlugin from "@fullcalendar/list";
 import luxonPlugin from "@fullcalendar/luxon3";
 import zhLocale from "@fullcalendar/core/locales/zh-cn";
@@ -13,20 +14,18 @@ import { api, type Plan, type Event, type Profile } from "../api";
 import { withFrom } from "../navigation";
 import { eventTypeColor, eventTypeLabel, staleInfo } from "../semantics";
 const errorText = (e: unknown) => (e instanceof Error ? e.message : "操作失败");
-const calendarViews = ["timeGridWeek", "listWeek"] as const;
+const calendarViews = ["dayGridMonth", "timeGridWeek", "listWeek"] as const;
 export default function CalendarPage({
   profile,
   week,
   view,
-  onWeekChange,
-  onViewChange,
+  onDatesChange,
   onSelect,
 }: {
   profile: Profile;
   week?: string;
   view?: string;
-  onWeekChange?: (day: string) => void;
-  onViewChange?: (view: string) => void;
+  onDatesChange?: (day: string, view: string) => void;
   onSelect?: (start: Date, end: Date) => void;
 }) {
   const navigate = useNavigate();
@@ -51,13 +50,28 @@ export default function CalendarPage({
   const stale = plan.data ? staleInfo(plan.data) : null;
   useEffect(() => {
     if (!week) return;
-    const view = calendar.current?.getApi();
-    if (!view) return;
-    const current = DateTime.fromJSDate(view.view.currentStart)
+    const api = calendar.current?.getApi();
+    if (!api) return;
+    if (
+      view &&
+      (calendarViews as readonly string[]).includes(view) &&
+      api.view.type !== view
+    ) {
+      api.changeView(view, week);
+      return;
+    }
+    const current = DateTime.fromJSDate(api.view.currentStart)
       .setZone(profile.timezone)
       .toISODate();
-    if (current !== week) view.gotoDate(week);
-  }, [week, profile.timezone]);
+    if (current !== week) api.gotoDate(week);
+  }, [week, view, profile.timezone]);
+  const selectDay = (date: Date) => {
+    const start = DateTime.fromJSDate(date)
+      .setZone(profile.timezone)
+      .startOf("day")
+      .set({ hour: 9 });
+    onSelect?.(start.toJSDate(), start.plus({ hours: 1 }).toJSDate());
+  };
   return (
     <>
       {(events.error || plan.error) && (
@@ -73,7 +87,7 @@ export default function CalendarPage({
       <div className="calendar">
         <FullCalendar
           ref={calendar}
-          plugins={[timeGridPlugin, listPlugin, luxonPlugin]}
+          plugins={[dayGridPlugin, timeGridPlugin, listPlugin, luxonPlugin]}
           locale={zhLocale}
           timeZone={profile.timezone}
           initialDate={week}
@@ -81,20 +95,46 @@ export default function CalendarPage({
           headerToolbar={{
             left: "prev,next today",
             center: "title",
-            right: "timeGridWeek,listWeek",
+            right: "dayGridMonth,timeGridWeek,listWeek",
           }}
+          buttonText={{ month: "月", week: "周", list: "列表" }}
+          views={{ dayGridMonth: { dayMaxEvents: 3, eventDisplay: "block" } }}
+          moreLinkText={(count) => `还有 ${count} 项`}
+          dayCellContent={(info) =>
+            info.view.type === "dayGridMonth" && onSelect ? (
+              <button
+                className="calendar-day-add"
+                type="button"
+                aria-label={`在${DateTime.fromJSDate(info.date).setZone(profile.timezone).toISODate()}新建事件`}
+                onClick={() => selectDay(info.date)}
+              >
+                {info.dayNumberText}
+              </button>
+            ) : (
+              info.dayNumberText
+            )
+          }
           height="auto"
           selectable={!!onSelect}
           select={(info: DateSelectArg) =>
-            onSelect?.(info.start, info.end)
+            info.allDay
+              ? selectDay(info.start)
+              : onSelect?.(info.start, info.end)
           }
           datesSet={(info) => {
-            onWeekChange?.(info.startStr.slice(0, 10));
-            if (info.view.type !== view) onViewChange?.(info.view.type);
+            onDatesChange?.(
+              DateTime.fromJSDate(info.view.currentStart)
+                .setZone(profile.timezone)
+                .toISODate()!,
+              info.view.type,
+            );
           }}
           eventClick={(info) => navigate(info.event.extendedProps.to)}
           eventContent={(arg) => (
-            <div className="fc-event-body">
+            <div
+              className="fc-event-body"
+              title={`${arg.event.title} · ${arg.event.extendedProps.typeLabel}${arg.event.extendedProps.note ? ` · ${arg.event.extendedProps.note}` : ""}`}
+            >
               {arg.timeText && (
                 <div className="fc-event-time">{arg.timeText}</div>
               )}
