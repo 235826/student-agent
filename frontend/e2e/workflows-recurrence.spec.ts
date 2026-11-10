@@ -22,7 +22,7 @@ test("任务链接保存与展示", async ({ page }) => {
   const card = page
     .locator(".task-card")
     .filter({ has: page.getByRole("heading", { name: "资料任务" }) });
-  await card.getByRole("heading", { name: "资料任务" }).click();
+  await card.getByRole("button", { name: `展开详情：${"资料任务"}`, exact: true }).click();
   await expect(card.locator('a[href="https://example.com/a"]')).toBeVisible();
   await expect(card.locator('a[href="https://example.org/b"]')).toBeVisible();
 
@@ -64,7 +64,7 @@ test("重复任务支持间隔与工作日选项", async ({ page }) => {
   const card = page
     .locator(".task-card")
     .filter({ has: page.getByRole("heading", { name: "双周任务" }) });
-  await card.getByRole("heading", { name: "双周任务" }).click();
+  await card.getByRole("button", { name: `展开详情：${"双周任务"}`, exact: true }).click();
   await expect(card.getByText(/重复：每 2 周/)).toBeVisible();
   const tasks = await (await page.request.get("/api/v1/tasks")).json();
   const task = tasks.find(

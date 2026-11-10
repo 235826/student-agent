@@ -41,7 +41,7 @@ test("清单创建、任务归类、筛选与完成历史", async ({ page }) => 
   await expect(page.getByRole("dialog")).not.toBeVisible();
   await expect(page.getByRole("heading", { name: "收件箱任务" })).toBeVisible();
 
-  await card.getByRole("heading", { name: "清单任务" }).click();
+  await card.getByRole("button", { name: `展开详情：${"清单任务"}`, exact: true }).click();
   await expect(card.getByText("数学", { exact: true })).toBeVisible();
   await expect(card.getByText("阅读", { exact: true })).toBeVisible();
 
@@ -219,7 +219,7 @@ test("任务行列内联展开详情", async ({ page }) => {
   const row = page
     .locator(".task-card")
     .filter({ has: page.getByRole("heading", { name: "抽屉任务" }) });
-  await row.getByRole("heading", { name: "抽屉任务" }).click();
+  await row.getByRole("button", { name: `展开详情：${"抽屉任务"}`, exact: true }).click();
 
   await expect(page.locator(".ant-drawer-content")).toHaveCount(0);
   await expect(row.getByText("行内展开的描述", { exact: true })).toBeVisible();

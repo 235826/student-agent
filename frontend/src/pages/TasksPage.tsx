@@ -2,6 +2,10 @@ import ImportRecords from "../components/ImportRecords";
 import TaskListManager from "../components/TaskListManager";
 import TagManager from "../components/TagManager";
 import SubtaskChecklist from "../components/SubtaskChecklist";
+import InlineTaskComposer from "../components/InlineTaskComposer";
+import InlineTaskTitle from "../components/InlineTaskTitle";
+import InlineTaskReminder from "../components/InlineTaskReminder";
+import { useTaskActions, type TaskChange } from "../hooks/useTaskActions";
 import AttachmentPanel from "../components/AttachmentPanel";
 import AttachmentUploadButton from "../components/AttachmentUploadButton";
 import WorkLogPanel from "../components/WorkLogPanel";
@@ -37,6 +41,7 @@ import {
   Checkbox,
   Collapse,
   Drawer,
+  Dropdown,
   Empty,
   Form,
   Input,
@@ -173,9 +178,14 @@ export default function TasksPage({ profile }: { profile: Profile }) {
     undefined,
   );
   const [dropBeforeId, setDropBeforeId] = useState<string | null>(null);
-  const [dropPosition, setDropPosition] = useState<"before" | "after">("before");
+  const [dropPosition, setDropPosition] = useState<"before" | "after">(
+    "before",
+  );
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const selectionAnchor = useRef<string | null>(null);
+  const [treeExpanded, setTreeExpanded] = useState<Set<string>>(new Set());
+  const [reminderId, setReminderId] = useState<string | null>(null);
   const [bulkTagOpen, setBulkTagOpen] = useState(false);
   const [bulkTagValues, setBulkTagValues] = useState<string[]>([]);
   const [saveFilterOpen, setSaveFilterOpen] = useState(false);
@@ -235,7 +245,9 @@ export default function TasksPage({ profile }: { profile: Profile }) {
     return () => clearTimeout(timer);
   }, [search, debouncedSearch, setUrlValue]);
   const timelineMode =
-    !inbox && !id && (view === "all" || view === "today" || view === "scheduled");
+    !inbox &&
+    !id &&
+    (view === "all" || view === "today" || view === "scheduled");
   useEffect(() => {
     setSearch((current) =>
       current.trim() === debouncedSearch ? current : debouncedSearch,
@@ -329,6 +341,12 @@ export default function TasksPage({ profile }: { profile: Profile }) {
     queryKey: ["saved-filters"],
     queryFn: () => api<SavedFilter[]>("/saved-filters"),
   });
+  const actions = useTaskActions();
+  const treeTasks = useQuery({
+    queryKey: ["tasks", "inline-tree"],
+    queryFn: () => api<Task[]>("/tasks"),
+    enabled: treeExpanded.size > 0,
+  });
   useEffect(() => {
     if (
       listFilter !== "all" &&
@@ -350,6 +368,18 @@ export default function TasksPage({ profile }: { profile: Profile }) {
     mutationFn: ({ path, method = "POST", body }: Write) =>
       api(path, method, body),
     onSuccess: (_data: unknown, write: Write) => {
+      if (
+        write.path.startsWith("/tasks/") &&
+        write.method === "PUT" &&
+        editor?.kind === "task" &&
+        editor.task
+      ) {
+        actions.recordUpdate(editor.task, _data as Task);
+      } else if (write.path === "/tasks") {
+        actions.remember("新增任务", () =>
+          api(`/tasks/${(_data as Task).id}/trash`, "POST"),
+        );
+      }
       void client.invalidateQueries({ queryKey: ["tasks"] });
       void client.invalidateQueries({ queryKey: ["drafts"] });
       void client.invalidateQueries({ queryKey: ["plans"] });
@@ -394,7 +424,8 @@ export default function TasksPage({ profile }: { profile: Profile }) {
     void client.invalidateQueries({ queryKey: ["tags"] });
   };
   const reopen = useMutation({
-    mutationFn: (task: Task) => api(`/tasks/${task.id}/reopen`, "POST"),
+    mutationFn: (task: Task) =>
+      actions.patch([{ id: task.id, patch: { status: "todo" } }], "恢复待办"),
     onSuccess: () => {
       refresh();
       void message.success("任务已恢复为待办");
@@ -402,22 +433,30 @@ export default function TasksPage({ profile }: { profile: Profile }) {
     onError: (e: unknown) => void message.error(errorText(e)),
   });
   const complete = useMutation({
-    mutationFn: (task: Task) => api(`/tasks/${task.id}/complete`, "POST"),
+    mutationFn: async (task: Task) => {
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      return actions.patch(
+        [{ id: task.id, patch: { status: "done" } }],
+        "完成任务",
+      );
+    },
     onSuccess: (_data, task) => {
       refresh();
       message.open({
+        key: "task-undo",
         type: "success",
         duration: 8,
         content: (
           <Space wrap>
             <span>
-              已完成“{task.title}”
-              {task.recurrence ? "，下一次已生成" : ""}
+              已完成“{task.title}”{task.recurrence ? "，下一次已生成" : ""}
             </span>
             <Button
               type="link"
               size="small"
-              onClick={() => reopen.mutate(task)}
+              onClick={() => {
+                void actions.undo().catch(() => undefined);
+              }}
             >
               撤销
             </Button>
@@ -437,10 +476,10 @@ export default function TasksPage({ profile }: { profile: Profile }) {
       deadline_at: string | null;
       deadline_all_day: boolean;
     }) =>
-      api(`/tasks/${task.id}/deadline`, "PATCH", {
-        deadline_at,
-        deadline_all_day,
-      }),
+      actions.patch(
+        [{ id: task.id, patch: { deadline_at, deadline_all_day } }],
+        "修改日期",
+      ),
     onSuccess: () => {
       refresh();
       void message.success("截止时间已更新");
@@ -449,13 +488,12 @@ export default function TasksPage({ profile }: { profile: Profile }) {
   });
   const setFlag = useMutation({
     mutationFn: ({ task, flagged }: { task: Task; flagged: boolean }) =>
-      api(`/tasks/${task.id}/flag`, "PATCH", { flagged }),
+      actions.patch([{ id: task.id, patch: { flagged } }], "修改标记"),
     onSuccess: () => refresh(),
     onError: (e: unknown) => void message.error(errorText(e)),
   });
   const reorder = useMutation({
-    mutationFn: (task_ids: string[]) =>
-      api("/tasks/reorder", "POST", { task_ids }),
+    mutationFn: (task_ids: string[]) => actions.patch([], "调整顺序", task_ids),
     onSuccess: () => refresh(),
     onError: (e: unknown) => void message.error(errorText(e)),
   });
@@ -465,7 +503,20 @@ export default function TasksPage({ profile }: { profile: Profile }) {
       deadline_at: string | null;
       deadline_all_day: boolean;
       ordered_task_ids: string[];
-    }) => api<Task[]>("/tasks/plan/move", "POST", body),
+    }) =>
+      actions.patch(
+        [
+          {
+            id: body.task_id,
+            patch: {
+              deadline_at: body.deadline_at,
+              deadline_all_day: body.deadline_all_day,
+            },
+          },
+        ],
+        "移动任务",
+        body.ordered_task_ids,
+      ),
     onSuccess: () => refresh(),
     onError: (e: unknown) => void message.error(errorText(e)),
   });
@@ -477,18 +528,6 @@ export default function TasksPage({ profile }: { profile: Profile }) {
     | "deadline"
     | "add_tags"
     | "remove_tags";
-  type TaskSnapshot = { id: string; input: TaskInput };
-  type BulkUndo =
-    | { kind: "complete" | "reopen" | "trash"; tasks: Task[] }
-    | { kind: "move" | "tags"; snapshots: TaskSnapshot[] }
-    | {
-        kind: "deadline";
-        snapshots: {
-          id: string;
-          deadline_at: string | null;
-          deadline_all_day: boolean;
-        }[];
-      };
   type BulkPayload = {
     tasks: Task[];
     action: BulkAction;
@@ -496,108 +535,46 @@ export default function TasksPage({ profile }: { profile: Profile }) {
     deadline_at?: string | null;
     deadline_all_day?: boolean;
     tags?: string[];
-    undo: BulkUndo;
   };
-  const undoBulk = useMutation({
-    mutationFn: async (undo: BulkUndo) => {
-      let failed = 0;
-      let firstError = "";
-      const run = async (fn: () => Promise<unknown>) => {
-        try {
-          await fn();
-        } catch (e) {
-          failed += 1;
-          if (!firstError) firstError = errorText(e);
-        }
-      };
-      if ("tasks" in undo) {
-        for (const task of undo.tasks) {
-          await run(() => {
-            if (undo.kind === "complete")
-              return api(`/tasks/${task.id}/reopen`, "POST");
-            if (undo.kind === "reopen")
-              return api(`/tasks/${task.id}/complete`, "POST");
-            return api(`/tasks/${task.id}/restore`, "POST");
-          });
-        }
-      } else if (undo.kind === "deadline") {
-        for (const snapshot of undo.snapshots) {
-          await run(() =>
-            api(`/tasks/${snapshot.id}/deadline`, "PATCH", {
-              deadline_at: snapshot.deadline_at,
-              deadline_all_day: snapshot.deadline_all_day,
-            }),
-          );
-        }
-      } else {
-        for (const snapshot of undo.snapshots) {
-          await run(() => api(`/tasks/${snapshot.id}`, "PUT", snapshot.input));
-        }
-      }
-      if (failed) throw new Error(`撤销时失败 ${failed} 项：${firstError}`);
-    },
-    onSuccess: () => {
-      refresh();
-      void message.success("已撤销批量操作");
-    },
-    onError: (e: Error) => {
-      refresh();
-      void message.error(e.message);
-    },
-  });
   const bulk = useMutation({
     mutationFn: async (payload: BulkPayload) => {
-      const { tasks, action } = payload;
-      let failed = 0;
-      let firstError = "";
-      for (const task of tasks) {
-        try {
-          if (action === "complete")
-            await api(`/tasks/${task.id}/complete`, "POST");
-          else if (action === "reopen")
-            await api(`/tasks/${task.id}/reopen`, "POST");
-          else if (action === "trash")
-            await api(`/tasks/${task.id}/trash?confirm_impact=true`, "POST");
-          else if (action === "move")
-            await api(`/tasks/${task.id}`, "PUT", {
-              ...toTaskInput(task),
-              list_id: payload.list_id ?? null,
-            });
-          else if (action === "deadline")
-            await api(`/tasks/${task.id}/deadline`, "PATCH", {
-              deadline_at: payload.deadline_at ?? null,
-              deadline_all_day: payload.deadline_all_day ?? false,
-            });
-          else if (action === "add_tags") {
-            const nextTags = new Set(task.tags);
-            for (const tag of payload.tags ?? []) nextTags.add(tag);
-            await api(`/tasks/${task.id}`, "PUT", {
-              ...toTaskInput(task),
-              tags: [...nextTags],
-            });
-          } else {
-            const remove = new Set(payload.tags ?? []);
-            await api(`/tasks/${task.id}`, "PUT", {
-              ...toTaskInput(task),
-              tags: task.tags.filter((tag) => !remove.has(tag)),
-            });
-          }
-        } catch (e) {
-          failed += 1;
-          if (!firstError) firstError = errorText(e);
-        }
-      }
-      if (failed) {
-        throw new Error(
-          `已处理 ${tasks.length - failed} 项，失败 ${failed} 项：${firstError}`,
+      if (payload.action === "trash")
+        return actions.trash(
+          payload.tasks.map((task) => task.id),
+          true,
+          "批量操作",
         );
-      }
-      return tasks.length;
+      const changes: TaskChange[] = payload.tasks.map((task) => {
+        let patch: Partial<TaskInput>;
+        if (payload.action === "complete" || payload.action === "reopen")
+          patch = { status: payload.action === "complete" ? "done" : "todo" };
+        else if (payload.action === "move")
+          patch = { list_id: payload.list_id ?? null };
+        else if (payload.action === "deadline")
+          patch = {
+            deadline_at: payload.deadline_at ?? null,
+            deadline_all_day: payload.deadline_all_day ?? false,
+          };
+        else if (payload.action === "add_tags")
+          patch = {
+            tags: [...new Set([...task.tags, ...(payload.tags ?? [])])],
+          };
+        else
+          patch = {
+            tags: task.tags.filter(
+              (tag) => !(payload.tags ?? []).includes(tag),
+            ),
+          };
+        return { id: task.id, patch };
+      });
+      await actions.patch(changes, "批量操作");
+      return changes.length;
     },
-    onSuccess: (count, payload) => {
+    onSuccess: (count) => {
       refresh();
       setSelectedIds(new Set());
       message.open({
+        key: "task-undo",
         type: "success",
         duration: 8,
         content: (
@@ -606,7 +583,9 @@ export default function TasksPage({ profile }: { profile: Profile }) {
             <Button
               type="link"
               size="small"
-              onClick={() => undoBulk.mutate(payload.undo)}
+              onClick={() => {
+                void actions.undo().catch(() => undefined);
+              }}
             >
               撤销
             </Button>
@@ -621,10 +600,8 @@ export default function TasksPage({ profile }: { profile: Profile }) {
     },
   });
   const saveFilter = useMutation({
-    mutationFn: (body: {
-      name: string;
-      payload: SavedFilterPayload;
-    }) => api<SavedFilter>("/saved-filters", "POST", body),
+    mutationFn: (body: { name: string; payload: SavedFilterPayload }) =>
+      api<SavedFilter>("/saved-filters", "POST", body),
     onSuccess: (saved) => {
       setUrlValue("saved", saved.id, "");
       setSaveFilterOpen(false);
@@ -653,8 +630,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
     onError: (e: unknown) => void message.error(errorText(e)),
   });
   const purgeTask = useMutation({
-    mutationFn: (task: Task) =>
-      api(`/tasks/${task.id}/permanent`, "DELETE"),
+    mutationFn: (task: Task) => api(`/tasks/${task.id}/permanent`, "DELETE"),
     onSuccess: () => {
       refresh();
       void message.success("任务已永久删除");
@@ -663,10 +639,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
   });
   const archiveTask = useMutation({
     mutationFn: ({ task, archived }: { task: Task; archived: boolean }) =>
-      api(
-        `/tasks/${task.id}/${archived ? "unarchive" : "archive"}`,
-        "POST",
-      ),
+      api(`/tasks/${task.id}/${archived ? "unarchive" : "archive"}`, "POST"),
     onSuccess: (_data, { archived }) => {
       refresh();
       void message.success(archived ? "任务已恢复" : "任务已归档");
@@ -683,13 +656,11 @@ export default function TasksPage({ profile }: { profile: Profile }) {
   });
   const trashTask = useMutation({
     mutationFn: ({ task, confirmed }: { task: Task; confirmed?: boolean }) =>
-      api(
-        `/tasks/${task.id}/trash${confirmed ? "?confirm_impact=true" : ""}`,
-        "POST",
-      ),
-    onSuccess: (_data, { task }) => {
+      actions.trash([task.id], confirmed),
+    onSuccess: () => {
       refresh();
       message.open({
+        key: "task-undo",
         type: "success",
         duration: 8,
         content: (
@@ -698,7 +669,9 @@ export default function TasksPage({ profile }: { profile: Profile }) {
             <Button
               type="link"
               size="small"
-              onClick={() => restoreTask.mutate(task)}
+              onClick={() => {
+                void actions.undo().catch(() => undefined);
+              }}
             >
               撤销
             </Button>
@@ -771,8 +744,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
       flagged: payload?.flagged ?? false,
       recurrence: payload?.recurrence ?? undefined,
       recurrence_interval: payload?.recurrence_interval ?? 1,
-      recurrence_from_completion:
-        payload?.recurrence_from_completion ?? false,
+      recurrence_from_completion: payload?.recurrence_from_completion ?? false,
       recurrence_until: payload?.recurrence_until
         ? DateTime.fromISO(payload.recurrence_until)
             .setZone(profile.timezone)
@@ -998,11 +970,15 @@ export default function TasksPage({ profile }: { profile: Profile }) {
   };
   const taskDateKey = (task: Task) =>
     task.deadline_at
-      ? DateTime.fromISO(task.deadline_at)
-          .setZone(profile.timezone)
-          .toISODate()
+      ? DateTime.fromISO(task.deadline_at).setZone(profile.timezone).toISODate()
       : null;
   const visible = (detailPage ? (detailTask ? [detailTask] : []) : listItems)
+    .filter(
+      (task) =>
+        detailPage ||
+        !task.parent_id ||
+        !listItems.some((parent) => parent.id === task.parent_id),
+    )
     .sort((a, b) =>
       timelineMode
         ? (taskDateKey(a) ?? "9999-12-31").localeCompare(
@@ -1036,7 +1012,9 @@ export default function TasksPage({ profile }: { profile: Profile }) {
             .setZone(profile.timezone)
             .toFormat("yyyy年M月d日")
         : "完成时间未知";
-    return states.find((state) => state.value === task.status)?.label ?? task.status;
+    return (
+      states.find((state) => state.value === task.status)?.label ?? task.status
+    );
   };
   const canReorder =
     sort === "manual" &&
@@ -1084,11 +1062,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
     const weekdays = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
     return `${date.toFormat("M月d日")} ${weekdays[date.weekday % 7]}`;
   };
-  const planDayClass = (
-    key: string | null,
-    tasks: Task[],
-    noDate = false,
-  ) =>
+  const planDayClass = (key: string | null, tasks: Task[], noDate = false) =>
     [
       "plan-day",
       noDate ? "plan-no-date" : "",
@@ -1137,9 +1111,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([key, entries]) => ({
         key,
-        label: planDateLabel(
-          DateTime.fromISO(key, { zone: profile.timezone }),
-        ),
+        label: planDateLabel(DateTime.fromISO(key, { zone: profile.timezone })),
         tasks: sortForPlan(entries),
       }));
   };
@@ -1149,9 +1121,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
       return !!key && key < todayKey;
     }),
   );
-  const noDateTasks = sortForPlan(
-    visible.filter((task) => !taskDateKey(task)),
-  );
+  const noDateTasks = sortForPlan(visible.filter((task) => !taskDateKey(task)));
   const weekKeys = new Set<string>();
   const weekDays: Array<{ key: string; label: string; tasks: Task[] }> = [];
   for (let offset = 0; offset < 7; offset += 1) {
@@ -1214,7 +1184,12 @@ export default function TasksPage({ profile }: { profile: Profile }) {
     const day = element?.closest<HTMLElement>(
       "[data-plan-date], [data-plan-nodate]",
     );
-    if (!day) return { date: undefined as string | null | undefined, beforeId: null, position: "before" as const };
+    if (!day)
+      return {
+        date: undefined as string | null | undefined,
+        beforeId: null,
+        position: "before" as const,
+      };
     const date = day.hasAttribute("data-plan-nodate")
       ? null
       : (day.dataset.planDate ?? null);
@@ -1239,12 +1214,19 @@ export default function TasksPage({ profile }: { profile: Profile }) {
     setDropBeforeId(null);
     document.body.classList.add("plan-dragging");
     const onMove = (pointerEvent: PointerEvent) => {
-      const target = resolvePlanDrop(pointerEvent.clientX, pointerEvent.clientY);
+      const target = resolvePlanDrop(
+        pointerEvent.clientX,
+        pointerEvent.clientY,
+      );
       setDragOverDate(target.date);
       setDropBeforeId(target.beforeId);
       setDropPosition(target.position);
-      if (pointerEvent.clientY < 80) window.scrollBy(0, -18);
-      else if (pointerEvent.clientY > window.innerHeight - 80)
+      if (target.date === undefined && pointerEvent.clientY < 80)
+        window.scrollBy(0, -18);
+      else if (
+        target.date === undefined &&
+        pointerEvent.clientY > window.innerHeight - 80
+      )
         window.scrollBy(0, 18);
     };
     const cleanup = () => {
@@ -1258,9 +1240,48 @@ export default function TasksPage({ profile }: { profile: Profile }) {
     };
     const onCancel = () => cleanup();
     const onUp = (pointerEvent: PointerEvent) => {
-      const target = resolvePlanDrop(pointerEvent.clientX, pointerEvent.clientY);
+      const target = resolvePlanDrop(
+        pointerEvent.clientX,
+        pointerEvent.clientY,
+      );
+      const listTarget = document
+        .elementFromPoint(pointerEvent.clientX, pointerEvent.clientY)
+        ?.closest<HTMLElement>("[data-task-list-drop]");
       cleanup();
+      const moving =
+        selectedIds.has(task.id) && selectedTasks.length
+          ? selectedTasks
+          : [task];
+      if (listTarget) {
+        const key = listTarget.dataset.taskListDrop;
+        moveSelection(
+          moving.map((item) => item.id),
+          key === "inbox" ? null : key!,
+        );
+        return;
+      }
+      if (
+        pointerEvent.altKey &&
+        target.beforeId &&
+        !moving.some((item) => item.id === target.beforeId)
+      ) {
+        catchAction(
+          actions.patch(
+            moving.map((item) => ({
+              id: item.id,
+              patch: { parent_id: target.beforeId },
+            })),
+            "创建子任务关系",
+          ),
+        );
+        setTreeExpanded((current) => new Set(current).add(target.beforeId!));
+        return;
+      }
       if (target.date === undefined) return;
+      if (moving.length > 1) {
+        moveToDate(moving, target.date, target.beforeId, target.position);
+        return;
+      }
       const targetList = sortForPlan(
         target.date === null
           ? noDateTasks
@@ -1317,7 +1338,12 @@ export default function TasksPage({ profile }: { profile: Profile }) {
     window.addEventListener("pointerup", onUp);
     window.addEventListener("pointercancel", onCancel);
   };
-  const selectedTasks = visible.filter((task) => selectedIds.has(task.id));
+  const taskCatalog = new Map(
+    [...(treeTasks.data ?? []), ...visible].map((task) => [task.id, task]),
+  );
+  const selectedTasks = [...taskCatalog.values()].filter((task) =>
+    selectedIds.has(task.id),
+  );
   const toggleSelected = (taskId: string) =>
     setSelectedIds((current) => {
       const next = new Set(current);
@@ -1325,6 +1351,293 @@ export default function TasksPage({ profile }: { profile: Profile }) {
       else next.add(taskId);
       return next;
     });
+  const focusTask = (taskId: string) => {
+    const row = [
+      ...document.querySelectorAll<HTMLElement>(
+        ".reminders-list [data-task-id]",
+      ),
+    ].find((row) => row.dataset.taskId === taskId);
+    row?.focus({ preventScroll: true });
+    row?.scrollIntoView({ block: "nearest" });
+  };
+  const selectTask = (task: Task, extend = false, range = false) => {
+    if (range && selectionAnchor.current) {
+      const rows = [
+        ...document.querySelectorAll<HTMLElement>(
+          ".reminders-list [data-task-id]",
+        ),
+      ].map((row) => row.dataset.taskId!);
+      const a = rows.indexOf(selectionAnchor.current),
+        b = rows.indexOf(task.id);
+      if (a >= 0 && b >= 0)
+        setSelectedIds(new Set(rows.slice(Math.min(a, b), Math.max(a, b) + 1)));
+    } else if (extend) toggleSelected(task.id);
+    else setSelectedIds(new Set([task.id]));
+    if (!range) selectionAnchor.current = task.id;
+  };
+  const createInline = (title: string, date: string | null, parent?: Task) =>
+    actions.create({
+      title,
+      list_id:
+        parent?.list_id ??
+        (listFilter === "all" || listFilter === "inbox" ? null : listFilter),
+      tags: tagFilter === "all" ? [] : [tagFilter],
+      deadline_at: date
+        ? DateTime.fromISO(date, { zone: profile.timezone })
+            .endOf("day")
+            .toISO()
+        : null,
+      deadline_all_day: !!date,
+      parent_id: parent?.id ?? null,
+      flagged: view === "flagged",
+      status: status === "in_progress" ? "in_progress" : "todo",
+    });
+  const composer = (date: string | null, parent?: Task) => (
+    <InlineTaskComposer
+      key={parent?.id ?? date ?? "no-date"}
+      label={
+        parent ? `添加子任务：${parent.title}` : `添加任务：${date ?? "无日期"}`
+      }
+      onCreate={(title) => createInline(title, date, parent)}
+    />
+  );
+  const catchAction = (promise: Promise<unknown>) => {
+    void promise.catch(() => undefined);
+  };
+  const moveSelection = (ids: string[], listId: string | null) => {
+    catchAction(
+      actions.patch(
+        ids.map((id) => ({ id, patch: { list_id: listId } })),
+        "移动清单",
+      ),
+    );
+  };
+  useEffect(() => {
+    const listener = (event: Event) => {
+      const detail = (
+        event as CustomEvent<{ ids: string[]; listId: string | null }>
+      ).detail;
+      if (!inbox && !detailPage && detail?.ids?.length)
+        moveSelection(detail.ids, detail.listId);
+    };
+    window.addEventListener("task-list-drop", listener);
+    return () => window.removeEventListener("task-list-drop", listener);
+  });
+  const moveToDate = (
+    tasks: Task[],
+    date: string | null,
+    beforeId?: string | null,
+    position = "before",
+  ) => {
+    const ids = new Set(tasks.map((task) => task.id));
+    const targets = sortForPlan(
+      date ? (tasksByDateAll.get(date) ?? []) : noDateTasks,
+    ).filter((task) => !ids.has(task.id));
+    let index = beforeId
+      ? targets.findIndex((task) => task.id === beforeId)
+      : targets.length;
+    if (index < 0) index = targets.length;
+    if (beforeId && position === "after") index += 1;
+    const order = [
+      ...targets.slice(0, index),
+      ...tasks,
+      ...targets.slice(index),
+    ].map((task) => task.id);
+    const changes: TaskChange[] = tasks.map((task) => {
+      const local = task.deadline_at
+        ? DateTime.fromISO(task.deadline_at).setZone(profile.timezone)
+        : null;
+      const target = date
+        ? DateTime.fromISO(date, { zone: profile.timezone })
+        : null;
+      return {
+        id: task.id,
+        patch: {
+          deadline_at: target
+            ? (!local || task.deadline_all_day
+                ? target.endOf("day")
+                : target.set({ hour: local.hour, minute: local.minute })
+              ).toISO()
+            : null,
+          deadline_all_day: !!date && (!local || task.deadline_all_day),
+        },
+      };
+    });
+    catchAction(actions.patch(changes, `移动 ${tasks.length} 项任务`, order));
+  };
+  const rowMenu = (task: Task) => {
+    const targets = selectedIds.has(task.id) ? selectedTasks : [task];
+    const change = (patch: Partial<TaskInput>, label: string) =>
+      catchAction(
+        actions.patch(
+          targets.map((target) => ({ id: target.id, patch })),
+          label,
+        ),
+      );
+    return {
+      items: [
+        {
+          key: "status",
+          label: task.status === "done" ? "恢复待办" : "完成任务",
+          onClick: () =>
+            change(
+              { status: task.status === "done" ? "todo" : "done" },
+              "修改完成状态",
+            ),
+        },
+        {
+          key: "date",
+          label: "改期",
+          children: quickDeadlineOptions(today).map((date) => ({
+            key: date.key,
+            label: date.label,
+            onClick: () =>
+              change(
+                {
+                  deadline_at: date.deadline_at,
+                  deadline_all_day: date.deadline_all_day,
+                },
+                "修改日期",
+              ),
+          })),
+        },
+        {
+          key: "remind",
+          label: "设置提醒",
+          onClick: () => setReminderId(task.id),
+        },
+        {
+          key: "flag",
+          label: task.flagged ? "取消标记" : "标记",
+          onClick: () => change({ flagged: !task.flagged }, "修改标记"),
+        },
+        {
+          key: "priority",
+          label: "优先级",
+          children: priorities.map((priority) => ({
+            key: `priority-${priority.value}`,
+            label: priority.label,
+            onClick: () => change({ priority: priority.value }, "修改优先级"),
+          })),
+        },
+        {
+          key: "move",
+          label: "移动到清单",
+          children: [
+            {
+              key: "inbox",
+              label: "未分类",
+              onClick: () => change({ list_id: null }, "移动清单"),
+            },
+            ...(lists.data ?? []).map((list) => ({
+              key: list.id,
+              label: list.name,
+              onClick: () => change({ list_id: list.id }, "移动清单"),
+            })),
+          ],
+        },
+        {
+          key: "subtask",
+          label: "添加子任务",
+          onClick: () =>
+            setTreeExpanded((current) => new Set(current).add(task.id)),
+        },
+        ...(task.parent_id
+          ? [
+              {
+                key: "detach",
+                label: "取消缩进",
+                onClick: () => change({ parent_id: null }, "取消缩进"),
+              },
+            ]
+          : []),
+        {
+          key: "edit",
+          label: "详细设置",
+          onClick: () => open({ kind: "task", task }),
+        },
+        {
+          key: "delete",
+          label: "移入垃圾箱",
+          danger: true,
+          onClick: () => {
+            if (targets.length > 1) setConfirmAction({ kind: "bulkTrash" });
+            else remove(task);
+          },
+        },
+      ],
+    };
+  };
+  const listKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (
+      event.nativeEvent.isComposing ||
+      (event.target as HTMLElement).closest(
+        "input,textarea,select,[contenteditable=true]",
+      )
+    )
+      return;
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "z") {
+      if (actions.undoLabel) {
+        event.preventDefault();
+        catchAction(actions.undo());
+      }
+      return;
+    }
+    const rows = [
+      ...document.querySelectorAll<HTMLElement>(
+        ".reminders-list [data-task-id]",
+      ),
+    ];
+    const row = (event.target as HTMLElement).closest<HTMLElement>(
+      "[data-task-id]",
+    );
+    const task = row?.dataset.taskId
+      ? taskCatalog.get(row.dataset.taskId)
+      : undefined;
+    if (event.key === "Escape") {
+      setSelectedIds(new Set());
+      setSelectionMode(false);
+      return;
+    }
+    if (!task) return;
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      const index = rows.findIndex((item) => item.dataset.taskId === task.id);
+      const next = rows[index + (event.key === "ArrowDown" ? 1 : -1)];
+      const nextTask = next?.dataset.taskId
+        ? taskCatalog.get(next.dataset.taskId)
+        : undefined;
+      if (nextTask) {
+        selectTask(nextTask, false, event.shiftKey);
+        focusTask(nextTask.id);
+      }
+    } else if (
+      event.key === " " &&
+      !(event.target as HTMLElement).closest("button,a")
+    ) {
+      event.preventDefault();
+      if (task.status === "done") reopen.mutate(task);
+      else complete.mutate(task);
+    } else if (event.key === "Delete" || event.key === "Backspace") {
+      event.preventDefault();
+      if (selectedTasks.length > 1) setConfirmAction({ kind: "bulkTrash" });
+      else remove(task);
+    } else if (
+      event.key === "Enter" &&
+      !(event.target as HTMLElement).closest("button,a")
+    ) {
+      event.preventDefault();
+      row?.querySelector<HTMLButtonElement>(".row-title-button")?.click();
+    } else if (event.key === "ArrowRight") {
+      setTreeExpanded((current) => new Set(current).add(task.id));
+    } else if (event.key === "ArrowLeft") {
+      setTreeExpanded((current) => {
+        const next = new Set(current);
+        next.delete(task.id);
+        return next;
+      });
+    }
+  };
   const runBulk = (
     action: BulkAction,
     options: {
@@ -1334,35 +1647,6 @@ export default function TasksPage({ profile }: { profile: Profile }) {
     } = {},
   ) => {
     if (!selectedTasks.length) return;
-    let undo: BulkUndo;
-    if (action === "complete" || action === "reopen" || action === "trash") {
-      undo = { kind: action, tasks: selectedTasks };
-    } else if (action === "deadline") {
-      undo = {
-        kind: "deadline",
-        snapshots: selectedTasks.map((task) => ({
-          id: task.id,
-          deadline_at: task.deadline_at,
-          deadline_all_day: task.deadline_all_day,
-        })),
-      };
-    } else if (action === "move") {
-      undo = {
-        kind: "move",
-        snapshots: selectedTasks.map((task) => ({
-          id: task.id,
-          input: toTaskInput(task),
-        })),
-      };
-    } else {
-      undo = {
-        kind: "tags",
-        snapshots: selectedTasks.map((task) => ({
-          id: task.id,
-          input: toTaskInput(task),
-        })),
-      };
-    }
     bulk.mutate({
       tasks: selectedTasks,
       action,
@@ -1370,7 +1654,6 @@ export default function TasksPage({ profile }: { profile: Profile }) {
       deadline_at: options.deadline?.deadline_at,
       deadline_all_day: options.deadline?.deadline_all_day,
       tags: options.tags,
-      undo,
     });
   };
   const here = currentLocation(
@@ -1386,7 +1669,11 @@ export default function TasksPage({ profile }: { profile: Profile }) {
     withFrom(`/tasks/${relationId}`, here);
   const relations = (ids: string[]) =>
     ids.map((relationId) => (
-      <Link key={relationId} to={taskLink(relationId)} style={{ marginRight: 8 }}>
+      <Link
+        key={relationId}
+        to={taskLink(relationId)}
+        style={{ marginRight: 8 }}
+      >
         {titleOf(relationId)}
       </Link>
     ));
@@ -1528,397 +1815,615 @@ export default function TasksPage({ profile }: { profile: Profile }) {
       )}
     </>
   );
-  const renderTaskCard = (task: Task, index: number, timeline = false) => {
+  const renderTaskCard = (
+    task: Task,
+    index: number,
+    timeline = false,
+    depth = 0,
+  ): React.ReactNode => {
+    if (
+      !depth &&
+      !detailPage &&
+      task.parent_id &&
+      visible.some((item) => item.id === task.parent_id)
+    )
+      return null;
+    if (depth > 30) return null;
     const taskList = listOf(task);
     const expanded = expandedId === task.id;
     const statusLabel = states.find(
       (state) => state.value === task.status,
     )?.label;
     const toggle = () => setExpandedId(expanded ? null : task.id);
+    const children = (treeTasks.data ?? [])
+      .filter((item) => item.parent_id === task.id)
+      .sort((a, b) => a.subtask_order - b.subtask_order);
+    const treeOpen = treeExpanded.has(task.id);
+    const completing = complete.isPending && complete.variables?.id === task.id;
     return (
-              <article
-                data-task-id={task.id}
-                className={[
-                  "task-row",
-                  "task-card",
-                  expanded ? "expanded" : "",
-                  draggingId === task.id ? "dragging" : "",
-                  task.status === "done" ? "done" : "",
-                  dropBeforeId === task.id
-                    ? dropPosition === "before"
-                      ? "drop-before"
-                      : "drop-after"
-                    : "",
-                ]
-                  .filter(Boolean)
-                  .join(" ")}
-                onDragOver={(event) => {
-                  if (canReorder) event.preventDefault();
-                }}
-                onDrop={(event) => {
-                  if (!canReorder) return;
-                  event.preventDefault();
-                  dropTask(task);
-                }}
-              >
-                <div className="task-row-check">
-                  {selectionMode && !task.trashed_at ? (
-                    <Checkbox
-                      aria-label={`选择 ${task.title}`}
-                      checked={selectedIds.has(task.id)}
-                      onChange={() => toggleSelected(task.id)}
-                    />
-                  ) : !task.trashed_at ? (
-                    <Checkbox
-                      aria-label={
-                        task.status === "done"
-                          ? `恢复 ${task.title}`
-                          : `完成 ${task.title}`
-                      }
-                      checked={task.status === "done"}
-                      onChange={(event) => {
-                        if (task.status === "done") reopen.mutate(task);
-                        else if (event.target.checked)
-                          complete.mutate(task);
-                      }}
-                    />
-                  ) : null}
-                </div>
-                <div className="task-row-main">
-                  <div className="task-row-titleline">
-                    <button
-                      type="button"
-                      className="row-title-button"
-                      onClick={toggle}
-                      aria-expanded={expanded}
-                    >
-                      <h3>{task.title}</h3>
-                    </button>
-                    {task.trashed_at ? (
-                      <span className="row-deadline muted">
-                        {deadlineLabel(
-                          task.deadline_at,
-                          task.deadline_all_day,
-                          profile.timezone,
-                        )}
-                      </span>
-                    ) : (
-                      <InlineDeadline
-                        task={task}
-                        timezone={profile.timezone}
-                        onChange={(deadline_at, deadline_all_day) =>
-                          setDeadline.mutate({
-                            task,
-                            deadline_at,
-                            deadline_all_day,
-                          })
-                        }
-                      />
-                    )}
-                    {task.remind_at && (
-                      <span className="task-row-reminder">
-                        提醒 {displayTime(task.remind_at, profile.timezone)}
-                      </span>
-                    )}
-                    {taskList && (
-                      <span className="task-row-list">
-                        <span
-                          className="task-row-list-dot"
-                          style={{ background: taskList.color }}
-                        />
-                        {taskList.name}
-                      </span>
-                    )}
-                    {task.status !== "todo" && statusLabel && (
-                      <span className="task-row-list">{statusLabel}</span>
-                    )}
-                    {task.priority >= 3 && (
-                      <span className="task-row-priority">
-                        {priorityLabel(task.priority)}
-                      </span>
-                    )}
-                    <button
-                      type="button"
-                      className={
-                        task.flagged
-                          ? "text-action task-row-flag active"
-                          : "text-action task-row-flag"
-                      }
-                      aria-label={
-                        task.flagged
-                          ? `取消标记 ${task.title}`
-                          : `标记 ${task.title}`
-                      }
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        setFlag.mutate({
-                          task,
-                          flagged: !task.flagged,
-                        });
-                      }}
-                    >
-                      {task.flagged ? "★" : "☆"}
-                    </button>
-                    <span className="row-chevron" aria-hidden="true">
-                      {expanded ? "▾" : "▸"}
-                    </span>
-                  </div>
-                  {expanded && (
-                    <div
-                      className="row-detail"
-                      onClick={(event) => event.stopPropagation()}
-                    >
-                      {task.description && (
-                        <p className="description">{task.description}</p>
-                      )}
-                      {task.tags.length > 0 && (
-                        <div className="row-detail-meta">
-                          {task.tags.map((tag) => (
-                            <span key={tag}>{tag}</span>
-                          ))}
-                        </div>
-                      )}
-                      {task.links.length > 0 && (
-                        <div className="task-links">
-                          {task.links.map((link) => (
-                            <a
-                              key={link}
-                              href={link}
-                              target="_blank"
-                              rel="noreferrer"
-                            >
-                              {link}
-                            </a>
-                          ))}
-                        </div>
-                      )}
-                      {task.parent_id && (
-                        <p className="muted">
-                          父任务：{relations([task.parent_id])}
-                        </p>
-                      )}
-                      {task.predecessor_ids.length > 0 && (
-                        <p className="muted">
-                          前置：{relations(task.predecessor_ids)}
-                        </p>
-                      )}
-                      {task.child_ids.length > 0 && !detailPage && (
-                        <p className="muted">
-                          子任务：{relations(task.child_ids)}
-                        </p>
-                      )}
-                      {task.blocked_by.length > 0 &&
-                        task.status !== "done" && (
-                          <p className="danger-text">
-                            等待前置：{relations(task.blocked_by_ids)}
-                          </p>
-                        )}
-                      <div className="row-detail-meta">
-                        <span>
-                          预计 {task.estimate_minutes ?? "—"} 分钟
-                        </span>
-                        <span>{priorityLabel(task.priority)}</span>
-                        {task.recurrence &&
-                          `重复：${recurrenceLabel(task.recurrence, task.recurrence_interval, task.recurrence_from_completion)}`}
-                        {task.completed_at &&
-                          `完成于 ${displayTime(task.completed_at, profile.timezone)}`}
-                      </div>
-                      {!task.trashed_at && (
-                        <>
-                          <SubtaskChecklist parent={task} />
-                          <AttachmentPanel taskId={task.id} />
-                          {expanded && (
-                            <WorkLogPanel
-                              taskId={task.id}
-                              timezone={profile.timezone}
-                            />
-                          )}
-                        </>
-                      )}
-                      {confirmAction?.kind === "trash" &&
-                        confirmAction.task.id === task.id && (
-                          <InlineConfirm
-                            message={`子任务和依赖不会被删除。后续任务会标记前置任务不可用：${[
-                              ...task.dependent_ids,
-                              ...task.child_ids,
-                            ]
-                              .map(titleOf)
-                              .join("、")}`}
-                            confirmLabel="确认移入垃圾箱"
-                            loading={trashTask.isPending}
-                            onCancel={() => setConfirmAction(null)}
-                            onConfirm={() => {
-                              setConfirmAction(null);
-                              trashTask.mutate({
-                                task,
-                                confirmed: true,
-                              });
-                            }}
-                          />
-                        )}
-                      {confirmAction?.kind === "purge" &&
-                        confirmAction.task.id === task.id && (
-                          <InlineConfirm
-                            message="附件和关联记录会一并删除，无法恢复。"
-                            confirmLabel="确认永久删除"
-                            loading={purgeTask.isPending}
-                            onCancel={() => setConfirmAction(null)}
-                            onConfirm={() => {
-                              setConfirmAction(null);
-                              purgeTask.mutate(task);
-                            }}
-                          />
-                        )}
-                      <div className="row-actions">
-                        {task.trashed_at ? (
-                          <>
-                            <Button
-                              type="text"
-                              size="small"
-                              onClick={() => restoreTask.mutate(task)}
-                              loading={
-                                restoreTask.isPending &&
-                                restoreTask.variables?.id === task.id
-                              }
-                            >
-                              恢复任务
-                            </Button>
-                            <Button
-                              type="text"
-                              size="small"
-                              danger
-                              loading={
-                                purgeTask.isPending &&
-                                purgeTask.variables?.id === task.id
-                              }
-                              onClick={() =>
-                                setConfirmAction({
-                                  kind: "purge",
-                                  task,
-                                })
-                              }
-                            >
-                              永久删除
-                            </Button>
-                          </>
-                        ) : (
-                          <>
-                            <Button
-                              type="text"
-                              size="small"
-                              onClick={() =>
-                                setFlag.mutate({
-                                  task,
-                                  flagged: !task.flagged,
-                                })
-                              }
-                              loading={
-                                setFlag.isPending &&
-                                setFlag.variables?.task.id === task.id
-                              }
-                            >
-                              {task.flagged ? "取消标记" : "标记"}
-                            </Button>
-                            <SourceButton objectId={task.id} />
-                            <AttachmentUploadButton taskId={task.id} />
-                            <Button
-                              type="text"
-                              size="small"
-                              loading={
-                                archiveTask.isPending &&
-                                archiveTask.variables?.task.id === task.id
-                              }
-                              onClick={() =>
-                                archiveTask.mutate({
-                                  task,
-                                  archived: !!task.archived_at,
-                                })
-                              }
-                            >
-                              {task.archived_at ? "恢复归档" : "归档"}
-                            </Button>
-                            <Button
-                              type="text"
-                              size="small"
-                              onClick={() =>
-                                open({ kind: "task", task })
-                              }
-                            >
-                              编辑
-                            </Button>
-                            <Button
-                              type="text"
-                              size="small"
-                              danger
-                              disabled={
-                                trashTask.isPending &&
-                                trashTask.variables?.task.id === task.id
-                              }
-                              onClick={() => remove(task)}
-                            >
-                              移入垃圾箱
-                            </Button>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
-                {timeline && (
-                  <span
-                    className="drag-handle plan-drag-handle"
-                    aria-label={`拖动 ${task.title}`}
-                    title="拖动到其他日期或调整顺序"
-                    onPointerDown={(event) => startTimelineDrag(event, task)}
+      <Fragment key={task.id}>
+        <Dropdown
+          menu={rowMenu(task)}
+          trigger={task.trashed_at ? [] : ["contextMenu"]}
+          onOpenChange={(open) => {
+            if (open && !selectedIds.has(task.id)) selectTask(task);
+          }}
+        >
+          <article
+            data-task-id={task.id}
+            tabIndex={0}
+            aria-label={`任务：${task.title}`}
+            aria-current={selectedIds.has(task.id) ? "true" : undefined}
+            style={depth ? { marginLeft: Math.min(depth, 6) * 22 } : undefined}
+            draggable={!detailPage && !task.trashed_at && !actions.busy}
+            onClick={(event) => {
+              if (
+                !(event.target as HTMLElement).closest(
+                  "button,input,a,select,textarea,label",
+                )
+              )
+                selectTask(task);
+            }}
+            onClickCapture={(event) => {
+              if ((event.target as HTMLElement).closest("input,textarea,select,[contenteditable=true]")) return;
+              if (event.metaKey || event.ctrlKey || event.shiftKey) {
+                event.preventDefault();
+                event.stopPropagation();
+                selectTask(
+                  task,
+                  event.metaKey || event.ctrlKey,
+                  event.shiftKey,
+                );
+                focusTask(task.id);
+              }
+            }}
+            onDragStart={(event) => {
+              if ((event.target as HTMLElement).closest("input,textarea")) {
+                event.preventDefault();
+                return;
+              }
+              const moving =
+                selectedIds.has(task.id) && selectedTasks.length
+                  ? selectedTasks
+                  : [task];
+              setDraggingId(task.id);
+              event.dataTransfer.effectAllowed = "move";
+              event.dataTransfer.setData(
+                "application/student-agent-tasks",
+                JSON.stringify(moving.map((item) => item.id)),
+              );
+              event.dataTransfer.setData("text/plain", task.id);
+            }}
+            onDragEnd={() => {
+              setDraggingId(null);
+              setDragOverDate(undefined);
+            }}
+            className={[
+              "task-row",
+              "task-card",
+              expanded ? "expanded" : "",
+              draggingId === task.id ? "dragging" : "",
+              task.status === "done" ? "done" : "",
+              selectedIds.has(task.id) ? "selected" : "",
+              completing ? "completing" : "",
+              dropBeforeId === task.id
+                ? dropPosition === "before"
+                  ? "drop-before"
+                  : "drop-after"
+                : "",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+            onDragOver={(event) => {
+              if (canReorder || timeline) event.preventDefault();
+            }}
+            onDrop={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              if (timeline) {
+                try {
+                  const ids: string[] = JSON.parse(
+                    event.dataTransfer.getData(
+                      "application/student-agent-tasks",
+                    ),
+                  );
+                  const moving = ids
+                    .map((id) => taskCatalog.get(id))
+                    .filter((item): item is Task => !!item);
+                  if (event.altKey && !ids.includes(task.id)) {
+                    catchAction(
+                      actions.patch(
+                        moving.map((item) => ({
+                          id: item.id,
+                          patch: { parent_id: task.id },
+                        })),
+                        "创建子任务关系",
+                      ),
+                    );
+                    setTreeExpanded((current) => new Set(current).add(task.id));
+                  } else if (moving.length)
+                    moveToDate(moving, taskDateKey(task), task.id);
+                } catch {
+                  /* Ignore external drops. */
+                }
+                return;
+              }
+              if (!canReorder) return;
+              dropTask(task);
+            }}
+          >
+            <div className="task-row-check">
+              {selectionMode && !task.trashed_at ? (
+                <Checkbox
+                  aria-label={`选择 ${task.title}`}
+                  checked={selectedIds.has(task.id)}
+                  onChange={() => toggleSelected(task.id)}
+                />
+              ) : !task.trashed_at ? (
+                <Checkbox
+                  aria-label={
+                    task.status === "done"
+                      ? `恢复 ${task.title}`
+                      : `完成 ${task.title}`
+                  }
+                  checked={task.status === "done" || completing}
+                  disabled={completing || actions.busy}
+                  onChange={(event) => {
+                    if (task.status === "done") reopen.mutate(task);
+                    else if (event.target.checked) complete.mutate(task);
+                  }}
+                />
+              ) : null}
+            </div>
+            <div className="task-row-main">
+              <div className="task-row-titleline">
+                {detailPage || task.trashed_at ? (
+                  <button
+                    type="button"
+                    className="row-title-button"
+                    onClick={toggle}
+                    aria-expanded={expanded}
                   >
-                    ⋮⋮
+                    <h3>{task.title}</h3>
+                  </button>
+                ) : (
+                  <InlineTaskTitle
+                    title={task.title}
+                    disabled={actions.busy}
+                    onSelect={() => selectTask(task)}
+                    onSave={(title) =>
+                      actions.patch(
+                        [{ id: task.id, patch: { title } }],
+                        "修改标题",
+                      )
+                    }
+                  />
+                )}
+                {task.trashed_at ? (
+                  <span className="row-deadline muted">
+                    {deadlineLabel(
+                      task.deadline_at,
+                      task.deadline_all_day,
+                      profile.timezone,
+                    )}
+                  </span>
+                ) : (
+                  <InlineDeadline
+                    task={task}
+                    compact={timeline && (!task.parent_id || taskDateKey(taskCatalog.get(task.parent_id) ?? task) === taskDateKey(task))}
+                    timezone={profile.timezone}
+                    onChange={(deadline_at, deadline_all_day) =>
+                      setDeadline.mutate({
+                        task,
+                        deadline_at,
+                        deadline_all_day,
+                      })
+                    }
+                  />
+                )}
+                {task.remind_at && (
+                  <span className="task-row-reminder">
+                    提醒 {displayTime(task.remind_at, profile.timezone)}
                   </span>
                 )}
-                {canReorder && !timeline && (
-                  <div className="task-row-reorder">
+                {taskList && (
+                  <span className="task-row-list">
                     <span
-                      className="drag-handle"
-                      draggable
-                      aria-label={`拖动 ${task.title}`}
-                      title="拖动排序"
-                      onDragStart={(event) => {
-                        setDraggingId(task.id);
-                        event.dataTransfer.effectAllowed = "move";
-                        event.dataTransfer.setData("text/plain", task.id);
-                      }}
-                      onDragEnd={() => setDraggingId(null)}
-                    >
-                      ⋮⋮
-                    </span>
-                    <Button
-                      type="text"
-                      size="small"
-                      aria-label={`上移 ${task.title}`}
-                      disabled={index === 0 || reorder.isPending}
-                      onClick={() => moveTask(task, -1)}
-                    >
-                      ↑
-                    </Button>
-                    <Button
-                      type="text"
-                      size="small"
-                      aria-label={`下移 ${task.title}`}
-                      disabled={
-                        index === visible.length - 1 ||
-                        reorder.isPending
-                      }
-                      onClick={() => moveTask(task, 1)}
-                    >
-                      ↓
-                    </Button>
-                  </div>
+                      className="task-row-list-dot"
+                      style={{ background: taskList.color }}
+                    />
+                    {taskList.name}
+                  </span>
                 )}
-              </article>
+                {task.status !== "todo" && statusLabel && (
+                  <span className="task-row-list">{statusLabel}</span>
+                )}
+                {task.priority >= 3 && (
+                  <span className="task-row-priority">
+                    {priorityLabel(task.priority)}
+                  </span>
+                )}
+                <button
+                  type="button"
+                  className={
+                    task.flagged
+                      ? "text-action task-row-flag active"
+                      : "text-action task-row-flag"
+                  }
+                  aria-label={
+                    task.flagged
+                      ? `取消标记 ${task.title}`
+                      : `标记 ${task.title}`
+                  }
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setFlag.mutate({
+                      task,
+                      flagged: !task.flagged,
+                    });
+                  }}
+                >
+                  {task.flagged ? "★" : "☆"}
+                </button>
+                <button
+                  type="button"
+                  className="row-chevron"
+                  aria-label={`展开详情：${task.title}`}
+                  aria-expanded={expanded}
+                  onClick={toggle}
+                >
+                  {expanded ? "▾" : "▸"}
+                </button>
+                {!detailPage && !task.trashed_at && (
+                  <>
+                    {(task.child_ids.length > 0 || treeOpen) && (
+                      <button
+                        type="button"
+                        className="text-action task-tree-toggle"
+                        aria-label={`展开子任务：${task.title}`}
+                        aria-expanded={treeOpen}
+                        onClick={() =>
+                          setTreeExpanded((current) => {
+                            const next = new Set(current);
+                            if (next.has(task.id)) next.delete(task.id);
+                            else next.add(task.id);
+                            return next;
+                          })
+                        }
+                      >
+                        {treeOpen ? "▾" : "▸"} {task.child_ids.length || "+"}
+                      </button>
+                    )}
+                    <Dropdown
+                      menu={rowMenu(task)}
+                      trigger={["click"]}
+                      onOpenChange={(open) => {
+                        if (open && !selectedIds.has(task.id)) selectTask(task);
+                      }}
+                    >
+                      <button
+                        type="button"
+                        className="text-action task-more"
+                        aria-label={`更多操作：${task.title}`}
+                      >
+                        •••
+                      </button>
+                    </Dropdown>
+                  </>
+                )}
+              </div>
+              {reminderId === task.id && (
+                <InlineTaskReminder
+                  value={task.remind_at}
+                  timezone={profile.timezone}
+                  onClose={() => setReminderId(null)}
+                  onSave={(remind_at) =>
+                    actions.patch(
+                      [{ id: task.id, patch: { remind_at } }],
+                      "修改提醒",
+                    )
+                  }
+                />
+              )}
+              {expanded && (
+                <div
+                  className="row-detail"
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  {task.description && (
+                    <p className="description">{task.description}</p>
+                  )}
+                  {task.tags.length > 0 && (
+                    <div className="row-detail-meta">
+                      {task.tags.map((tag) => (
+                        <span key={tag}>{tag}</span>
+                      ))}
+                    </div>
+                  )}
+                  {task.links.length > 0 && (
+                    <div className="task-links">
+                      {task.links.map((link) => (
+                        <a
+                          key={link}
+                          href={link}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          {link}
+                        </a>
+                      ))}
+                    </div>
+                  )}
+                  {task.parent_id && (
+                    <p className="muted">
+                      父任务：{relations([task.parent_id])}
+                    </p>
+                  )}
+                  {task.predecessor_ids.length > 0 && (
+                    <p className="muted">
+                      前置：{relations(task.predecessor_ids)}
+                    </p>
+                  )}
+                  {task.child_ids.length > 0 && !detailPage && (
+                    <p className="muted">子任务：{relations(task.child_ids)}</p>
+                  )}
+                  {task.blocked_by.length > 0 && task.status !== "done" && (
+                    <p className="danger-text">
+                      等待前置：{relations(task.blocked_by_ids)}
+                    </p>
+                  )}
+                  <div className="row-detail-meta">
+                    <span>预计 {task.estimate_minutes ?? "—"} 分钟</span>
+                    <span>{priorityLabel(task.priority)}</span>
+                    {task.recurrence &&
+                      `重复：${recurrenceLabel(task.recurrence, task.recurrence_interval, task.recurrence_from_completion)}`}
+                    {task.completed_at &&
+                      `完成于 ${displayTime(task.completed_at, profile.timezone)}`}
+                  </div>
+                  {!task.trashed_at && (
+                    <>
+                      {detailPage && <SubtaskChecklist parent={task} />}
+                      <AttachmentPanel taskId={task.id} />
+                      {expanded && (
+                        <WorkLogPanel
+                          taskId={task.id}
+                          timezone={profile.timezone}
+                        />
+                      )}
+                    </>
+                  )}
+                  {confirmAction?.kind === "trash" &&
+                    confirmAction.task.id === task.id && (
+                      <InlineConfirm
+                        message={`子任务和依赖不会被删除。后续任务会标记前置任务不可用：${[
+                          ...task.dependent_ids,
+                          ...task.child_ids,
+                        ]
+                          .map(titleOf)
+                          .join("、")}`}
+                        confirmLabel="确认移入垃圾箱"
+                        loading={trashTask.isPending}
+                        onCancel={() => setConfirmAction(null)}
+                        onConfirm={() => {
+                          setConfirmAction(null);
+                          trashTask.mutate({
+                            task,
+                            confirmed: true,
+                          });
+                        }}
+                      />
+                    )}
+                  {confirmAction?.kind === "purge" &&
+                    confirmAction.task.id === task.id && (
+                      <InlineConfirm
+                        message="附件和关联记录会一并删除，无法恢复。"
+                        confirmLabel="确认永久删除"
+                        loading={purgeTask.isPending}
+                        onCancel={() => setConfirmAction(null)}
+                        onConfirm={() => {
+                          setConfirmAction(null);
+                          purgeTask.mutate(task);
+                        }}
+                      />
+                    )}
+                  <div className="row-actions">
+                    {task.trashed_at ? (
+                      <>
+                        <Button
+                          type="text"
+                          size="small"
+                          onClick={() => restoreTask.mutate(task)}
+                          loading={
+                            restoreTask.isPending &&
+                            restoreTask.variables?.id === task.id
+                          }
+                        >
+                          恢复任务
+                        </Button>
+                        <Button
+                          type="text"
+                          size="small"
+                          danger
+                          loading={
+                            purgeTask.isPending &&
+                            purgeTask.variables?.id === task.id
+                          }
+                          onClick={() =>
+                            setConfirmAction({
+                              kind: "purge",
+                              task,
+                            })
+                          }
+                        >
+                          永久删除
+                        </Button>
+                      </>
+                    ) : (
+                      <>
+                        <Button
+                          type="text"
+                          size="small"
+                          onClick={() =>
+                            setFlag.mutate({
+                              task,
+                              flagged: !task.flagged,
+                            })
+                          }
+                          loading={
+                            setFlag.isPending &&
+                            setFlag.variables?.task.id === task.id
+                          }
+                        >
+                          {task.flagged ? "取消标记" : "标记"}
+                        </Button>
+                        <SourceButton objectId={task.id} />
+                        <AttachmentUploadButton taskId={task.id} />
+                        <Button
+                          type="text"
+                          size="small"
+                          loading={
+                            archiveTask.isPending &&
+                            archiveTask.variables?.task.id === task.id
+                          }
+                          onClick={() =>
+                            archiveTask.mutate({
+                              task,
+                              archived: !!task.archived_at,
+                            })
+                          }
+                        >
+                          {task.archived_at ? "恢复归档" : "归档"}
+                        </Button>
+                        <Button
+                          type="text"
+                          size="small"
+                          onClick={() => open({ kind: "task", task })}
+                        >
+                          编辑
+                        </Button>
+                        <Button
+                          type="text"
+                          size="small"
+                          danger
+                          disabled={
+                            trashTask.isPending &&
+                            trashTask.variables?.task.id === task.id
+                          }
+                          onClick={() => remove(task)}
+                        >
+                          移入垃圾箱
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+            {timeline && (
+              <span
+                className="drag-handle plan-drag-handle"
+                aria-label={`拖动 ${task.title}`}
+                title="拖动到其他日期或调整顺序"
+                onPointerDown={(event) => startTimelineDrag(event, task)}
+              >
+                ⋮⋮
+              </span>
+            )}
+            {canReorder && !timeline && (
+              <div className="task-row-reorder">
+                <span
+                  className="drag-handle"
+                  draggable
+                  aria-label={`拖动 ${task.title}`}
+                  title="拖动排序"
+                  onDragStart={(event) => {
+                    setDraggingId(task.id);
+                    event.dataTransfer.effectAllowed = "move";
+                    event.dataTransfer.setData("text/plain", task.id);
+                  }}
+                  onDragEnd={() => setDraggingId(null)}
+                >
+                  ⋮⋮
+                </span>
+                <Button
+                  type="text"
+                  size="small"
+                  aria-label={`上移 ${task.title}`}
+                  disabled={index === 0 || reorder.isPending}
+                  onClick={() => moveTask(task, -1)}
+                >
+                  ↑
+                </Button>
+                <Button
+                  type="text"
+                  size="small"
+                  aria-label={`下移 ${task.title}`}
+                  disabled={index === visible.length - 1 || reorder.isPending}
+                  onClick={() => moveTask(task, 1)}
+                >
+                  ↓
+                </Button>
+              </div>
+            )}
+          </article>
+        </Dropdown>
+        {treeOpen && !detailPage && (
+          <div
+            className="task-inline-children"
+            aria-label={`子任务：${task.title}`}
+          >
+            {treeTasks.isPending ? (
+              <Spin size="small" />
+            ) : treeTasks.error ? (
+              <Alert type="error" message={errorText(treeTasks.error)} />
+            ) : (
+              children.map((child, i) =>
+                renderTaskCard(child, i, timeline, depth + 1),
+              )
+            )}
+            <div style={{ marginLeft: Math.min(depth + 1, 6) * 22 }}>
+              {composer(taskDateKey(task), task)}
+            </div>
+          </div>
+        )}
+      </Fragment>
     );
   };
 
   return (
-    <>
+    <div
+      className="reminders-list"
+      onKeyDown={listKeyDown}
+      onDragOverCapture={(event) => {
+        if (
+          (event.target as HTMLElement).closest(
+            "[data-plan-date],[data-plan-nodate]",
+          )
+        )
+          event.preventDefault();
+      }}
+      onDropCapture={(event) => {
+        if ((event.target as HTMLElement).closest("[data-task-id]")) return;
+        const target = (event.target as HTMLElement).closest<HTMLElement>(
+          "[data-plan-date],[data-plan-nodate]",
+        );
+        if (!target) return;
+        event.preventDefault();
+        event.stopPropagation();
+        try {
+          const ids: string[] = JSON.parse(
+            event.dataTransfer.getData("application/student-agent-tasks"),
+          );
+          const tasks = ids
+            .map((id) => taskCatalog.get(id))
+            .filter((task): task is Task => !!task);
+          if (tasks.length) moveToDate(tasks, target.dataset.planDate ?? null);
+        } catch {
+          /* Ignore external drops. */
+        }
+        setDraggingId(null);
+      }}
+    >
       <header>
         <div>
           <h1>{inbox ? "收件箱" : detailPage ? "任务详情" : "任务"}</h1>
@@ -1938,6 +2443,33 @@ export default function TasksPage({ profile }: { profile: Profile }) {
           </Button>
         ) : null}
       </header>
+      {!inbox && !detailPage && (
+        <div className="reminders-toolbar">
+          <Button
+            size="small"
+            disabled={!actions.undoLabel || actions.busy}
+            onClick={() => catchAction(actions.undo())}
+          >
+            撤销{actions.undoLabel ? `：${actions.undoLabel}` : ""}
+          </Button>
+          <span className="muted">
+            回车编辑 · 空格完成 · ⌘/Ctrl 点选 · Shift 连选 · Alt 拖动缩进
+          </span>
+          {actions.busy && <span role="status">保存中…</span>}
+          {draggingId && (
+            <span className="task-drag-preview" role="status">
+              移动{" "}
+              {selectedIds.has(draggingId)
+                ? Math.max(1, selectedTasks.length)
+                : 1}{" "}
+              项
+              {dragOverDate !== undefined
+                ? ` → ${dragOverDate ?? "无日期"}`
+                : "，拖到日期或清单"}
+            </span>
+          )}
+        </div>
+      )}
       {detailPage && (
         <Space className="toolbar">
           <Link to={back.to}>{back.label}</Link>
@@ -2010,50 +2542,50 @@ export default function TasksPage({ profile }: { profile: Profile }) {
             <div className="task-filter-bar">
               {searchInput}
               <Select
-              aria-label="筛选清单"
-              value={listFilter}
-              onChange={setListFilter}
-              options={groupedListOptions}
-            />
-            <Select
-              aria-label="已保存筛选"
-              value={savedFilterId}
-              onChange={applySavedFilter}
-              allowClear
-              placeholder="已保存筛选"
-              onClear={() => setUrlValue("saved", "", "")}
-              options={(savedFilters.data ?? []).map((saved) => ({
-                value: saved.id,
-                label: saved.name,
-              }))}
-              style={{ minWidth: 140 }}
-            />
-            <Select
-              aria-label="筛选标签"
-              value={tagFilter}
-              onChange={setTagFilter}
-              options={[
-                { value: "all", label: "全部标签" },
-                ...(tags.data ?? []).map((tag) => ({
-                  value: tag.name,
-                  label: tag.name,
-                })),
-              ]}
-            />
-            <Select
-              aria-label="筛选状态"
-              value={status}
-              onChange={setStatus}
-              options={[{ value: "all", label: "全部状态" }, ...states]}
-            />
-            {!timelineMode && (
-              <Select
-                aria-label="任务排序"
-                value={sort}
-                onChange={setSort}
-                options={sortOptions}
+                aria-label="筛选清单"
+                value={listFilter}
+                onChange={setListFilter}
+                options={groupedListOptions}
               />
-            )}
+              <Select
+                aria-label="已保存筛选"
+                value={savedFilterId}
+                onChange={applySavedFilter}
+                allowClear
+                placeholder="已保存筛选"
+                onClear={() => setUrlValue("saved", "", "")}
+                options={(savedFilters.data ?? []).map((saved) => ({
+                  value: saved.id,
+                  label: saved.name,
+                }))}
+                style={{ minWidth: 140 }}
+              />
+              <Select
+                aria-label="筛选标签"
+                value={tagFilter}
+                onChange={setTagFilter}
+                options={[
+                  { value: "all", label: "全部标签" },
+                  ...(tags.data ?? []).map((tag) => ({
+                    value: tag.name,
+                    label: tag.name,
+                  })),
+                ]}
+              />
+              <Select
+                aria-label="筛选状态"
+                value={status}
+                onChange={setStatus}
+                options={[{ value: "all", label: "全部状态" }, ...states]}
+              />
+              {!timelineMode && (
+                <Select
+                  aria-label="任务排序"
+                  value={sort}
+                  onChange={setSort}
+                  options={sortOptions}
+                />
+              )}
             </div>
           </div>
           {saveFilterOpen && (
@@ -2075,11 +2607,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
             </span>
           )}
           {filterChips.length > 0 && (
-            <div
-              className="filter-summary"
-              role="group"
-              aria-label="当前筛选"
-            >
+            <div className="filter-summary" role="group" aria-label="当前筛选">
               <span className="filter-summary-label">当前筛选</span>
               {filterChips.map((chip) => (
                 <Tag key={chip.key} closable onClose={chip.onClose}>
@@ -2116,7 +2644,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
           />
         </div>
       )}
-      {!inbox && !detailPage && selectionMode && (
+      {!inbox && !detailPage && (selectionMode || selectedIds.size > 1) && (
         <div className="toolbar bulk-bar">
           <Space wrap>
             <span>已选 {selectedIds.size} 项</span>
@@ -2168,9 +2696,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
                   type="datetime-local"
                   aria-label="批量截止时间"
                   value={bulkDeadlineValue}
-                  onChange={(event) =>
-                    setBulkDeadlineValue(event.target.value)
-                  }
+                  onChange={(event) => setBulkDeadlineValue(event.target.value)}
                 />
                 <Button
                   type="text"
@@ -2370,7 +2896,13 @@ export default function TasksPage({ profile }: { profile: Profile }) {
               )}
               <Button
                 type="primary"
-                aria-label={editor.kind === "draft" ? "保存草稿" : currentTask ? "保存修改" : "创建任务"}
+                aria-label={
+                  editor.kind === "draft"
+                    ? "保存草稿"
+                    : currentTask
+                      ? "保存修改"
+                      : "创建任务"
+                }
                 disabled={mutation.isPending || draftSave.isPending}
                 loading={
                   editor.kind === "draft"
@@ -2809,7 +3341,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
           )}{" "}
           {currentQuery.error ? null : currentQuery.isPending ? (
             <Spin />
-          ) : timelineMode && visible.length ? (
+          ) : timelineMode ? (
             <div className="plan-timeline">
               {overdueGroups.length > 0 && (
                 <section className="plan-overdue">
@@ -2835,6 +3367,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
                           </Fragment>
                         ))}
                       </div>
+                      {composer(group.key)}
                     </div>
                   ))}
                 </section>
@@ -2861,9 +3394,8 @@ export default function TasksPage({ profile }: { profile: Profile }) {
                       </Fragment>
                     ))}
                   </div>
-                ) : (
-                  <div className="plan-day-empty">拖到这里可清除日期</div>
-                )}
+                ) : null}
+                {composer(null)}
               </div>
               {weekDays.map((day) => (
                 <div
@@ -2889,12 +3421,11 @@ export default function TasksPage({ profile }: { profile: Profile }) {
                         </Fragment>
                       ))}
                     </div>
-                  ) : (
-                    <div className="plan-day-empty" />
-                  )}
+                  ) : null}
+                  {composer(day.key)}
                 </div>
               ))}
-              {view !== "today" && (
+              {view !== "today" && otherCurrentMonthDays.length > 0 && (
                 <section className="plan-month plan-other-month">
                   <h2 className="plan-collapsed-title">
                     {chineseMonths[today.month - 1]}其他时间
@@ -2920,40 +3451,46 @@ export default function TasksPage({ profile }: { profile: Profile }) {
                           </Fragment>
                         ))}
                       </div>
+                      {composer(day.key)}
                     </div>
                   ))}
                 </section>
               )}
-              {futureMonths.map((month) => (
-                <section className="plan-month" key={month.title}>
-                  <h2 className="plan-month-title">{month.title}</h2>
-                  {month.days
-                    .filter((day) => !weekKeys.has(day.key))
-                    .map((day) => (
-                      <div
-                        key={day.key}
-                        data-plan-date={day.key}
-                        className={planDayClass(day.key, day.tasks)}
-                      >
-                        <div className="plan-day-heading">
-                          <strong>{day.label}</strong>
-                          <span>{day.tasks.length} 项</span>
+              {futureMonths
+                .filter((month) => month.days.length > 0)
+                .map((month) => (
+                  <section className="plan-month" key={month.title}>
+                    <h2 className="plan-month-title">{month.title}</h2>
+                    {month.days
+                      .filter((day) => !weekKeys.has(day.key))
+                      .map((day) => (
+                        <div
+                          key={day.key}
+                          data-plan-date={day.key}
+                          className={planDayClass(day.key, day.tasks)}
+                        >
+                          <div className="plan-day-heading">
+                            <strong>{day.label}</strong>
+                            <span>{day.tasks.length} 项</span>
+                          </div>
+                          <div className="plan-day-tasks">
+                            {day.tasks.map((task) => (
+                              <Fragment key={task.id}>
+                                {renderTaskCard(
+                                  task,
+                                  visible.findIndex(
+                                    (item) => item.id === task.id,
+                                  ),
+                                  true,
+                                )}
+                              </Fragment>
+                            ))}
+                          </div>
+                          {composer(day.key)}
                         </div>
-                        <div className="plan-day-tasks">
-                          {day.tasks.map((task) => (
-                            <Fragment key={task.id}>
-                              {renderTaskCard(
-                                task,
-                                visible.findIndex((item) => item.id === task.id),
-                                true,
-                              )}
-                            </Fragment>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-                </section>
-              ))}
+                      ))}
+                  </section>
+                ))}
             </div>
           ) : !visible.length ? (
             <div className="empty-state">
@@ -2972,10 +3509,13 @@ export default function TasksPage({ profile }: { profile: Profile }) {
                             : view === "unscheduled"
                               ? "没有未设置截止时间的任务"
                               : view === "flagged"
-                              ? "还没有标记的重点任务"
-                              : "还没有任务，先添加一件想完成的事"
+                                ? "还没有标记的重点任务"
+                                : "还没有任务，先添加一件想完成的事"
                 }
               />
+              {!detailPage &&
+                !["trash", "done", "archived"].includes(view) &&
+                composer(null)}
             </div>
           ) : (
             <div className={draggingId ? "rows dragging" : "rows"}>
@@ -3006,6 +3546,6 @@ export default function TasksPage({ profile }: { profile: Profile }) {
           )}
         </>
       )}
-    </>
+    </div>
   );
 }

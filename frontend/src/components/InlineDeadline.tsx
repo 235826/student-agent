@@ -2,20 +2,18 @@ import { useEffect, useRef, useState } from "react";
 import { Button, Checkbox } from "antd";
 import { DateTime } from "luxon";
 import type { Task } from "../api";
-import {
-  deadlineInstant,
-  deadlineLabel,
-  quickDeadlineOptions,
-} from "../tasks";
+import { deadlineInstant, deadlineLabel, quickDeadlineOptions } from "../tasks";
 
 export default function InlineDeadline({
   task,
   timezone,
   onChange,
+  compact = false,
 }: {
   task: Task;
   timezone: string;
   onChange: (deadline_at: string | null, deadline_all_day: boolean) => void;
+  compact?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const [date, setDate] = useState("");
@@ -122,20 +120,22 @@ export default function InlineDeadline({
   return (
     <button
       type="button"
-      className={overdue ? "text-action row-deadline danger-text" : "text-action row-deadline"}
+      className={`${overdue ? "text-action row-deadline danger-text" : "text-action row-deadline"}${compact && (!task.deadline_at || task.deadline_all_day) ? " task-date-in-group" : ""}`}
       onClick={(event) => {
         event.stopPropagation();
         open();
       }}
       aria-label={`修改截止时间：${deadlineLabel(task.deadline_at, task.deadline_all_day, timezone)}`}
     >
-      {task.deadline_at
-        ? `${overdue ? "已逾期 · " : ""}${deadlineLabel(
-            task.deadline_at,
-            task.deadline_all_day,
-            timezone,
-          )}`
-        : "＋ 截止"}
+      {compact && task.deadline_at && !task.deadline_all_day
+        ? DateTime.fromISO(task.deadline_at).setZone(timezone).toFormat("HH:mm")
+        : task.deadline_at
+          ? `${overdue ? "已逾期 · " : ""}${deadlineLabel(
+              task.deadline_at,
+              task.deadline_all_day,
+              timezone,
+            )}`
+          : "＋ 截止"}
     </button>
   );
 }

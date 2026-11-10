@@ -15,7 +15,7 @@ test("任务行展开后保留筛选 URL", async ({ page }) => {
   const row = page
     .locator(".task-card")
     .filter({ has: page.getByRole("heading", { name: "抽屉筛选任务" }) });
-  await row.getByRole("heading", { name: "抽屉筛选任务" }).click();
+  await row.getByRole("button", { name: `展开详情：${"抽屉筛选任务"}`, exact: true }).click();
   await expect(page.locator(".ant-drawer-content")).toHaveCount(0);
   await expect(row.getByText("行内展开内容", { exact: true })).toBeVisible();
   await expect(page).toHaveURL(/[?&]q=/);
@@ -113,7 +113,7 @@ test("垃圾箱永久删除与清空", async ({ page }) => {
   const card = page
     .locator(".task-card")
     .filter({ hasText: "永久删除A" });
-  await card.getByRole("heading", { name: "永久删除A" }).click();
+  await card.getByRole("button", { name: `展开详情：${"永久删除A"}`, exact: true }).click();
   await card.getByRole("button", { name: "永久删除", exact: true }).click();
   await card
     .getByRole("button", { name: "确认永久删除", exact: true })

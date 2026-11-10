@@ -108,7 +108,7 @@ test("任务筛选写入 URL，刷新与详情返回后保持", async ({ page })
   const row = page
     .locator(".task-card")
     .filter({ has: page.getByRole("heading", { name: "URL筛选-数学" }) });
-  await row.getByRole("heading", { name: "URL筛选-数学" }).click();
+  await row.getByRole("button", { name: `展开详情：${"URL筛选-数学"}`, exact: true }).click();
   await expect(page).toHaveURL(filteredUrl);
   await expect(row.getByRole("button", { name: "编辑", exact: true })).toBeVisible();
 });

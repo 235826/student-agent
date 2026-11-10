@@ -21,6 +21,7 @@ export function toTaskInput(
     priority: task.priority,
     deadline_at: task.deadline_at,
     deadline_all_day: task.deadline_all_day,
+    remind_at: task.remind_at,
     estimate_minutes: task.estimate_minutes,
     task_type: task.task_type,
     recurrence: task.recurrence,
