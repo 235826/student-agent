@@ -19,13 +19,22 @@ class Handler(BaseHTTPRequestHandler):
     def agent(self, body: dict) -> None:
         messages = body["messages"]
         if any(item.get("role") == "tool" for item in messages):
+            executed = any(
+                item.get("role") == "tool"
+                and json.loads(item.get("content", "{}")).get("status") == "executed"
+                for item in messages
+            )
             self.json(
                 {
                     "choices": [
                         {
                             "message": {
                                 "role": "assistant",
-                                "content": "我已经提出操作，请逐条确认。",
+                                "content": (
+                                    "已加入任务，放在收件箱，未设置提醒。可在卡片中修改或撤销。"
+                                    if executed
+                                    else "我已经提出操作，请逐条确认。"
+                                ),
                             }
                         }
                     ]

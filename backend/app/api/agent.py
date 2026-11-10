@@ -33,6 +33,8 @@ from app.db.models import (
     AgentImage,
     AgentMessage,
     AgentRun,
+    Task,
+    TaskList,
     WorkerHeartbeat,
     now_ms,
 )
@@ -41,6 +43,7 @@ from app.modules.idempotency import remember, replay
 from app.modules.images import MAX_IMAGE_BYTES, validate_image
 from app.modules.records import owned, record_change
 from app.modules.security import DB, UserDep
+from app.modules.task_management import require_impact_confirmation
 from app.providers.chat_completions import configured
 
 router = APIRouter(prefix="/api/v1/agent", tags=["agent"])
@@ -240,7 +243,14 @@ def send_message(
     settings = request.app.state.settings
     if not configured(settings) or not settings.llm_supports_tools:
         raise HTTPException(503, "模型尚未配置或未启用工具调用")
-    payload = {"conversation_id": conversation.id, "content": body.content, "surface": body.surface}
+    if body.task_list_id is not None:
+        owned(db, TaskList, body.task_list_id, user)
+    payload = {
+        "conversation_id": conversation.id,
+        "content": body.content,
+        "surface": body.surface,
+        "task_list_id": body.task_list_id,
+    }
     existing = replay(db, user, body.idempotency_key, payload)
     if existing:
         return RunStart(run_id=existing, conversation_id=conversation.id)
@@ -266,6 +276,7 @@ def send_message(
         transcript=[],
         next_run_at=0,
         surface=body.surface,
+        task_list_id=body.task_list_id,
     )
     db.add(message)
     db.add(run)
@@ -447,4 +458,21 @@ def reject_action(action_id: str, body: ActionReject, db: DB, user: UserDep) -> 
     action.error = body.reason[:2000]
     action.updated_at = now_ms()
     db.commit()
+    return ActionOut.model_validate(action)
+
+
+@router.post("/actions/{action_id}/undo", response_model=ActionOut)
+def undo_task_creation(action_id: str, db: DB, user: UserDep) -> ActionOut:
+    action = owned(db, AgentAction, action_id, user)
+    if action.status == "undone":
+        return ActionOut.model_validate(action)
+    if action.operation != "create_task" or action.status != "executed" or not action.result:
+        raise HTTPException(409, "只有已创建的任务可以撤销")
+    task = owned(db, Task, str(action.result.get("id", "")), user)
+    if task.trashed_at is None:
+        require_impact_confirmation(db, task, False)
+        task.trashed_at = now_ms()
+    action.status = "undone"
+    action.updated_at = now_ms()
+    record_change(db, user, "task.trash", task)
     return ActionOut.model_validate(action)

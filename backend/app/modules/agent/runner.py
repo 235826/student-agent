@@ -11,6 +11,7 @@ from pathlib import Path
 from secrets import randbelow
 from typing import Any, Protocol
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 from fastapi import HTTPException
 from sqlalchemy import Engine, func, or_, select
@@ -24,6 +25,7 @@ from app.db.models import (
     AgentImage,
     AgentMessage,
     AgentRun,
+    TaskList,
     User,
     WorkerHeartbeat,
     now_ms,
@@ -44,6 +46,8 @@ from app.modules.agent.tools import (
     tool_schemas,
     validate_tool,
 )
+from app.modules.records import record_change
+from app.modules.task_management import apply_task, task_view
 from app.providers.agent_chat import AgentReply
 from app.providers.chat_completions import ParseFailure
 
@@ -202,14 +206,19 @@ def _propose_action(
         if run is None or run.status != "running" or run.lease_token != token:
             db.rollback()
             raise RunCancelled()
+        if name == "create_task" and "list_id" not in raw and run.task_list_id:
+            task_list = db.get(TaskList, run.task_list_id)
+            if task_list is not None and task_list.workspace_id == run.workspace_id:
+                raw = {**raw, "list_id": task_list.id}
         actions = list(db.scalars(select(AgentAction).where(AgentAction.run_id == run_id)))
         for action in actions:
             if action.operation == name and action.payload == raw:
                 return {
-                    "status": "proposed",
+                    "status": action.status,
                     "action_key": action.action_key,
                     "summary": action.summary,
                     "duplicate": True,
+                    "result": action.result,
                 }
         if len(actions) >= settings.agent_max_actions:
             db.rollback()
@@ -244,6 +253,34 @@ def _propose_action(
             expires_at=now_ms() + settings.agent_action_ttl_seconds * 1000,
         )
         db.add(action)
+        if (
+            name == "create_task"
+            and not action.depends_on
+            and not raw.get("parent_id")
+            and not raw.get("predecessor_ids")
+            and not raw.get("recurrence")
+        ):
+            # Commit the task and its action receipt together, including on worker retries.
+            from app.api.schemas import TaskInput
+
+            try:
+                task = apply_task(db, user, TaskInput.model_validate(raw))
+                db.flush()
+                action.status = "executed"
+                action.result = task_view(db, task).model_dump(mode="json")
+                action.executed_at = now_ms()
+                action.risk = "low"
+                record_change(db, user, "task.create", task)
+            except Exception as exc:
+                db.rollback()
+                detail = getattr(exc, "detail", None) or "创建任务失败"
+                return {"error": str(detail)}
+            return {
+                "status": "executed",
+                "action_key": action.action_key,
+                "summary": action.summary,
+                "result": action.result,
+            }
         db.commit()
         return {
             "status": "proposed",
@@ -276,12 +313,18 @@ def _execute(
         history = (
             history[-settings.agent_history_messages :] if settings.agent_history_messages else []
         )
-        now = datetime.now().astimezone()
+        now = datetime.now(ZoneInfo(user.timezone))
         recent_actions = _recent_context(db, run.conversation_id)
         event_types = "、".join(
             item.name for item in event_types_api.list_event_types(db=db, user=user)
         )
         loaded_groups = groups_for_surface(run.surface)
+        task_list = db.get(TaskList, run.task_list_id) if run.task_list_id else None
+        task_list_name = (
+            task_list.name
+            if task_list is not None and task_list.workspace_id == run.workspace_id
+            else "收件箱"
+        )
         db.commit()
         messages: list[dict[str, Any]] = [
             system_message(
@@ -290,6 +333,7 @@ def _execute(
                 event_types=event_types,
                 recent_actions=recent_actions,
                 tool_groups=group_catalog(),
+                task_list_name=task_list_name,
             ),
         ]
         latest_user_id: str | None = None
@@ -434,7 +478,7 @@ def _execute(
                 conversation_id=run.conversation_id,
                 run_id=run.id,
                 role="assistant",
-                content=final_text or "我已准备好操作，请逐条确认。",
+                content=final_text or "本轮处理结果见下方卡片，可修改或撤销已创建的任务。",
             )
         )
         conversation = db.get(AgentConversation, run.conversation_id)

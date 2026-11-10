@@ -1347,7 +1347,9 @@ register(
 register(
     ToolSpec(
         "create_task",
-        "创建任务。可设置截止、优先级、标签、清单、预计用时、重复和依赖。",
+        "创建任务。只需标题；未指定清单使用当前清单或收件箱，默认不提醒。"
+        "普通任务立即创建；含引用、父子关系、依赖或重复规则时等待确认。"
+        "只给日期时用 deadline_all_day=true，不补具体截止时刻。",
         WRITE,
         TaskInput,
         _create_task,

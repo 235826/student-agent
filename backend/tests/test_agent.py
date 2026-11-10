@@ -1,7 +1,10 @@
 import io
 import json
+from datetime import datetime
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
+import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
 
@@ -63,7 +66,7 @@ def conversation(client: TestClient, text: str = "帮我建一个任务") -> dic
     return {"conversation": created, "run": sent.json()}
 
 
-def test_agent_proposes_then_confirms_task(authenticated: TestClient) -> None:
+def test_agent_creates_task_without_confirmation(authenticated: TestClient) -> None:
     configure(authenticated)
     session = conversation(authenticated)
     run_id = session["run"]["run_id"]
@@ -90,10 +93,10 @@ def test_agent_proposes_then_confirms_task(authenticated: TestClient) -> None:
     assert detail["run"]["status"] == "succeeded", detail
     assert len(detail["actions"]) == 1
     action = detail["actions"][0]
-    assert action["status"] == "proposed"
+    assert action["status"] == "executed"
     assert action["operation"] == "create_task"
-    assert action["risk"] == "medium"
-    assert authenticated.get("/api/v1/tasks").json() == []
+    assert action["risk"] == "low"
+    assert len(authenticated.get("/api/v1/tasks").json()) == 1
 
     confirmed = authenticated.post(f"/api/v1/agent/actions/{action['id']}/confirm", json={})
     assert confirmed.status_code == 200, confirmed.text
@@ -126,6 +129,213 @@ def test_agent_rejects_action_without_side_effect(authenticated: TestClient) -> 
     assert rejected.json()["status"] == "rejected"
     confirmed = authenticated.post(f"/api/v1/agent/actions/{action['id']}/confirm", json={})
     assert confirmed.status_code == 409
+
+
+def test_agent_defaults_and_duplicate_calls(authenticated: TestClient) -> None:
+    configure(authenticated)
+    session = conversation(authenticated, "加入任务：ML-附录")
+    provider = Scripted(
+        [
+            call("create_task", {"title": "ML-附录"}),
+            call("create_task", {"title": "ML-附录"}, "retry"),
+            final(),
+        ]
+    )
+    run_once(authenticated.app.state.engine, authenticated.app.state.settings, provider)
+    tasks = authenticated.get("/api/v1/tasks").json()
+    assert len(tasks) == 1
+    assert tasks[0]["list_id"] is None
+    assert tasks[0]["remind_at"] is None
+    assert tasks[0]["deadline_at"] is None
+    assert tasks[0]["priority"] == 2
+    assert tasks[0]["tags"] == []
+    actions = authenticated.get(f"/api/v1/agent/runs/{session['run']['run_id']}").json()["actions"]
+    assert len(actions) == 1
+    assert actions[0]["result"]["id"] == tasks[0]["id"]
+
+
+def test_agent_creates_six_today_tasks_without_reminders(authenticated: TestClient) -> None:
+    configure(authenticated)
+    conversation(authenticated, "今天加入这几个任务")
+    deadline = (
+        datetime.now(ZoneInfo("Asia/Shanghai"))
+        .replace(
+            hour=23,
+            minute=59,
+            second=59,
+            microsecond=0,
+        )
+        .isoformat()
+    )
+    titles = ["iai3.5", "ML-ch12", "ML-附录", "ML-ch10", "IAI-lab", "ML-lab"]
+    provider = Scripted(
+        [
+            *(
+                call(
+                    "create_task",
+                    {"title": title, "deadline_at": deadline, "deadline_all_day": True},
+                    f"call-{index}",
+                )
+                for index, title in enumerate(titles)
+            ),
+            final(),
+        ]
+    )
+    run_once(authenticated.app.state.engine, authenticated.app.state.settings, provider)
+    tasks = authenticated.get("/api/v1/tasks?view=today").json()
+    assert sorted(task["title"] for task in tasks) == sorted(titles)
+    assert all(task["deadline_all_day"] and task["remind_at"] is None for task in tasks)
+    summary = authenticated.get("/api/v1/tasks/summary").json()
+    assert summary["today"] == 6
+    assert summary["overdue"] == 0
+
+
+def test_agent_uses_current_list_and_preserves_explicit_choices(authenticated: TestClient) -> None:
+    configure(authenticated)
+    current = authenticated.post("/api/v1/task-lists", json={"name": "当前清单"}).json()
+    other = authenticated.post("/api/v1/task-lists", json={"name": "指定清单"}).json()
+    session = conversation(authenticated)
+    run_once(authenticated.app.state.engine, authenticated.app.state.settings, Scripted([final()]))
+    sent = authenticated.post(
+        f"/api/v1/agent/conversations/{session['conversation']['id']}/messages",
+        json={
+            "content": "添加任务",
+            "idempotency_key": str(uuid4()),
+            "task_list_id": current["id"],
+        },
+    )
+    assert sent.status_code == 202
+
+    class Capture(Scripted):
+        def complete(self, messages, tools, on_delta=None):
+            assert "未指定清单时的任务归属：当前清单" in messages[0]["content"]
+            return super().complete(messages, tools, on_delta)
+
+    run_once(
+        authenticated.app.state.engine,
+        authenticated.app.state.settings,
+        Capture(
+            [
+                call("create_task", {"title": "沿用当前"}),
+                call(
+                    "create_task",
+                    {
+                        "title": "明确指定",
+                        "list_id": other["id"],
+                        "remind_at": "2030-01-10T09:00:00+08:00",
+                    },
+                ),
+                call("create_task", {"title": "明确收件箱", "list_id": None}),
+                final(),
+            ]
+        ),
+    )
+    tasks = {task["title"]: task for task in authenticated.get("/api/v1/tasks").json()}
+    assert tasks["沿用当前"]["list_id"] == current["id"]
+    assert tasks["明确指定"]["list_id"] == other["id"]
+    assert tasks["明确指定"]["remind_at"] is not None
+    assert tasks["明确收件箱"]["list_id"] is None
+
+
+def test_agent_undo_creation_is_idempotent_and_keeps_task_recoverable(
+    authenticated: TestClient,
+) -> None:
+    configure(authenticated)
+    session = conversation(authenticated)
+    run_once(
+        authenticated.app.state.engine,
+        authenticated.app.state.settings,
+        Scripted(
+            [
+                call("create_task", {"title": "可撤销"}),
+                final(),
+            ]
+        ),
+    )
+    action = authenticated.get(f"/api/v1/agent/runs/{session['run']['run_id']}").json()["actions"][
+        0
+    ]
+    for _ in range(2):
+        response = authenticated.post(f"/api/v1/agent/actions/{action['id']}/undo", json={})
+        assert response.status_code == 200, response.text
+        assert response.json()["status"] == "undone"
+    assert authenticated.get("/api/v1/tasks").json() == []
+    trash = authenticated.get("/api/v1/tasks?view=trash").json()
+    assert [task["title"] for task in trash] == ["可撤销"]
+    assert (
+        authenticated.post(f"/api/v1/agent/actions/{action['id']}/confirm", json={}).status_code
+        == 409
+    )
+
+
+def test_agent_creation_and_receipt_roll_back_together(
+    authenticated: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.modules.agent import runner
+
+    configure(authenticated)
+    session = conversation(authenticated)
+    original = runner.apply_task
+
+    def fail_after_insert(*args, **kwargs):
+        original(*args, **kwargs)
+        raise RuntimeError("simulated failure")
+
+    monkeypatch.setattr(runner, "apply_task", fail_after_insert)
+    run_once(
+        authenticated.app.state.engine,
+        authenticated.app.state.settings,
+        Scripted(
+            [
+                call("create_task", {"title": "不应遗留"}),
+                final(),
+            ]
+        ),
+    )
+    assert authenticated.get("/api/v1/tasks").json() == []
+    assert (
+        authenticated.get(f"/api/v1/agent/runs/{session['run']['run_id']}").json()["actions"] == []
+    )
+
+
+def test_agent_undo_and_current_list_are_workspace_scoped(authenticated: TestClient) -> None:
+    configure(authenticated)
+    task_list = authenticated.post("/api/v1/task-lists", json={"name": "私有清单"}).json()
+    session = conversation(authenticated)
+    run_once(
+        authenticated.app.state.engine,
+        authenticated.app.state.settings,
+        Scripted(
+            [
+                call("create_task", {"title": "私有任务"}),
+                final(),
+            ]
+        ),
+    )
+    action = authenticated.get(f"/api/v1/agent/runs/{session['run']['run_id']}").json()["actions"][
+        0
+    ]
+    other = authenticated.post(
+        "/api/v1/auth/register",
+        json={
+            "username": "other",
+            "password": "other-password-123",
+        },
+    )
+    authenticated.headers["X-CSRF-Token"] = other.json()["csrf_token"]
+    assert (
+        authenticated.post(f"/api/v1/agent/actions/{action['id']}/undo", json={}).status_code == 404
+    )
+    own = authenticated.post("/api/v1/agent/conversations", json={"consent": True}).json()
+    response = authenticated.post(
+        f"/api/v1/agent/conversations/{own['id']}/messages",
+        json={
+            "content": "添加任务",
+            "idempotency_key": str(uuid4()),
+            "task_list_id": task_list["id"],
+        },
+    )
+    assert response.status_code == 404
 
 
 def test_agent_resolves_action_references(authenticated: TestClient) -> None:

@@ -33,6 +33,7 @@ class MessageInput(Schema):
     idempotency_key: str = Field(min_length=8, max_length=200)
     image_ids: list[str] = Field(default_factory=list, max_length=4)
     surface: AgentSurface = "agent"
+    task_list_id: str | None = Field(default=None, min_length=1, max_length=36)
 
 
 class RunStart(Schema):
@@ -67,7 +68,7 @@ class ActionOut(Schema):
     preview: dict[str, Any] = Field(default_factory=dict)
     summary: str
     risk: Literal["low", "medium", "high"]
-    status: Literal["proposed", "confirmed", "rejected", "executed", "failed", "expired"]
+    status: Literal["proposed", "confirmed", "rejected", "executed", "failed", "expired", "undone"]
     depends_on: list[str]
     result: dict[str, Any] | None = None
     error: str = ""

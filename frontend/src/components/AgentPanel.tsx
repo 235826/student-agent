@@ -4,6 +4,7 @@ import { PaperClipOutlined, CloseOutlined } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { DateTime } from "luxon";
 import { useLocation } from "react-router-dom";
+import AgentTaskResult from "./AgentTaskResult";
 import {
   ApiError,
   api,
@@ -30,6 +31,7 @@ const statusLabel: Record<string, string> = {
   executed: "已执行",
   failed: "失败",
   expired: "已过期",
+  undone: "已撤销",
 };
 
 const previewLabels: Record<string, string> = {
@@ -44,6 +46,7 @@ const previewLabels: Record<string, string> = {
   details: "详情",
   deadline_at: "截止",
   deadline_all_day: "全天截止",
+  remind_at: "提醒时间",
   priority: "优先级",
   status: "状态",
   tags: "标签",
@@ -161,6 +164,22 @@ function ActionCard({
   });
   const ready = missing.length === 0;
   const entries = previewEntries(action);
+  if (
+    action.operation === "create_task" &&
+    ["executed", "undone"].includes(action.status)
+  ) {
+    return (
+      <div className="agent-action risk-low">
+        <div className="agent-action-head">
+          <span className="agent-action-summary">{action.summary}</span>
+          <Tag color={action.status === "executed" ? "green" : undefined}>
+            {action.status === "executed" ? "已创建" : "已撤销"}
+          </Tag>
+        </div>
+        <AgentTaskResult action={action} />
+      </div>
+    );
+  }
   return (
     <div className={`agent-action risk-${action.risk}`}>
       <div className="agent-action-head">
@@ -340,6 +359,18 @@ export default function AgentPanel({ compact = false }: { compact?: boolean }) {
     }
   };
 
+  const taskReceipts = (detail.data?.actions ?? [])
+    .filter(
+      (action) =>
+        action.operation === "create_task" &&
+        ["executed", "undone"].includes(action.status),
+    )
+    .map((action) => `${action.id}:${action.status}`)
+    .join(",");
+  useEffect(() => {
+    if (taskReceipts) void client.invalidateQueries({ queryKey: ["tasks"] });
+  }, [taskReceipts, client]);
+
   useEffect(() => {
     bottom.current?.scrollIntoView({ behavior: "smooth" });
   }, [detail.data?.messages.length, detail.data?.actions.length, streamText]);
@@ -363,6 +394,13 @@ export default function AgentPanel({ compact = false }: { compact?: boolean }) {
           idempotency_key: crypto.randomUUID(),
           image_ids: pendingImages.map((img) => img.id),
           surface: surfaceForPath(location.pathname),
+          task_list_id:
+            surfaceForPath(location.pathname) === "tasks"
+              ? (() => {
+                  const list = new URLSearchParams(location.search).get("list");
+                  return list && !["all", "inbox"].includes(list) ? list : null;
+                })()
+              : null,
         },
       ),
     onSuccess: (result) => {
@@ -498,13 +536,18 @@ export default function AgentPanel({ compact = false }: { compact?: boolean }) {
           message="Agent 后台暂未在线，消息会排队等待处理。"
         />
       )}
-      {create.error && <Alert type="error" showIcon message={errorText(create.error)} />}
-      {detail.error && <Alert type="error" showIcon message={errorText(detail.error)} />}
+      {create.error && (
+        <Alert type="error" showIcon message={errorText(create.error)} />
+      )}
+      {detail.error && (
+        <Alert type="error" showIcon message={errorText(detail.error)} />
+      )}
       {!conversationId && !create.isPending && (
         <div className="agent-consent">
           <Typography.Paragraph>
-            Agent 会把你发送的内容、相关任务与日历摘要发送给配置的模型服务商，用于理解和生成操作。
-            写操作不会自动执行，你需要在下面逐条确认。
+            Agent
+            会把你发送的内容、相关任务与日历摘要发送给配置的模型服务商，用于理解和生成操作。
+            普通任务会直接创建，可在结果卡片修改或撤销；其他写操作需要逐条确认。
           </Typography.Paragraph>
           <Button type="primary" onClick={() => create.mutate()} loading={create.isPending}>
             同意并开始
@@ -515,7 +558,9 @@ export default function AgentPanel({ compact = false }: { compact?: boolean }) {
         <div className="agent-messages">
           {detail.isPending && <Spin />}
           {detail.data?.messages.map((message) => {
-            const actions = message.run_id ? actionsByRun.get(message.run_id) ?? [] : [];
+            const actions = message.run_id
+              ? (actionsByRun.get(message.run_id) ?? [])
+              : [];
             return (
               <div key={message.id} className={`agent-message ${message.role}`}>
                 <div className="agent-bubble">{message.content}</div>
@@ -577,9 +622,15 @@ export default function AgentPanel({ compact = false }: { compact?: boolean }) {
           {latest?.status === "failed" && latest.error && (
             <Alert type="error" showIcon message={latest.error} />
           )}
-          {confirm.error && <Alert type="error" showIcon message={errorText(confirm.error)} />}
-          {reject.error && <Alert type="error" showIcon message={errorText(reject.error)} />}
-          {send.error && <Alert type="error" showIcon message={errorText(send.error)} />}
+          {confirm.error && (
+            <Alert type="error" showIcon message={errorText(confirm.error)} />
+          )}
+          {reject.error && (
+            <Alert type="error" showIcon message={errorText(reject.error)} />
+          )}
+          {send.error && (
+            <Alert type="error" showIcon message={errorText(send.error)} />
+          )}
           <div ref={bottom} />
         </div>
       )}

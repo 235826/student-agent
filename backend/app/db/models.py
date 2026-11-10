@@ -403,6 +403,7 @@ class AgentRun(Owned, Base):
     transcript: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
     step_count: Mapped[int] = mapped_column(default=0)
     surface: Mapped[str] = mapped_column(String(20), default="agent")
+    task_list_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     phase: Mapped[str] = mapped_column(String(200), default="")
     partial_content: Mapped[str] = mapped_column(Text, default="")
 
