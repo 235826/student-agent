@@ -26,6 +26,9 @@ const AgentPage = lazy(() => import("./pages/AgentPage"));
 const HierarchyPage = lazy(() => import("./pages/HierarchyPage"));
 const Login = lazy(() => import("./pages/Login"));
 const TodayPage = lazy(() => import("./pages/TodayPage"));
+// 今日内容已包含在任务中；改为 true 即可恢复桌面和手机导航入口。
+// 保留 TodayPage 和原有路由，支持直接访问及后续恢复。
+const SHOW_TODAY_NAV = false;
 const SettingsPage = lazy(() => import("./pages/SettingsPage"));
 const ImportsPage = lazy(() => import("./pages/ImportsPage"));
 const PlansPage = lazy(() => import("./pages/PlansPage"));
@@ -182,13 +185,14 @@ export default function App() {
     ["/calendar", "日历", 0],
     ["/inbox", "收件箱", 0],
   ] as const;
+  const visibleNav = nav.filter(([path]) => SHOW_TODAY_NAV || path !== "/");
   return (
     <div className="shell">
       <aside>
         <div className="brand">STUDENT AGENT</div>
         <div className="brand-sub">你的学习安排</div>
         <nav>
-          {nav.map(([path, label, count]) => (
+          {visibleNav.map(([path, label, count]) => (
             <NavLink
               end={path === "/"}
               to={path}

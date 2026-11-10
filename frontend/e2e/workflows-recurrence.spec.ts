@@ -185,8 +185,6 @@ test("服务端搜索与侧栏角标", async ({ page }) => {
     expect(response.status()).toBe(201);
   }
   await page.goto("/tasks");
-  const todayLink = page.locator("aside nav a").filter({ hasText: "今日" });
-  await expect(todayLink).toContainText("2");
   const tasksLink = page.locator("aside nav a").filter({ hasText: "任务" });
   await expect(tasksLink).toContainText("1");
 

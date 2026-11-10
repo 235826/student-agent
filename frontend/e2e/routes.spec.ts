@@ -8,7 +8,10 @@ test("导航、旧路径与详情刷新", async ({ page }) => {
   await page
     .getByRole("button", { name: /^(创建账号并进入|登\s*录)$/ })
     .click();
-  await expect(page.locator("nav a")).toHaveCount(4);
+  await expect(page.locator("nav a")).toHaveCount(3);
+  await expect(page.locator("nav a").filter({ hasText: "今日" })).toHaveCount(
+    0,
+  );
   await page.getByRole("button", { name: "新建任务", exact: true }).click();
   await page.getByLabel("任务标题").fill("可刷新的任务");
   await page.getByRole("button", { name: "创建任务", exact: true }).click();
