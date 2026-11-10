@@ -1842,3 +1842,34 @@ header {
 .attachment-error {
   margin: 8px 0;
 }
+
+.task-editor-drawer .ant-drawer-content-wrapper {
+  max-width: 100vw;
+}
+.task-editor-drawer .ant-drawer-body {
+  padding: 24px;
+}
+.task-editor-drawer .ant-collapse {
+  margin-top: 8px;
+}
+.task-editor-links-label {
+  margin-bottom: 8px;
+}
+.task-editor-link {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.task-editor-link .ant-form-item {
+  flex: 1;
+  min-width: 0;
+  margin-bottom: 12px;
+}
+@media (max-width: 640px) {
+  .task-editor-drawer .ant-drawer-body {
+    padding: 16px;
+  }
+  .task-editor-drawer .form-grid {
+    grid-template-columns: 1fr;
+  }
+}

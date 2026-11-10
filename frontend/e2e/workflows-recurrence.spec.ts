@@ -7,9 +7,15 @@ test("任务链接保存与展示", async ({ page }) => {
   await page.getByRole("link", { name: "任务", exact: true }).click();
   await page.getByRole("button", { name: "新建任务", exact: true }).click();
   await page.getByLabel("任务标题").fill("资料任务");
+  await page.getByRole("button", { name: "分类与资料" }).click();
+  await page.getByRole("button", { name: "添加链接" }).click();
   await page
-    .getByLabel("相关链接")
-    .fill("https://example.com/a\nhttps://example.org/b");
+    .getByLabel("相关链接 1", { exact: true })
+    .fill("https://example.com/a");
+  await page.getByRole("button", { name: "添加链接" }).click();
+  await page
+    .getByLabel("相关链接 2", { exact: true })
+    .fill("https://example.org/b");
   await page.getByRole("button", { name: "创建任务", exact: true }).click();
   await expect(page.getByRole("dialog")).not.toBeVisible();
 
@@ -43,7 +49,9 @@ test("重复任务支持间隔与工作日选项", async ({ page }) => {
   await page.getByRole("link", { name: "任务", exact: true }).click();
   await page.getByRole("button", { name: "新建任务", exact: true }).click();
   await page.getByLabel("任务标题").fill("双周任务");
-  await page.getByLabel(/截止时间/).fill(deadline);
+  await page.getByLabel(/截止日期/).fill(deadline.replace("T", " "));
+  await page.getByLabel(/截止日期/).press("Enter");
+  await page.getByRole("button", { name: "时间与重复" }).click();
   const recurrence = page
     .locator(".ant-select")
     .filter({ has: page.getByRole("combobox", { name: "重复", exact: true }) });
