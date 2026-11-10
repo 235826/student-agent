@@ -4,7 +4,7 @@
 
 | 验证项 | 结果 |
 | --- | --- |
-| 数据库迁移 | `0025` 将 `cancelled` 任务改为 `todo` 并写入 `trashed_at`；重建任务 CHECK 约束为 `todo/in_progress/done`；`alembic check` 无待生成迁移 |
+| 数据库迁移 | `0025` 将 `cancelled` 任务改为 `todo` 并写入 `trashed_at`；重建任务 CHECK 约束为 `todo/in_progress/done`；SQLite 迁移期间临时关闭外键以重建被依赖的 `tasks` 表，应用连接仍保持外键开启；`alembic check` 无待生成迁移 |
 | 保存筛选 | `status=cancelled` 的保存筛选迁移为全部状态 |
 | 后端测试 | 升级保留旧数据、取消状态被拒绝、`exclude_done=true`、显式 `status=done` 均有覆盖 |
 | 前端检查 | TypeScript、ESLint、Vitest 通过 |

@@ -13,6 +13,10 @@ if context.is_offline_mode():
 else:
     engine = build_engine(url)
     with engine.connect() as connection:
+        # SQLite cannot drop a referenced table while foreign keys are enforced.
+        # Migrations run with enforcement off; application connections still enable it.
+        if connection.dialect.name == "sqlite":
+            connection.connection.driver_connection.execute("PRAGMA foreign_keys=OFF")
         context.configure(
             connection=connection,
             target_metadata=Base.metadata,
@@ -21,4 +25,6 @@ else:
         )
         with context.begin_transaction():
             context.run_migrations()
+        if connection.dialect.name == "sqlite":
+            connection.connection.driver_connection.execute("PRAGMA foreign_keys=ON")
     engine.dispose()

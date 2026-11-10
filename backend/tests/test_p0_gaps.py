@@ -1,11 +1,15 @@
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from uuid import uuid4
 
+from alembic import command
+from alembic.config import Config
 from fastapi.testclient import TestClient
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from app.db.models import User
+from app.db.session import build_engine
 
 
 def task(client: TestClient, title: str = "任务", **kwargs):
@@ -221,3 +225,47 @@ def test_text_and_markdown_file_import(authenticated: TestClient) -> None:
     )
     assert bad.status_code == 422
     assert "PDF" in bad.text
+
+
+def test_cancelled_task_migration_handles_foreign_key_rows(tmp_path: Path) -> None:
+    url = f"sqlite:///{tmp_path / 'cancelled-upgrade.db'}"
+    cfg = Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))
+    cfg.attributes["database_url"] = url
+    command.upgrade(cfg, "0024")
+    engine = build_engine(url)
+    with engine.begin() as db:
+        db.execute(
+            text(
+                "INSERT INTO workspaces(id,scheduling_revision,created_at,updated_at) "
+                "VALUES ('w',0,0,0)"
+            )
+        )
+        db.execute(
+            text(
+                "INSERT INTO tasks(id,workspace_id,title,description,status,priority,"
+                "created_at,updated_at) "
+                "VALUES ('todo','w','后续任务','','todo',2,0,0),"
+                "('cancelled','w','取消任务','','cancelled',2,0,0)"
+            )
+        )
+        db.execute(
+            text(
+                "INSERT INTO task_dependencies(id,workspace_id,predecessor_task_id,"
+                "successor_task_id,created_at,updated_at) "
+                "VALUES ('dep','w','cancelled','todo',0,0)"
+            )
+        )
+        db.execute(
+            text(
+                "INSERT INTO work_logs(id,workspace_id,task_id,actual_minutes,cause,"
+                "note,reflection,created_at,updated_at) "
+                "VALUES ('log','w','cancelled',10,'unknown','','',0,0)"
+            )
+        )
+    command.upgrade(cfg, "head")
+    with engine.connect() as db:
+        row = db.execute(text("SELECT status,trashed_at FROM tasks WHERE id='cancelled'")).one()
+        assert row[0] == "todo"
+        assert row[1] is not None
+        assert db.execute(text("PRAGMA foreign_key_check")).all() == []
+    engine.dispose()
