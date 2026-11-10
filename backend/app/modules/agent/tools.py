@@ -136,7 +136,7 @@ class UpdateTaskArgs(Schema):
     title: str | None = Field(default=None, min_length=1, max_length=200)
     description: str | None = Field(default=None, max_length=20000)
     links: list[str] | None = Field(default=None, max_length=20)
-    status: Literal["todo", "in_progress", "done", "cancelled"] | None = None
+    status: Literal["todo", "in_progress", "done"] | None = None
     priority: int | None = Field(default=None, ge=1, le=4)
     flagged: bool | None = None
     deadline_at: datetime | None = None
@@ -382,7 +382,7 @@ class UpdateSavedFilterArgs(SavedFilterInput):
 class ReadTasksArgs(Schema):
     view: Literal["all", "today", "scheduled", "unscheduled", "flagged", "done", "trash"] = "all"
     q: str | None = Field(default=None, max_length=200)
-    status: Literal["todo", "in_progress", "done", "cancelled"] | None = None
+    status: Literal["todo", "in_progress", "done"] | None = None
     list_id: str | None = None
     tag: str | None = Field(default=None, max_length=50)
     flagged: bool | None = None

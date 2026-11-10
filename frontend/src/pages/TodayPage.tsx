@@ -178,9 +178,7 @@ export default function TodayPage({ profile }: { profile: Profile }) {
   const day = now.startOf("day");
   const tomorrow = day.plus({ days: 1 });
   const week = day.plus({ days: 7 });
-  const active = (tasks.data ?? []).filter(
-    (t) => !["done", "cancelled"].includes(t.status),
-  );
+  const active = (tasks.data ?? []).filter((t) => t.status !== "done");
   const todayTasks = active
     .filter(
       (t) =>

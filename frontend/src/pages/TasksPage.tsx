@@ -73,7 +73,6 @@ const states = [
   { value: "todo", label: "待开始" },
   { value: "in_progress", label: "进行中" },
   { value: "done", label: "已完成" },
-  { value: "cancelled", label: "已取消" },
 ];
 const policies = [
   { value: "inherit", label: "沿用任务类型设置（未设置则禁止）" },
@@ -190,10 +189,6 @@ export default function TasksPage({ profile }: { profile: Profile }) {
     | { kind: "clearTrash" }
     | null
   >(null);
-  const [pendingCancel, setPendingCancel] = useState<{
-    task: Task;
-    body: TaskInput;
-  } | null>(null);
   const [bulkDeadlineOpen, setBulkDeadlineOpen] = useState(false);
   const [bulkDeadlineValue, setBulkDeadlineValue] = useState("");
   const [bulkMoveOpen, setBulkMoveOpen] = useState(false);
@@ -252,7 +247,6 @@ export default function TasksPage({ profile }: { profile: Profile }) {
   }, [view]);
   const closeEditor = () => {
     setEditor(null);
-    setPendingCancel(null);
     if (isNew) {
       const back = backTarget(params.get("from"), {
         to: "/tasks",
@@ -264,6 +258,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
     }
   };
   const taskQuery = new URLSearchParams({ view });
+  if (view === "all") taskQuery.set("exclude_done", "true");
   if (listFilter !== "all") taskQuery.set("list_id", listFilter);
   if (tagFilter !== "all") taskQuery.set("tag", tagFilter);
   if (status !== "all") taskQuery.set("status", status);
@@ -859,15 +854,6 @@ export default function TasksPage({ profile }: { profile: Profile }) {
         return;
       }
       const task = editor?.kind === "task" ? editor.task : undefined;
-      if (
-        task &&
-        body.status === "cancelled" &&
-        task.status !== "cancelled" &&
-        (task.dependent_ids.length || task.child_ids.length)
-      ) {
-        setPendingCancel({ task, body });
-        return;
-      }
       mutation.mutate({
         path: task ? `/tasks/${task.id}` : "/tasks",
         method: task ? "PUT" : "POST",
@@ -1357,14 +1343,8 @@ export default function TasksPage({ profile }: { profile: Profile }) {
     .filter((t) => t.id !== currentTask?.id)
     .map((t) => ({
       value: t.id,
-      label:
-        t.title +
-        (t.trashed_at
-          ? "（垃圾箱）"
-          : t.status === "cancelled"
-            ? "（已取消）"
-            : ""),
-      disabled: !!t.trashed_at || t.status === "cancelled",
+      label: t.title + (t.trashed_at ? "（垃圾箱）" : ""),
+      disabled: !!t.trashed_at,
     }));
   const clearFilter = (key: "q" | "list" | "tag" | "status" | "sort") => {
     if (key === "q") setSearch("");
@@ -1544,7 +1524,6 @@ export default function TasksPage({ profile }: { profile: Profile }) {
                           : `完成 ${task.title}`
                       }
                       checked={task.status === "done"}
-                      disabled={task.status === "cancelled"}
                       onChange={(event) => {
                         if (task.status === "done") reopen.mutate(task);
                         else if (event.target.checked)
@@ -2484,27 +2463,6 @@ export default function TasksPage({ profile }: { profile: Profile }) {
             父子关系用于组织任务；执行先后由前置任务决定。允许并行仍须有匹配的组合规则。
           </p>
         </Form>
-          {pendingCancel && (
-            <InlineConfirm
-              message={`关联子任务和依赖会保留，后续任务将被阻塞。受影响任务：${[
-                ...pendingCancel.task.dependent_ids,
-                ...pendingCancel.task.child_ids,
-              ]
-                .map(titleOf)
-                .join("、")}`}
-              confirmLabel="确认取消任务"
-              loading={mutation.isPending}
-              onCancel={() => setPendingCancel(null)}
-              onConfirm={() => {
-                mutation.mutate({
-                  path: `/tasks/${pendingCancel.task.id}`,
-                  method: "PUT",
-                  body: { ...pendingCancel.body, confirm_impact: true },
-                });
-                setPendingCancel(null);
-              }}
-            />
-          )}
           <div className="row-actions">
             <Button type="text" onClick={closeEditor}>
               取消

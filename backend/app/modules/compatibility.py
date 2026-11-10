@@ -59,7 +59,7 @@ def activity(db: Session, user: User, ref: ActivityRef) -> Activity:
             policy,
             source,
             revision,
-            unavailable=task.trashed_at is not None or task.status in {"done", "cancelled"},
+            unavailable=task.trashed_at is not None or task.status == "done",
         )
     event = owned(db, Event, ref.id, user)
     view = event_view(db, event)
@@ -204,7 +204,7 @@ def evaluate_pair(
         policy_sources=[a.policy_source, b.policy_source],
     )
     if a.unavailable or b.unavailable:
-        result.reason = "已完成、已取消或垃圾箱中的任务不能参与新的并行安排"
+        result.reason = "已完成或垃圾箱中的任务不能参与新的并行安排"
         return result
     if a.skipped or b.skipped:
         result.allowed, result.reason = True, "本次课程已明确跳过，不占用个人时间；课程原记录保留"

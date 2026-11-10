@@ -81,7 +81,7 @@ class TaskList(Owned, Base):
 class Task(Owned, Base):
     __tablename__ = "tasks"
     __table_args__ = (
-        CheckConstraint("status IN ('todo','in_progress','done','cancelled')"),
+        CheckConstraint("status IN ('todo','in_progress','done')"),
         CheckConstraint("priority BETWEEN 1 AND 4"),
         CheckConstraint("estimate_minutes IS NULL OR estimate_minutes > 0"),
     )

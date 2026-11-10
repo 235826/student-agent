@@ -193,7 +193,7 @@ def generate(db: Session, user: User, body: PlanInput) -> Plan:
         elif remaining == 0:
             reason = "实际耗时已达到预计用时，无需继续安排"
         elif any(p not in completed for p in predecessors[task.id]):
-            reason = "前置任务未完整排入计划、已取消或已删除"
+            reason = "前置任务未完整排入计划或已删除"
         else:
             earliest = max([start] + [completed[p] for p in predecessors[task.id]])
             deadline = min(end, task.deadline_at if task.deadline_at is not None else end)

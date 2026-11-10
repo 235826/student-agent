@@ -118,6 +118,7 @@ test("重复任务完成后生成下一次并可撤销", async ({ page }) => {
     DateTime.fromISO(due!).plus({ days: 1 }).toFormat("yyyy-MM-dd HH:mm"),
   );
 
+  await page.getByRole("button", { name: "已完成", exact: true }).click();
   await page.getByLabel("恢复 每日任务").click();
   await expect
     .poll(

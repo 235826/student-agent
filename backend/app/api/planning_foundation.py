@@ -411,6 +411,7 @@ def list_tasks(
     view: TaskView = "all",
     q: str | None = None,
     status: Status | None = None,
+    exclude_done: bool = False,
     list_id: str | None = None,
     tag: str | None = None,
     flagged: bool | None = None,
@@ -431,7 +432,9 @@ def list_tasks(
         else:
             query = query.where(Task.archived_at.is_(None))
 
-    active = Task.status.notin_(["done", "cancelled"])
+    active = Task.status != "done"
+    if scope == "all" and exclude_done and status is None:
+        query = query.where(Task.status != "done")
     if scope == "today":
         query = query.where(
             active,
@@ -448,7 +451,7 @@ def list_tasks(
     elif scope == "unscheduled":
         query = query.where(active, Task.deadline_at.is_(None))
     elif scope == "flagged":
-        query = query.where(Task.flagged.is_(True), Task.status != "cancelled")
+        query = query.where(Task.flagged.is_(True))
     elif scope == "done":
         query = query.where(Task.status == "done")
 
@@ -514,7 +517,7 @@ def task_summary(db: DB, user: UserDep) -> TaskSummaryOut:
         Task.trashed_at.is_(None),
         Task.archived_at.is_(None),
     )
-    active = (*base, Task.status.notin_(["done", "cancelled"]))
+    active = (*base, Task.status != "done")
 
     def count(*conditions: Any) -> int:
         return db.scalar(select(func.count(Task.id)).where(*conditions)) or 0
@@ -539,7 +542,6 @@ def task_summary(db: DB, user: UserDep) -> TaskSummaryOut:
         flagged=count(
             *base,
             Task.flagged.is_(True),
-            Task.status != "cancelled",
         ),
         trashed=count(
             Task.workspace_id == user.workspace_id,

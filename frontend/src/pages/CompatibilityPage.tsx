@@ -161,7 +161,7 @@ export default function CompatibilityPage({ profile }: { profile: Profile }) {
   };
   const activityOptions = [
     ...(tasks.data ?? [])
-      .filter((t) => !["done", "cancelled"].includes(t.status))
+      .filter((t) => t.status !== "done")
       .map((t) => ({ value: `task:${t.id}`, label: `任务：${t.title}` })),
     ...(events.data ?? [])
       .filter(

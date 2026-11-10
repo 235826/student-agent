@@ -67,7 +67,7 @@ export default function SubtaskChecklist({ parent }: { parent: Task }) {
       let firstError = "";
       let processed = 0;
       for (const task of items) {
-        if (["done", "cancelled"].includes(task.status)) continue;
+        if (task.status === "done") continue;
         try {
           await api(`/tasks/${task.id}/complete`, "POST");
           processed += 1;
@@ -149,9 +149,7 @@ export default function SubtaskChecklist({ parent }: { parent: Task }) {
   };
   const descendants = collect(parent.id);
   const done = descendants.filter((task) => task.status === "done").length;
-  const incomplete = descendants.filter(
-    (task) => !["done", "cancelled"].includes(task.status),
-  );
+  const incomplete = descendants.filter((task) => task.status !== "done");
   const completed = descendants.filter((task) => task.status === "done");
 
   const move = (
@@ -185,7 +183,6 @@ export default function SubtaskChecklist({ parent }: { parent: Task }) {
                 : `完成 ${task.title}`
             }
             checked={task.status === "done"}
-            disabled={task.status === "cancelled"}
             onChange={(e) => {
               if (task.status === "done") reopen.mutate(task);
               else if (e.target.checked) complete.mutate(task);
@@ -194,7 +191,6 @@ export default function SubtaskChecklist({ parent }: { parent: Task }) {
           <div className="subtask-row-main">
             <Link to={`/tasks/${task.id}`}>{task.title}</Link>
             {task.status === "done" && <Tag color="green">已完成</Tag>}
-            {task.status === "cancelled" && <Tag>已取消</Tag>}
           </div>
           <Space size={0} className="subtask-actions">
             <Button

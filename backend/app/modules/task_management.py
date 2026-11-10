@@ -77,11 +77,7 @@ def task_view(db: Session, task: Task) -> TaskOut:
     for task_id in predecessors:
         predecessor = db.get(Task, task_id)
         if predecessor and (predecessor.trashed_at is not None or predecessor.status != "done"):
-            state = (
-                "已删除"
-                if predecessor.trashed_at is not None
-                else ("已取消" if predecessor.status == "cancelled" else "尚未完成")
-            )
+            state = "已删除" if predecessor.trashed_at is not None else "尚未完成"
             data["blocked_by"].append(f"{predecessor.title}（{state}）")
             data["blocked_by_ids"].append(task_id)
     return TaskOut.model_validate(data)
@@ -100,8 +96,8 @@ def validate_links(
         owned(db, TaskList, body.list_id, user)
     if body.parent_id:
         parent = owned(db, Task, body.parent_id, user)
-        if parent.trashed_at is not None or parent.status == "cancelled":
-            raise HTTPException(409, "父任务已删除或取消，请先恢复或解除关联")
+        if parent.trashed_at is not None:
+            raise HTTPException(409, "父任务已删除，请先恢复或解除关联")
         chain = [task_id] if task_id else []
         current: Task | None = parent
         while current:
@@ -121,10 +117,8 @@ def validate_links(
                 TaskDependency.successor_task_id == task_id,
             )
         )
-        if (restoring or not existing) and (
-            predecessor.trashed_at is not None or predecessor.status == "cancelled"
-        ):
-            raise HTTPException(409, f"前置任务“{predecessor.title}”已删除或取消，请先恢复")
+        if (restoring or not existing) and predecessor.trashed_at is not None:
+            raise HTTPException(409, f"前置任务“{predecessor.title}”已删除，请先恢复")
         cycle = path_between(edges, task_id, predecessor_id) if task_id else None
         if cycle:
             labels = [item.title for i in cycle if (item := db.get(Task, i)) is not None]
@@ -235,7 +229,7 @@ def next_task_values(db: Session, user: User, task: Task, after_ms: int) -> dict
     parent_id = task.parent_id
     if parent_id:
         parent = db.get(Task, parent_id)
-        if parent is None or parent.trashed_at is not None or parent.status == "cancelled":
+        if parent is None or parent.trashed_at is not None:
             parent_id = None
     return {
         "title": task.title,
@@ -367,8 +361,6 @@ def apply_task(db: Session, user: User, body: TaskInput, task: Task | None = Non
     if body.recurrence and not body.deadline_at:
         raise HTTPException(422, "重复任务需要设置截止时间")
     validate_links(db, user, body, task)
-    if task and body.status == "cancelled" and task.status != "cancelled":
-        require_impact_confirmation(db, task, body.confirm_impact)
     data = body.model_dump(exclude={"predecessor_ids", "confirm_impact", "tags"})
     data["deadline_at"] = int(body.deadline_at.timestamp() * 1000) if body.deadline_at else None
     data["remind_at"] = int(body.remind_at.timestamp() * 1000) if body.remind_at else None

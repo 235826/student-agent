@@ -7085,8 +7085,7 @@
                   "enum": [
                     "todo",
                     "in_progress",
-                    "done",
-                    "cancelled"
+                    "done"
                   ],
                   "type": "string"
                 },
@@ -7095,6 +7094,16 @@
                 }
               ],
               "title": "Status"
+            }
+          },
+          {
+            "name": "exclude_done",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Exclude Done"
             }
           },
           {
@@ -13914,8 +13923,7 @@
             "enum": [
               "todo",
               "in_progress",
-              "done",
-              "cancelled"
+              "done"
             ],
             "title": "Status",
             "default": "todo"
@@ -16073,8 +16081,7 @@
                 "enum": [
                   "todo",
                   "in_progress",
-                  "done",
-                  "cancelled"
+                  "done"
                 ]
               },
               {
@@ -16514,8 +16521,7 @@
             "enum": [
               "todo",
               "in_progress",
-              "done",
-              "cancelled"
+              "done"
             ],
             "title": "Status",
             "default": "todo"
@@ -16916,8 +16922,7 @@
             "enum": [
               "todo",
               "in_progress",
-              "done",
-              "cancelled"
+              "done"
             ],
             "title": "Status",
             "default": "todo"

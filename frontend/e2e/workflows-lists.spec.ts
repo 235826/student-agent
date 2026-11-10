@@ -84,6 +84,9 @@ test("清单创建、任务归类、筛选与完成历史", async ({ page }) => 
 
   await page.getByLabel("完成 清单任务").click();
   await expect(page.getByText("已完成“清单任务”")).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "清单任务", exact: true }),
+  ).not.toBeVisible();
   await page.getByRole("button", { name: "已完成", exact: true }).click();
   await expect(page.getByRole("heading", { name: "清单任务" })).toBeVisible();
 

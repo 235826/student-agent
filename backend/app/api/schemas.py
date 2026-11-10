@@ -21,7 +21,7 @@ def from_epoch(value: object) -> object:
 
 Timestamp = Annotated[datetime, BeforeValidator(from_epoch)]
 Title = Annotated[str, Field(min_length=1, max_length=200)]
-Status = Literal["todo", "in_progress", "done", "cancelled"]
+Status = Literal["todo", "in_progress", "done"]
 TaskView = Literal[
     "all", "today", "scheduled", "unscheduled", "flagged", "done", "archived", "trash"
 ]

@@ -2050,7 +2050,7 @@ export interface components {
              * @default todo
              * @enum {string}
              */
-            status: "todo" | "in_progress" | "done" | "cancelled";
+            status: "todo" | "in_progress" | "done";
             /**
              * Priority
              * @default 2
@@ -2917,7 +2917,7 @@ export interface components {
              */
             q: string;
             /** Status */
-            status?: ("todo" | "in_progress" | "done" | "cancelled") | null;
+            status?: ("todo" | "in_progress" | "done") | null;
             /** List Id */
             list_id?: string | null;
             /** Tag */
@@ -3118,7 +3118,7 @@ export interface components {
              * @default todo
              * @enum {string}
              */
-            status: "todo" | "in_progress" | "done" | "cancelled";
+            status: "todo" | "in_progress" | "done";
             /**
              * Priority
              * @default 2
@@ -3262,7 +3262,7 @@ export interface components {
              * @default todo
              * @enum {string}
              */
-            status: "todo" | "in_progress" | "done" | "cancelled";
+            status: "todo" | "in_progress" | "done";
             /**
              * Priority
              * @default 2
@@ -9597,7 +9597,8 @@ export interface operations {
                 trashed?: boolean;
                 view?: "all" | "today" | "scheduled" | "unscheduled" | "flagged" | "done" | "archived" | "trash";
                 q?: string | null;
-                status?: ("todo" | "in_progress" | "done" | "cancelled") | null;
+                status?: ("todo" | "in_progress" | "done") | null;
+                exclude_done?: boolean;
                 list_id?: string | null;
                 tag?: string | null;
                 flagged?: boolean | null;

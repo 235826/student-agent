@@ -204,8 +204,7 @@ def test_dependencies_cycles_states_and_impact(authenticated):
     assert c.post(f"/api/v1/tasks/{b['id']}/restore").status_code == 409
     assert c.post(f"/api/v1/tasks/{a['id']}/restore").status_code == 200
     assert c.post(f"/api/v1/tasks/{b['id']}/restore").status_code == 200
-    assert update_task(c, a, status="cancelled").status_code == 409
-    assert update_task(c, a, status="cancelled", confirm_impact=True).status_code == 200
+    assert update_task(c, a, status="cancelled").status_code == 422
     assert update_task(c, a, status="done").status_code == 200
     assert update_task(c, b, status="in_progress").status_code == 200
 
@@ -334,6 +333,9 @@ def test_task_filters_and_views(authenticated):
         assert response.status_code == 200, response.text
         return {item["id"] for item in response.json()}
 
+    assert done["id"] in ids()
+    assert done["id"] not in ids(exclude_done="true")
+    assert ids(exclude_done="true", status="done") == {done["id"]}
     assert ids(q="微分") == {math["id"]}
     assert ids(q="数学") == {math["id"], done["id"]}
     assert ids(view="scheduled") == {math["id"]}
@@ -1280,14 +1282,24 @@ def test_upgrade_preserves_v1_records_and_constraints(tmp_path):
                 "VALUES ('t','w','已有任务','','todo',2,0,0)"
             )
         )
+        db.execute(
+            text(
+                "INSERT INTO tasks(id,workspace_id,title,description,status,priority,"
+                "created_at,updated_at) "
+                "VALUES ('tc','w','取消任务','','cancelled',2,0,0)"
+            )
+        )
     command.upgrade(cfg, "head")
     with engine.connect() as db:
-        assert db.execute(text("SELECT title,parallel_policy,parent_id FROM tasks")).one() == (
-            "已有任务",
-            None,
-            None,
-        )
+        assert db.execute(
+            text("SELECT title,parallel_policy,parent_id FROM tasks WHERE id='t'")
+        ).one() == ("已有任务", None, None)
+        cancelled = db.execute(text("SELECT status,trashed_at FROM tasks WHERE id='tc'")).one()
+        assert cancelled[0] == "todo"
+        assert cancelled[1] is not None
         assert db.execute(text("PRAGMA foreign_key_check")).all() == []
         sql = db.scalar(text("SELECT sql FROM sqlite_master WHERE name='tasks'"))
         assert "CHECK (priority BETWEEN 1 AND 4)" in sql
+        assert "status IN ('todo','in_progress','done')" in sql
+        assert "cancelled" not in sql
     engine.dispose()
