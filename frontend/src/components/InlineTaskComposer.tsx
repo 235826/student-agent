@@ -3,9 +3,13 @@ import { useRef, useState } from "react";
 export default function InlineTaskComposer({
   label,
   onCreate,
+  quiet = false,
+  hint,
 }: {
   label: string;
   onCreate: (title: string) => Promise<unknown>;
+  quiet?: boolean;
+  hint?: string;
 }) {
   const [active, setActive] = useState(false);
   const [title, setTitle] = useState("");
@@ -77,12 +81,13 @@ export default function InlineTaskComposer({
   ) : (
     <button
       type="button"
-      className="inline-task-add"
+      className={`inline-task-add${quiet ? " inline-task-add-quiet" : ""}`}
       aria-label={label}
       onClick={() => setActive(true)}
     >
       <span className="reminder-empty-circle" aria-hidden="true" />
-      添加任务
+      {!quiet && "添加任务"}
+      {quiet && hint && <span className="quiet-add-hint">{hint}</span>}
     </button>
   );
 }

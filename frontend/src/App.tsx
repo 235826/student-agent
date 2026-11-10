@@ -22,7 +22,6 @@ import {
 } from "./api";
 import AgentDrawer from "./components/AgentDrawer";
 import OnboardingWizard from "./components/OnboardingWizard";
-import TaskSidebar from "./components/TaskSidebar";
 const AgentPage = lazy(() => import("./pages/AgentPage"));
 const HierarchyPage = lazy(() => import("./pages/HierarchyPage"));
 const Login = lazy(() => import("./pages/Login"));
@@ -220,7 +219,6 @@ export default function App() {
             </NavLink>
           ))}
         </nav>
-        <TaskSidebar />
         <div className="sidebar-bottom">
           <NavLink
             to="/agent"

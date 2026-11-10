@@ -13,7 +13,21 @@ test("日期分组连续录入、原地改名与撤销", async ({ page }) => {
     })
   ).json();
   await page.goto(`/tasks?list=${list.id}`);
+  await expect(page.locator(".sidebar-task-nav")).toHaveCount(0);
+  await expect(page.locator("aside nav a")).toHaveCount(3);
   const label = `添加任务：${today().toISODate()}`;
+  const nextDay = page.locator(
+    `[data-plan-date="${today().plus({ days: 1 }).toISODate()}"]`,
+  );
+  await expect(nextDay).toBeVisible();
+  const heading = await nextDay.locator(".plan-day-heading").boundingBox();
+  const add = nextDay.getByRole("button", {
+    name: `添加任务：${today().plus({ days: 1 }).toISODate()}`,
+    exact: true,
+  });
+  await expect(add).toHaveText("");
+  const addBox = await add.boundingBox();
+  expect(addBox!.y).toBeGreaterThanOrEqual(heading!.y + heading!.height);
   await page.getByRole("button", { name: label, exact: true }).click();
   const input = page.getByRole("textbox", { name: label, exact: true });
   await input.fill("第一项");
@@ -66,7 +80,8 @@ test("日期分组连续录入、原地改名与撤销", async ({ page }) => {
     page.getByRole("heading", { name: "第二项", exact: true }),
   ).toHaveCount(0);
   await page.route("**/api/v1/tasks", async (route) => {
-    if (route.request().method() === "POST") await new Promise((resolve) => setTimeout(resolve, 250));
+    if (route.request().method() === "POST")
+      await new Promise((resolve) => setTimeout(resolve, 250));
     await route.continue();
   });
   await page.getByRole("button", { name: label, exact: true }).click();
@@ -74,7 +89,13 @@ test("日期分组连续录入、原地改名与撤销", async ({ page }) => {
   await input.press("Enter");
   const search = page.getByLabel("搜索任务", { exact: true });
   await search.fill("第一项");
-  await expect.poll(async () => (await (await page.request.get("/api/v1/tasks")).json()).some((task: { title: string }) => task.title === "保存后不抢焦点")).toBe(true);
+  await expect
+    .poll(async () =>
+      (await (await page.request.get("/api/v1/tasks")).json()).some(
+        (task: { title: string }) => task.title === "保存后不抢焦点",
+      ),
+    )
+    .toBe(true);
   await expect(search).toBeFocused();
 });
 
@@ -195,7 +216,7 @@ test("主列表展开子任务并直接连续添加", async ({ page }) => {
   });
 });
 
-test("多选拖动改期和清单移动可撤销", async ({ page }, info) => {
+test("多选拖动改期和清单移动可撤销", async ({ page }) => {
   const headers = await login(page);
   const tasks: Array<{ id: string }> = [];
   for (const title of ["拖动甲", "拖动乙"]) {
@@ -256,10 +277,21 @@ test("多选拖动改期和清单移动可撤销", async ({ page }, info) => {
       ),
     )
     .toBe(true);
-  if (info.project.name === "desktop") {
+  {
+    await page.locator(`[data-task-id="${tasks[0].id}"]`).focus();
+    await page.keyboard.press("Escape");
+    for (const title of ["拖动甲", "拖动乙"])
+      await page
+        .getByRole("button", { name: title, exact: true })
+        .click({ modifiers: ["ControlOrMeta"] });
+    await expect(page.getByText("已选 2 项", { exact: true })).toBeVisible();
     await page
-      .locator(`[data-task-id="${tasks[0].id}"]`)
-      .dragTo(page.locator(`[data-task-list-drop="${list.id}"]`));
+      .getByRole("button", { name: "更多操作：拖动甲", exact: true })
+      .click();
+    await page
+      .getByRole("menuitem", { name: /^移动到清单/ })
+      .click();
+    await page.getByRole("menuitem", { name: list.name, exact: true }).click();
     await expect
       .poll(async () =>
         (await (await page.request.get("/api/v1/tasks")).json()).every(

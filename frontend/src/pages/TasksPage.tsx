@@ -1244,22 +1244,11 @@ export default function TasksPage({ profile }: { profile: Profile }) {
         pointerEvent.clientX,
         pointerEvent.clientY,
       );
-      const listTarget = document
-        .elementFromPoint(pointerEvent.clientX, pointerEvent.clientY)
-        ?.closest<HTMLElement>("[data-task-list-drop]");
       cleanup();
       const moving =
         selectedIds.has(task.id) && selectedTasks.length
           ? selectedTasks
           : [task];
-      if (listTarget) {
-        const key = listTarget.dataset.taskListDrop;
-        moveSelection(
-          moving.map((item) => item.id),
-          key === "inbox" ? null : key!,
-        );
-        return;
-      }
       if (
         pointerEvent.altKey &&
         target.beforeId &&
@@ -1395,6 +1384,12 @@ export default function TasksPage({ profile }: { profile: Profile }) {
   const composer = (date: string | null, parent?: Task) => (
     <InlineTaskComposer
       key={parent?.id ?? date ?? "no-date"}
+      quiet={!parent && timelineMode}
+      hint={
+        !parent && timelineMode && date === null && !noDateTasks.length
+          ? "拖到这里可清除日期"
+          : undefined
+      }
       label={
         parent ? `添加子任务：${parent.title}` : `添加任务：${date ?? "无日期"}`
       }
@@ -1404,25 +1399,6 @@ export default function TasksPage({ profile }: { profile: Profile }) {
   const catchAction = (promise: Promise<unknown>) => {
     void promise.catch(() => undefined);
   };
-  const moveSelection = (ids: string[], listId: string | null) => {
-    catchAction(
-      actions.patch(
-        ids.map((id) => ({ id, patch: { list_id: listId } })),
-        "移动清单",
-      ),
-    );
-  };
-  useEffect(() => {
-    const listener = (event: Event) => {
-      const detail = (
-        event as CustomEvent<{ ids: string[]; listId: string | null }>
-      ).detail;
-      if (!inbox && !detailPage && detail?.ids?.length)
-        moveSelection(detail.ids, detail.listId);
-    };
-    window.addEventListener("task-list-drop", listener);
-    return () => window.removeEventListener("task-list-drop", listener);
-  });
   const moveToDate = (
     tasks: Task[],
     date: string | null,
@@ -1859,13 +1835,18 @@ export default function TasksPage({ profile }: { profile: Profile }) {
             onClick={(event) => {
               if (
                 !(event.target as HTMLElement).closest(
-                  "button,input,a,select,textarea,label",
+                  "button,input,a,select,textarea,label,[role=menu]",
                 )
               )
                 selectTask(task);
             }}
             onClickCapture={(event) => {
-              if ((event.target as HTMLElement).closest("input,textarea,select,[contenteditable=true]")) return;
+              if (
+                (event.target as HTMLElement).closest(
+                  "input,textarea,select,[contenteditable=true]",
+                )
+              )
+                return;
               if (event.metaKey || event.ctrlKey || event.shiftKey) {
                 event.preventDefault();
                 event.stopPropagation();
@@ -2010,7 +1991,12 @@ export default function TasksPage({ profile }: { profile: Profile }) {
                 ) : (
                   <InlineDeadline
                     task={task}
-                    compact={timeline && (!task.parent_id || taskDateKey(taskCatalog.get(task.parent_id) ?? task) === taskDateKey(task))}
+                    compact={
+                      timeline &&
+                      (!task.parent_id ||
+                        taskDateKey(taskCatalog.get(task.parent_id) ?? task) ===
+                          taskDateKey(task))
+                    }
                     timezone={profile.timezone}
                     onChange={(deadline_at, deadline_all_day) =>
                       setDeadline.mutate({
@@ -2465,7 +2451,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
               项
               {dragOverDate !== undefined
                 ? ` → ${dragOverDate ?? "无日期"}`
-                : "，拖到日期或清单"}
+                : "，拖到日期；按住 Alt 可拖成子任务"}
             </span>
           )}
         </div>
@@ -3425,7 +3411,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
                   {composer(day.key)}
                 </div>
               ))}
-              {view !== "today" && otherCurrentMonthDays.length > 0 && (
+              {view !== "today" && (
                 <section className="plan-month plan-other-month">
                   <h2 className="plan-collapsed-title">
                     {chineseMonths[today.month - 1]}其他时间
@@ -3456,41 +3442,39 @@ export default function TasksPage({ profile }: { profile: Profile }) {
                   ))}
                 </section>
               )}
-              {futureMonths
-                .filter((month) => month.days.length > 0)
-                .map((month) => (
-                  <section className="plan-month" key={month.title}>
-                    <h2 className="plan-month-title">{month.title}</h2>
-                    {month.days
-                      .filter((day) => !weekKeys.has(day.key))
-                      .map((day) => (
-                        <div
-                          key={day.key}
-                          data-plan-date={day.key}
-                          className={planDayClass(day.key, day.tasks)}
-                        >
-                          <div className="plan-day-heading">
-                            <strong>{day.label}</strong>
-                            <span>{day.tasks.length} 项</span>
-                          </div>
-                          <div className="plan-day-tasks">
-                            {day.tasks.map((task) => (
-                              <Fragment key={task.id}>
-                                {renderTaskCard(
-                                  task,
-                                  visible.findIndex(
-                                    (item) => item.id === task.id,
-                                  ),
-                                  true,
-                                )}
-                              </Fragment>
-                            ))}
-                          </div>
-                          {composer(day.key)}
+              {futureMonths.map((month) => (
+                <section className="plan-month" key={month.title}>
+                  <h2 className="plan-month-title">{month.title}</h2>
+                  {month.days
+                    .filter((day) => !weekKeys.has(day.key))
+                    .map((day) => (
+                      <div
+                        key={day.key}
+                        data-plan-date={day.key}
+                        className={planDayClass(day.key, day.tasks)}
+                      >
+                        <div className="plan-day-heading">
+                          <strong>{day.label}</strong>
+                          <span>{day.tasks.length} 项</span>
                         </div>
-                      ))}
-                  </section>
-                ))}
+                        <div className="plan-day-tasks">
+                          {day.tasks.map((task) => (
+                            <Fragment key={task.id}>
+                              {renderTaskCard(
+                                task,
+                                visible.findIndex(
+                                  (item) => item.id === task.id,
+                                ),
+                                true,
+                              )}
+                            </Fragment>
+                          ))}
+                        </div>
+                        {composer(day.key)}
+                      </div>
+                    ))}
+                </section>
+              ))}
             </div>
           ) : !visible.length ? (
             <div className="empty-state">
