@@ -878,6 +878,13 @@ header {
 .calendar-layout .calendar {
   margin-top: 0;
 }
+.calendar-filters {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
 .course-sidebar {
   max-height: 70vh;
   overflow: auto;

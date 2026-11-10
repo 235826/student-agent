@@ -13,18 +13,21 @@ import { DateTime } from "luxon";
 import { api, type Plan, type Event, type Profile } from "../api";
 import { withFrom } from "../navigation";
 import { eventTypeColor, eventTypeLabel, staleInfo } from "../semantics";
+import { matchesCalendarContent, type CalendarContent } from "../calendar";
 const errorText = (e: unknown) => (e instanceof Error ? e.message : "操作失败");
 const calendarViews = ["dayGridMonth", "timeGridWeek", "listWeek"] as const;
 export default function CalendarPage({
   profile,
   week,
   view,
+  content = "all",
   onDatesChange,
   onSelect,
 }: {
   profile: Profile;
   week?: string;
   view?: string;
+  content?: CalendarContent;
   onDatesChange?: (day: string, view: string) => void;
   onSelect?: (start: Date, end: Date) => void;
 }) {
@@ -36,9 +39,11 @@ export default function CalendarPage({
       : window.innerWidth < 700
         ? "listWeek"
         : "timeGridWeek";
-  const calendarUrl = week
-    ? `/calendar?week=${encodeURIComponent(week)}&view=${initialView}`
-    : `/calendar?view=${initialView}`;
+  const calendarUrl =
+    (week
+      ? `/calendar?week=${encodeURIComponent(week)}&view=${initialView}`
+      : `/calendar?view=${initialView}`) +
+    (content === "all" ? "" : `&content=${content}`);
   const plan = useQuery({
     queryKey: ["plans", "current"],
     queryFn: () => api<Plan | null>("/plans/current"),
@@ -90,6 +95,21 @@ export default function CalendarPage({
           plugins={[dayGridPlugin, timeGridPlugin, listPlugin, luxonPlugin]}
           locale={zhLocale}
           timeZone={profile.timezone}
+          eventTimeFormat={{
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: false,
+            omitZeroMinute: false,
+          }}
+          slotLabelFormat={{
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: false,
+            omitZeroMinute: false,
+          }}
+          noEventsContent={
+            content === "all" ? "没有事件显示" : "当前筛选下暂无安排"
+          }
           initialDate={week}
           initialView={initialView}
           headerToolbar={{
@@ -153,22 +173,24 @@ export default function CalendarPage({
           slotMinTime="00:00:00"
           slotMaxTime="24:00:00"
           events={[
-            ...(events.data?.map((e) => ({
-              id: e.id,
-              to: withFrom(
-                week
-                  ? `/calendar/events/${e.id}?week=${encodeURIComponent(week)}`
-                  : `/calendar/events/${e.id}`,
-                calendarUrl,
-              ),
-              title: e.title + (e.is_skipped ? "（本次不参加）" : ""),
-              start: e.start_at,
-              end: e.end_at,
-              note: e.note,
-              typeLabel: eventTypeLabel(e),
-              color: e.is_skipped ? "#a6a6a6" : eventTypeColor(e),
-            })) ?? []),
-            ...(plan.data?.blocks.map((b) => ({
+            ...(events.data
+              ?.filter((event) => matchesCalendarContent(event, content))
+              .map((e) => ({
+                id: e.id,
+                to: withFrom(
+                  week
+                    ? `/calendar/events/${e.id}?week=${encodeURIComponent(week)}`
+                    : `/calendar/events/${e.id}`,
+                  calendarUrl,
+                ),
+                title: e.title + (e.is_skipped ? "（本次不参加）" : ""),
+                start: e.start_at,
+                end: e.end_at,
+                note: e.note,
+                typeLabel: eventTypeLabel(e),
+                color: e.is_skipped ? "#a6a6a6" : eventTypeColor(e),
+              })) ?? []),
+            ...((content === "courses" ? [] : plan.data?.blocks)?.map((b) => ({
               id: `${b.task_id}-${b.start_at}`,
               to: withFrom(`/tasks/${b.task_id}`, calendarUrl),
               title: b.title,

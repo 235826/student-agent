@@ -39,6 +39,7 @@ import type {
 import { displayTime, toInstant, toLocal } from "../time";
 import { backTarget, withFrom } from "../navigation";
 import { eventTypeColor, eventTypeLabel } from "../semantics";
+import { calendarContent, matchesCalendarContent } from "../calendar";
 const policyOptions = [
   { value: "inherit", label: "沿用课程设置 / 默认禁止" },
   { value: "none", label: "本次禁止并行" },
@@ -54,6 +55,7 @@ export default function EventsPage({ profile }: { profile: Profile }) {
   const isNewEvent = location.pathname === "/calendar/events/new";
   const isNewSeries = location.pathname === "/calendar/series/new";
   const viewParam = params.get("view");
+  const content = calendarContent(params.get("content"));
   const fallbackWeek = DateTime.now()
     .setZone(profile.timezone)
     .startOf(viewParam === "dayGridMonth" ? "month" : "week")
@@ -73,7 +75,11 @@ export default function EventsPage({ profile }: { profile: Profile }) {
       : undefined;
   const calendarUrl = `${
     weekParam ? `/calendar?week=${encodeURIComponent(week)}` : "/calendar"
-  }${calendarView ? `${weekParam ? "&" : "?"}view=${calendarView}` : ""}`;
+  }${calendarView ? `${weekParam ? "&" : "?"}view=${calendarView}` : ""}${
+    content === "all"
+      ? ""
+      : `${weekParam || calendarView ? "&" : "?"}content=${content}`
+  }`;
   const here = `${location.pathname}${location.search}${location.hash}`;
   const from = params.get("from");
   const back = backTarget(from, {
@@ -271,7 +277,8 @@ export default function EventsPage({ profile }: { profile: Profile }) {
   const visible = (events.data ?? []).filter((e) =>
     id
       ? e.id === id
-      : DateTime.fromISO(e.start_at) < rangeEnd &&
+      : matchesCalendarContent(e, content) &&
+        DateTime.fromISO(e.start_at) < rangeEnd &&
         DateTime.fromISO(e.end_at) > rangeStart,
   );
   const edit = (event: Event | null) => {
@@ -437,11 +444,33 @@ export default function EventsPage({ profile }: { profile: Profile }) {
               )}
             </section>
             <div>
+              <div className="calendar-filters">
+                <span>显示内容</span>
+                <Radio.Group
+                  aria-label="日历显示内容"
+                  optionType="button"
+                  size="small"
+                  value={content}
+                  options={[
+                    { value: "all", label: "全部" },
+                    { value: "courses", label: "仅课程" },
+                    { value: "hide-courses", label: "隐藏课程" },
+                  ]}
+                  onChange={(event) => {
+                    const next = new URLSearchParams(params);
+                    const value = calendarContent(event.target.value);
+                    if (value === "all") next.delete("content");
+                    else next.set("content", value);
+                    setParams(next, { replace: true });
+                  }}
+                />
+              </div>
               {events.data && !events.error && (
                 <CalendarPage
                   profile={profile}
                   week={week}
                   view={calendarView}
+                  content={content}
                   onDatesChange={setCalendarDates}
                   onSelect={(start, end) =>
                     openNewEvent(
@@ -476,7 +505,13 @@ export default function EventsPage({ profile }: { profile: Profile }) {
         <Spin />
       ) : !visible.length ? (
         <div className="empty-state">
-          <Empty description={id ? "事件不存在或已删除" : monthView ? "本月没有事件" : "本周没有事件"} />
+          <Empty
+            description={
+              id ? "事件不存在或已删除"
+                : content !== "all" ? "当前筛选下暂无安排"
+                  : monthView ? "本月没有事件" : "本周没有事件"
+            }
+          />
         </div>
       ) : (
         <div className="rows">

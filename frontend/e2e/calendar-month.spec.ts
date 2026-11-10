@@ -141,6 +141,16 @@ test("月视图展示已采用的计划块并保留任务返回路径", async ({
   await page.goto(
     `/calendar?week=${day.startOf("month").toISODate()}&view=dayGridMonth`,
   );
+  await page
+    .locator(".calendar-filters")
+    .getByText("仅课程", { exact: true })
+    .click();
+  await expect(page.locator(".fc-daygrid-event")).toHaveCount(0);
+  await page
+    .locator(".calendar-filters")
+    .getByText("隐藏课程", { exact: true })
+    .click();
+  await expect(page.locator(".fc-daygrid-event")).toHaveCount(1);
   const url = page.url();
   await page
     .locator(".fc-daygrid-event")
@@ -150,4 +160,128 @@ test("月视图展示已采用的计划块并保留任务返回路径", async ({
   await page.getByRole("link", { name: /返回/ }).first().click();
   await expect(page).toHaveURL(url);
   await expect(page.locator(".fc-dayGridMonth-view")).toBeVisible();
+  await expect(
+    page.getByRole("radio", { name: "隐藏课程", exact: true }),
+  ).toBeChecked();
+});
+
+test("日历统一时间格式并同步课程筛选与返回状态", async ({ page }) => {
+  const headers = await login(page);
+  const courseResponse = await page.request.post("/api/v1/courses", {
+    headers,
+    data: { name: "筛选测试课程" },
+  });
+  expect(courseResponse.ok()).toBeTruthy();
+  const course = await courseResponse.json();
+  const seriesResponse = await page.request.post("/api/v1/event-series", {
+    headers,
+    data: {
+      course_id: course.id,
+      start_date: "2030-01-07",
+      end_date: "2030-01-07",
+      weekdays: [0],
+      start_time: "08:00",
+      end_time: "09:00",
+      timezone: "Asia/Shanghai",
+      idempotency_key: crypto.randomUUID(),
+    },
+  });
+  expect(seriesResponse.ok()).toBeTruthy();
+  for (const event of [
+    {
+      title: "独立课程",
+      kind: "course",
+      course_id: course.id,
+      time: "14:00",
+      end: "15:00",
+    },
+    {
+      title: "个人复习",
+      kind: "other",
+      course_id: null,
+      time: "18:30",
+      end: "19:30",
+    },
+  ]) {
+    const { time, end, ...data } = event;
+    const response = await page.request.post("/api/v1/events", {
+      headers,
+      data: {
+        ...data,
+        start_at: `2030-01-07T${time}:00+08:00`,
+        end_at: `2030-01-07T${end}:00+08:00`,
+      },
+    });
+    expect(response.ok()).toBeTruthy();
+  }
+  await page.goto("/calendar?week=2030-01-01&view=dayGridMonth");
+  await expect(page.locator(".fc-daygrid-event .fc-event-time")).toHaveText([
+    "08:00",
+    "14:00",
+    "18:30",
+  ]);
+  await expect(page.locator(".event-row")).toHaveCount(3);
+  await page
+    .locator(".calendar-filters")
+    .getByText("仅课程", { exact: true })
+    .click();
+  await expect(page).toHaveURL(/content=courses/);
+  await expect(page.locator(".fc-daygrid-event")).toHaveCount(2);
+  await expect(page.locator(".event-row")).toHaveCount(2);
+  await page.getByRole("button", { name: "周", exact: true }).click();
+  await page.locator(".fc-next-button").click();
+  await expect(
+    page.locator(".fc-timegrid-event .fc-event-time").first(),
+  ).toContainText("08:00");
+  await expect(
+    page
+      .locator(".fc-timegrid-slot-label-cushion")
+      .filter({ hasText: /^08:00$/ }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "列表", exact: true }).click();
+  await expect(page.locator(".fc-list-event")).toHaveCount(2);
+  await expect(page.locator(".fc-list-event-time").first()).toContainText(
+    "08:00",
+  );
+  await page
+    .locator(".calendar-filters")
+    .getByText("隐藏课程", { exact: true })
+    .click();
+  await expect(page.locator(".fc-list-event")).toHaveCount(1);
+  await expect(page.locator(".fc-list-event-time")).toContainText("18:30");
+  await expect(page.locator(".event-row")).toHaveCount(1);
+  await page.getByRole("button", { name: "月", exact: true }).click();
+  const url = page.url();
+  await page.reload();
+  await expect(page).toHaveURL(url);
+  await expect(
+    page.getByRole("radio", { name: "隐藏课程", exact: true }),
+  ).toBeChecked();
+  await expect(page.locator(".fc-daygrid-event")).toHaveCount(1);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await page.screenshot({
+    path: test.info().outputPath("calendar-filter.png"),
+    fullPage: true,
+  });
+  await page.locator(".fc-daygrid-event").click();
+  await page.getByRole("link", { name: "返回日历", exact: true }).click();
+  await expect(page).toHaveURL(url);
+  await expect(
+    page.getByRole("radio", { name: "隐藏课程", exact: true }),
+  ).toBeChecked();
+  await page.locator(".fc-next-button").click();
+  await expect(
+    page.getByText("当前筛选下暂无安排", { exact: true }),
+  ).toBeVisible();
+  await page
+    .locator(".calendar-filters")
+    .getByText("全部", { exact: true })
+    .click();
+  await expect(page).not.toHaveURL(/content=/);
+  await page.locator(".fc-prev-button").click();
+  await expect(page.locator(".fc-daygrid-event")).toHaveCount(3);
 });
