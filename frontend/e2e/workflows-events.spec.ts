@@ -7,7 +7,7 @@ test("空标题草稿、正式任务校验与关系跳转", async ({ page }) => 
   await page.getByRole("link", { name: "新建任务", exact: true }).click();
   await page.getByRole("button", { name: "创建任务", exact: true }).click();
   await expect(
-    page.getByText("创建任务必须填写标题", { exact: true }),
+    page.getByText("请输入任务标题", { exact: true }),
   ).toBeVisible();
   await page.getByRole("button", { name: "保存草稿", exact: true }).click();
   await expect(page.getByRole("dialog")).not.toBeVisible();

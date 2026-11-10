@@ -29,6 +29,7 @@ test("草稿发布、重复课程单次变更与规则检查", async ({ page }, 
   await page.getByRole("link", { name: "任务", exact: true }).click();
   await page.getByRole("button", { name: "新建任务", exact: true }).click();
   await page.getByLabel("任务标题").fill(title);
+  await page.getByRole("button", { name: "分类与资料" }).click();
   await page
     .getByLabel("任务类型（可选）", { exact: true })
     .fill(`reading-${info.project.name}`);

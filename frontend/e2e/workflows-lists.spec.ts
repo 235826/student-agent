@@ -16,6 +16,7 @@ test("清单创建、任务归类、筛选与完成历史", async ({ page }) => 
 
   await page.getByRole("button", { name: "新建任务", exact: true }).click();
   await page.getByLabel("任务标题").fill("清单任务");
+  await page.getByRole("button", { name: "分类与资料" }).click();
   await page.getByRole("combobox", { name: "标签", exact: true }).click();
   await page.getByRole("combobox", { name: "标签", exact: true }).fill("数学");
   await page.keyboard.press("Enter");
