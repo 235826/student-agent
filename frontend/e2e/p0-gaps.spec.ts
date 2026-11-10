@@ -44,7 +44,9 @@ test("执行记录、活动反馈与任务归档", async ({ page }) => {
   const card = page
     .locator(".task-card")
     .filter({ has: page.getByRole("heading", { name: "P0 执行记录任务" }) });
-  await card.getByRole("heading", { name: "P0 执行记录任务" }).click();
+  await card
+    .getByRole("button", { name: "展开详情：P0 执行记录任务", exact: true })
+    .click();
   await card.getByRole("button", { name: "记录一次", exact: true }).click();
   await card.getByLabel("实际用时（分钟）").fill("30");
   await card.getByLabel("完成后的感受").fill("第一次记录感受");
@@ -66,18 +68,24 @@ test("执行记录、活动反馈与任务归档", async ({ page }) => {
   const archiveCard = page
     .locator(".task-card")
     .filter({ has: page.getByRole("heading", { name: task.title }) });
-  await archiveCard.getByRole("heading", { name: task.title }).click();
+  await archiveCard
+    .getByRole("button", { name: `展开详情：${task.title}`, exact: true })
+    .click();
   await archiveCard.getByRole("button", { name: "归档", exact: true }).click();
   await page.getByRole("button", { name: "已归档", exact: true }).click();
   await expect(page.getByRole("heading", { name: task.title })).toBeVisible();
   const archivedCard = page
     .locator(".task-card")
     .filter({ has: page.getByRole("heading", { name: task.title }) });
-  await archivedCard.getByRole("heading", { name: task.title }).click();
+  await archivedCard
+    .getByRole("button", { name: `展开详情：${task.title}`, exact: true })
+    .click();
   await archivedCard
     .getByRole("button", { name: "恢复归档", exact: true })
     .click();
-  await expect(page.getByRole("heading", { name: task.title })).not.toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: task.title }),
+  ).not.toBeVisible();
 });
 
 test("Markdown 作业文件可仅保存并保留来源", async ({ page }) => {

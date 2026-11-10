@@ -26,8 +26,10 @@ test("可创建第二个账号且数据互相隔离", async ({ page }) => {
     .click();
   await page.getByRole("link", { name: "任务", exact: true }).click();
   await expect(
-    page.getByText("还没有任务，先添加一件想完成的事"),
+    page.getByRole("heading", { name: "任务", exact: true }),
   ).toBeVisible();
+  await expect(page.locator(".task-card")).toHaveCount(0);
+  expect(await (await page.request.get("/api/v1/tasks")).json()).toEqual([]);
   await page.getByRole("button", { name: "新建任务", exact: true }).click();
   await page.getByLabel("任务标题").fill("第二个账号的任务");
   await page.getByRole("button", { name: "创建任务", exact: true }).click();

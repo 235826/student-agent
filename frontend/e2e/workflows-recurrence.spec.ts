@@ -123,7 +123,10 @@ test("重复任务完成后生成下一次并可撤销", async ({ page }) => {
       .setZone(zone)
       .toFormat("yyyy-MM-dd HH:mm"),
   ).toBe(
-    DateTime.fromISO(due!).plus({ days: 1 }).toFormat("yyyy-MM-dd HH:mm"),
+    DateTime.fromISO(due!)
+      .setZone(zone)
+      .plus({ days: 1 })
+      .toFormat("yyyy-MM-dd HH:mm"),
   );
 
   await page.getByRole("button", { name: "已完成", exact: true }).click();

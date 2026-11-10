@@ -69,7 +69,9 @@ test("文本解析、校对、确认、来源与重复导入", async ({ page }, 
   const card = page
     .locator(".task-card")
     .filter({ has: page.getByRole("heading", { name: title + "-校对" }) });
-  await card.getByRole("heading", { name: title + "-校对" }).click();
+  await card
+    .getByRole("button", { name: `展开详情：${title}-校对`, exact: true })
+    .click();
   await card.getByRole("button", { name: "查看来源" }).click();
   await expect(card.getByText(title, { exact: true })).toBeVisible();
   await card.getByRole("link", { name: "打开导入记录与字段依据" }).click();

@@ -7,6 +7,8 @@ export default defineConfig({
   workers: 1,
   use: {
     baseURL: "http://127.0.0.1:5173",
+    // Registration uses the browser timezone; match the scenarios' +08:00 dates.
+    timezoneId: "Asia/Shanghai",
     trace: "retain-on-failure",
     channel: process.env.PLAYWRIGHT_CHANNEL ?? "chromium",
   },
