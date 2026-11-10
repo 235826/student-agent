@@ -1795,3 +1795,50 @@ header {
     gap: 6px;
   }
 }
+
+.subtask-section {
+  margin-bottom: 16px;
+}
+.subtask-section .section-inline-heading h4 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: var(--fw-semibold);
+}
+.subtask-section .subtask-row {
+  padding: 6px 4px;
+}
+.subtask-section .subtask-row-main > a {
+  font-size: 13px;
+}
+.subtask-section .subtask-add {
+  margin-top: 8px;
+}
+.attachment-section {
+  margin-top: 12px;
+  margin-bottom: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.attachment-section h4 {
+  margin: 0 0 4px;
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: var(--fw-semibold);
+}
+.attachment-item {
+  padding: 4px 0 !important;
+}
+.attachment-item .ant-list-item-meta {
+  align-items: center;
+}
+.attachment-item .ant-list-item-meta-title {
+  margin-bottom: 0 !important;
+  font-size: 13px;
+}
+.attachment-item .ant-list-item-meta-description {
+  font-size: 12px;
+}
+.attachment-error {
+  margin: 8px 0;
+}

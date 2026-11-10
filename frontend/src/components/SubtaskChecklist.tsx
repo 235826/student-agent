@@ -226,39 +226,38 @@ export default function SubtaskChecklist({ parent }: { parent: Task }) {
     if (value) add.mutate(value);
   };
   return (
-    <section className="section">
+    <section className="section subtask-section">
       <div className="section-inline-heading">
-        <h3>
+        <h4>
           子任务 {done}/{descendants.length}
-        </h3>
-        <Space wrap>
-          <Button
-            type="text"
-            size="small"
-            disabled={!incomplete.length}
-            loading={batchComplete.isPending}
-            onClick={() => batchComplete.mutate(incomplete)}
-          >
-            全部完成
-          </Button>
-          <Button
-            type="text"
-            size="small"
-            disabled={!completed.length}
-            loading={clearDone.isPending}
-            onClick={() => clearDone.mutate(completed)}
-          >
-            清除已完成
-          </Button>
-        </Space>
+        </h4>
+        {descendants.length > 0 && (
+          <Space wrap size={4}>
+            <Button
+              type="text"
+              size="small"
+              disabled={!incomplete.length}
+              loading={batchComplete.isPending}
+              onClick={() => batchComplete.mutate(incomplete)}
+            >
+              全部完成
+            </Button>
+            <Button
+              type="text"
+              size="small"
+              disabled={!completed.length}
+              loading={clearDone.isPending}
+              onClick={() => clearDone.mutate(completed)}
+            >
+              清除已完成
+            </Button>
+          </Space>
+        )}
       </div>
-      {descendants.length ? (
-        renderChildren(parent.id, 0)
-      ) : (
-        <p className="muted">把任务拆成更小的步骤，完成情况会显示在这里。</p>
-      )}
-      <Space.Compact className="subtask-add">
+      {descendants.length > 0 && renderChildren(parent.id, 0)}
+      <Space.Compact size="small" className="subtask-add">
         <Input
+          size="small"
           aria-label="添加子任务"
           value={title}
           placeholder="添加子任务，按回车保存"
@@ -268,6 +267,7 @@ export default function SubtaskChecklist({ parent }: { parent: Task }) {
         />
         <Button
           type="primary"
+          size="small"
           loading={add.isPending}
           disabled={!title.trim()}
           onClick={submit}

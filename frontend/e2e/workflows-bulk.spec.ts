@@ -172,6 +172,9 @@ test("任务附件上传、下载链接与删除", async ({ page }) => {
   await expect(
     page.getByRole("heading", { name: "附件任务" }),
   ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: /^附件 \d+$/ }),
+  ).toHaveCount(0);
 
   await page.locator('input[type="file"]').setInputFiles({
     name: "note.txt",
@@ -179,6 +182,7 @@ test("任务附件上传、下载链接与删除", async ({ page }) => {
     buffer: Buffer.from("hello"),
   });
   await expect(page.getByText("附件已上传")).toBeVisible();
+  await expect(page.getByRole("heading", { name: /附件 1/ })).toBeVisible();
   await expect(page.getByText("note.txt", { exact: true })).toBeVisible();
   const download = page.getByRole("link", { name: "下载", exact: true }).first();
   expect(await download.getAttribute("href")).toMatch(
@@ -191,9 +195,7 @@ test("任务附件上传、下载链接与删除", async ({ page }) => {
   await attachmentCard
     .getByRole("button", { name: /^删\s*除$/ })
     .click();
-  await attachmentCard
-    .getByRole("button", { name: /^确认删除$/ })
-    .click();
+  await page.getByRole("button", { name: /^确认删除$/ }).click();
   await expect(page.getByText("附件已删除")).toBeVisible();
   await expect(page.getByText("note.txt", { exact: true })).not.toBeVisible();
   expect(

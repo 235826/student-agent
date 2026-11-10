@@ -3,6 +3,7 @@ import TaskListManager from "../components/TaskListManager";
 import TagManager from "../components/TagManager";
 import SubtaskChecklist from "../components/SubtaskChecklist";
 import AttachmentPanel from "../components/AttachmentPanel";
+import AttachmentUploadButton from "../components/AttachmentUploadButton";
 import WorkLogPanel from "../components/WorkLogPanel";
 import {
   Link,
@@ -1788,6 +1789,7 @@ export default function TasksPage({ profile }: { profile: Profile }) {
                               {task.flagged ? "取消标记" : "标记"}
                             </Button>
                             <SourceButton objectId={task.id} />
+                            <AttachmentUploadButton taskId={task.id} />
                             <Button
                               type="text"
                               size="small"
