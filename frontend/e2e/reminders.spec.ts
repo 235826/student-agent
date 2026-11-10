@@ -115,6 +115,7 @@ test("行多选、右键批量标记与键盘导航完成", async ({ page }) => 
   const first = page.locator(".task-card").filter({
     has: page.getByRole("heading", { name: "任务甲", exact: true }),
   });
+  await first.evaluate((element) => element.scrollIntoView({ block: "center" }));
   await first.click({ button: "right" });
   await page.getByRole("menuitem", { name: "标记", exact: true }).click();
   await expect
@@ -216,7 +217,7 @@ test("主列表展开子任务并直接连续添加", async ({ page }) => {
   });
 });
 
-test("多选拖动改期和清单移动可撤销", async ({ page }) => {
+test("多选拖动改期和清单移动可撤销", async ({ page, isMobile }) => {
   const headers = await login(page);
   const tasks: Array<{ id: string }> = [];
   for (const title of ["拖动甲", "拖动乙"]) {
@@ -288,9 +289,9 @@ test("多选拖动改期和清单移动可撤销", async ({ page }) => {
     await page
       .getByRole("button", { name: "更多操作：拖动甲", exact: true })
       .click();
-    await page
-      .getByRole("menuitem", { name: /^移动到清单/ })
-      .click();
+    const moveMenu = page.getByRole("menuitem", { name: /^移动到清单/ });
+    if (isMobile) await moveMenu.click();
+    else await moveMenu.hover();
     await page.getByRole("menuitem", { name: list.name, exact: true }).click();
     await expect
       .poll(async () =>
